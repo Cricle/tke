@@ -85,7 +85,7 @@ Implementation references:
 
 ## Current Measured Results
 
-Source: [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:66) and [docs/e2e.md](/root/github/tke/docs/e2e.md:9).
+Source: [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:1) and [docs/e2e.md](/root/github/tke/docs/e2e.md:1).
 
 ### Codex
 
@@ -98,7 +98,7 @@ Interpretation:
 
 - `tke` is currently validated on real Codex tasks.
 - `rtk-codex-rules` is the fair RTK path for Codex, but the current sampled cases do not show comparable correctness or savings.
-- On the command-benchmark side, `tke` is already strong on the high-volume profiles that dominate local tool cost: `search` `88.9%`, `pathlist` `96.1%`, `diff` `94.0%`, `log` `78.3%`.
+- On the current synthetic command benchmark side, `tke` is strong on the high-volume profiles that dominate local tool cost: `search` `89.9%`, `pathlist` `96.6%`, `diff` `93.7%`, `log` `74.4%`.
 
 ### Claude
 
@@ -112,10 +112,11 @@ Interpretation:
 - `rtk-hook` is currently the stable fairness path for Claude.
 - `tke` on Claude currently prioritizes compatibility by default and should not yet be treated as equally mature live compression.
 - Even so, the underlying `tke` local compression primitives are broader and more inspectable than the current RTK fairness path, because they operate on normalized tool output rather than only on agent integration behavior.
+- In the current stable synthetic Claude-oriented traces, `tke` saves `10761` tokens total at `91.8%`, while `rtk-hook` saves `10622` at `92.9%`; both preserve all required semantic fragments in those controlled cases.
 
 ## Important Fairness Cases
 
-From the current fair comparison table in [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:86):
+From the current fair comparison table in [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:1):
 
 | Agent | Case | Raw | RTK path | Tool token delta | Verdict |
 | --- | --- | --- | --- | --- | --- |
@@ -126,6 +127,22 @@ From the current fair comparison table in [docs/benchmarks.md](/root/github/tke/
 | `claude` | `fairrg` | pass | pass | `0` | `correct_but_not_saved` |
 
 The key signal is that Claude RTK currently helps more with path correctness than with measurable tool-output compression, while Codex `tke` already delivers strong measured savings on real tasks.
+
+## Compression And Accuracy Scorecard
+
+The current repo evidence splits cleanly into two layers:
+
+| Scope | Compared paths | Main signal |
+| --- | --- | --- |
+| Stable synthetic Claude traces | `tke` vs `rtk-hook` | compression rate and semantic retention can be compared directly |
+| Fair live agent runs | raw vs RTK path | correctness can be compared directly, but compression gains are currently small |
+
+Current takeaway:
+
+- On stable synthetic Claude traces, `rtk-hook` is slightly ahead on compression ratio, while `tke` is slightly ahead on absolute tokens saved.
+- On those same synthetic traces, both paths preserve all required semantic fragments.
+- On current fair live Claude runs, `rtk-hook` is ahead on correctness stability, but not on token reduction.
+- On current live Codex evidence, `tke` remains the only path with clear measured savings plus passing task outcomes.
 
 ## Horizontal Comparison Verdict
 

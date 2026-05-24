@@ -139,11 +139,34 @@ comparison_task_specs = [
 ]
 
 comparison_task_rows = []
+comparison_task_totals = {
+    "tke_raw_tokens": 0,
+    "tke_rewritten_tokens": 0,
+    "tke_saved_tokens": 0,
+    "tke_required_fragments": 0,
+    "tke_preserved_fragments": 0,
+    "rtk_raw_tokens": 0,
+    "rtk_rewritten_tokens": 0,
+    "rtk_saved_tokens": 0,
+    "rtk_required_fragments": 0,
+    "rtk_preserved_fragments": 0,
+}
+comparison_verdict_rows = []
 for label, tke_name, rtk_name in comparison_task_specs:
     tke_task = task_by_name(tke_name)
     rtk_task = task_by_name(rtk_name)
     if not tke_task or not rtk_task:
         continue
+    comparison_task_totals["tke_raw_tokens"] += tke_task["raw_tokens"]
+    comparison_task_totals["tke_rewritten_tokens"] += tke_task["rewritten_tokens"]
+    comparison_task_totals["tke_saved_tokens"] += tke_task["tokens_saved"]
+    comparison_task_totals["tke_required_fragments"] += len(tke_task["required_fragments"])
+    comparison_task_totals["tke_preserved_fragments"] += len(tke_task["preserved_fragments"])
+    comparison_task_totals["rtk_raw_tokens"] += rtk_task["raw_tokens"]
+    comparison_task_totals["rtk_rewritten_tokens"] += rtk_task["rewritten_tokens"]
+    comparison_task_totals["rtk_saved_tokens"] += rtk_task["tokens_saved"]
+    comparison_task_totals["rtk_required_fragments"] += len(rtk_task["required_fragments"])
+    comparison_task_totals["rtk_preserved_fragments"] += len(rtk_task["preserved_fragments"])
     comparison_task_rows.append(
         [
             label,
@@ -153,6 +176,70 @@ for label, tke_name, rtk_name in comparison_task_specs:
             f"`{len(rtk_task['preserved_fragments'])}/{len(rtk_task['required_fragments'])}`",
         ]
     )
+    if tke_task["tokens_saved"] > rtk_task["tokens_saved"]:
+        token_winner = "`tke`"
+    elif tke_task["tokens_saved"] < rtk_task["tokens_saved"]:
+        token_winner = "`rtk-hook`"
+    else:
+        token_winner = "`tie`"
+    if tke_task["tokens_saved_ratio"] > rtk_task["tokens_saved_ratio"]:
+        ratio_winner = "`tke`"
+    elif tke_task["tokens_saved_ratio"] < rtk_task["tokens_saved_ratio"]:
+        ratio_winner = "`rtk-hook`"
+    else:
+        ratio_winner = "`tie`"
+    tke_fragment_ok = len(tke_task["preserved_fragments"]) == len(tke_task["required_fragments"])
+    rtk_fragment_ok = len(rtk_task["preserved_fragments"]) == len(rtk_task["required_fragments"])
+    if tke_fragment_ok and rtk_fragment_ok:
+        fragment_winner = "`tie`"
+    elif tke_fragment_ok:
+        fragment_winner = "`tke`"
+    elif rtk_fragment_ok:
+        fragment_winner = "`rtk-hook`"
+    else:
+        fragment_winner = "`neither`"
+    comparison_verdict_rows.append(
+        [
+            label,
+            token_winner,
+            ratio_winner,
+            fragment_winner,
+        ]
+    )
+
+
+def ratio_pct(saved, total):
+    if total == 0:
+        return "0.0%"
+    return pct(saved / total)
+
+
+comparison_totals_rows = []
+if comparison_task_rows:
+    comparison_totals_rows = [
+        [
+            "`tke`",
+            str(comparison_task_totals["tke_raw_tokens"]),
+            str(comparison_task_totals["tke_rewritten_tokens"]),
+            str(comparison_task_totals["tke_saved_tokens"]),
+            ratio_pct(
+                comparison_task_totals["tke_saved_tokens"],
+                comparison_task_totals["tke_raw_tokens"],
+            ),
+            f"`{comparison_task_totals['tke_preserved_fragments']}/{comparison_task_totals['tke_required_fragments']}`",
+        ],
+        [
+            "`rtk-hook`",
+            str(comparison_task_totals["rtk_raw_tokens"]),
+            str(comparison_task_totals["rtk_rewritten_tokens"]),
+            str(comparison_task_totals["rtk_saved_tokens"]),
+            ratio_pct(
+                comparison_task_totals["rtk_saved_tokens"],
+                comparison_task_totals["rtk_raw_tokens"],
+            ),
+            f"`{comparison_task_totals['rtk_preserved_fragments']}/{comparison_task_totals['rtk_required_fragments']}`",
+        ],
+    ]
 
 
 def collect_variant_rows(report, wanted_modes=None):
@@ -320,6 +407,71 @@ fair_compare_summary_rows = collect_fair_compare_summary_rows(
     ]
 )
 
+
+def count_rows(rows):
+    return sum(1 for _ in rows)
+
+
+def parse_int_cell(value):
+    try:
+        return int(value)
+    except Exception:
+        return 0
+
+
+rtk_scorecard_rows = []
+if comparison_totals_rows:
+    tke_summary = comparison_totals_rows[0]
+    rtk_summary = comparison_totals_rows[1]
+    tke_synth_saved = parse_int_cell(tke_summary[3])
+    rtk_synth_saved = parse_int_cell(rtk_summary[3])
+    tke_synth_fragments = tke_summary[5]
+    rtk_synth_fragments = rtk_summary[5]
+    rtk_scorecard_rows.extend(
+        [
+            [
+                "`Claude synthetic`",
+                "`tke`",
+                str(count_rows(comparison_task_rows)),
+                tke_summary[4],
+                tke_synth_fragments,
+                str(tke_synth_saved),
+            ],
+            [
+                "`Claude synthetic`",
+                "`rtk-hook`",
+                str(count_rows(comparison_task_rows)),
+                rtk_summary[4],
+                rtk_synth_fragments,
+                str(rtk_synth_saved),
+            ],
+        ]
+    )
+for row in fair_compare_summary_rows:
+    agent = row[0]
+    variant = row[1]
+    cases = row[2]
+    passed = parse_int_cell(row[3])
+    failed = parse_int_cell(row[4])
+    gateway = parse_int_cell(row[5])
+    ungraded = parse_int_cell(row[6])
+    total_delta = row[7]
+    decided = passed + failed
+    accuracy = "n/a"
+    if decided > 0:
+        accuracy = pct(passed / decided)
+    fragments = f"`pass={passed} fail={failed} gateway={gateway} ungraded={ungraded}`"
+    rtk_scorecard_rows.append(
+        [
+            agent,
+            variant,
+            cases,
+            accuracy,
+            fragments,
+            total_delta,
+        ]
+    )
+
 benchmarks_md = [
     "# Benchmarks",
     "",
@@ -349,11 +501,25 @@ benchmarks_md = [
         task_rows,
     ),
     "",
+    "Claude-oriented stable synthetic summary:",
+    "",
+    md_table(
+        ["Path", "Raw tokens", "Rewritten tokens", "Tokens saved", "Savings", "Fragments kept"],
+        comparison_totals_rows,
+    ),
+    "",
     "Task-mode comparison for Claude-oriented stable synthetic traces:",
     "",
     md_table(
         ["Scenario", "TKE task savings", "RTK hook task savings", "TKE fragments kept", "RTK hook fragments kept"],
         comparison_task_rows,
+    ),
+    "",
+    "Scenario verdicts:",
+    "",
+    md_table(
+        ["Scenario", "Absolute token winner", "Savings-ratio winner", "Fragment winner"],
+        comparison_verdict_rows,
     ),
     "",
     "## Structured Summary Coverage",
@@ -414,6 +580,13 @@ if codex_rtk_rows or fair_compare_rows:
             md_table(
                 ["Agent", "Case", "Raw", "RTK path", "Raw tool tokens", "RTK tool tokens", "Tool token delta", "Verdict"],
                 fair_compare_rows or [["-", "-", "-", "-", "-", "-", "-", "-"]],
+            ),
+            "",
+            "Accuracy and compression scorecard:",
+            "",
+            md_table(
+                ["Scope", "Path", "Cases", "Accuracy", "Semantic retention", "Token outcome"],
+                rtk_scorecard_rows or [["-", "-", "-", "-", "-", "-"]],
             ),
         ]
     )

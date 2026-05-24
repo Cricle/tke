@@ -59,6 +59,13 @@ Built-in rollout/task benchmarks:
 | `claude_rtk_hook_trace_selected_search_stage` | api | 2137 | 416 | 1721 | 80.5% |
 | `claude_rtk_hook_trace_selected_build_stage` | api | 1135 | 263 | 872 | 76.8% |
 
+Claude-oriented stable synthetic summary:
+
+| Path | Raw tokens | Rewritten tokens | Tokens saved | Savings | Fragments kept |
+| --- | --- | --- | --- | --- | --- |
+| `tke` | 11721 | 960 | 10761 | 91.8% | `12/12` |
+| `rtk-hook` | 11431 | 809 | 10622 | 92.9% | `15/15` |
+
 Task-mode comparison for Claude-oriented stable synthetic traces:
 
 | Scenario | TKE task savings | RTK hook task savings | TKE fragments kept | RTK hook fragments kept |
@@ -66,6 +73,14 @@ Task-mode comparison for Claude-oriented stable synthetic traces:
 | find/pathlist | `8029` (98.3%) | `8029` (98.4%) | `4/4` | `6/6` |
 | search | `1860` (77.0%) | `1721` (80.5%) | `3/3` | `4/4` |
 | build/log | `872` (76.4%) | `872` (76.8%) | `5/5` | `5/5` |
+
+Scenario verdicts:
+
+| Scenario | Absolute token winner | Savings-ratio winner | Fragment winner |
+| --- | --- | --- | --- |
+| find/pathlist | `tie` | `rtk-hook` | `tie` |
+| search | `tke` | `rtk-hook` | `tie` |
+| build/log | `tie` | `rtk-hook` | `tie` |
 
 ## Structured Summary Coverage
 
@@ -117,6 +132,15 @@ RTK must be compared through each agent's real integration path:
 | `claude` | `fairbuild` | pass | pass | 1357 | 1358 | -1 | `correct_but_not_saved` |
 | `claude` | `fairfind` | fail | pass | 68 | 68 | 0 | `correct_but_not_saved` |
 | `claude` | `fairrg` | pass | pass | 1883 | 1883 | 0 | `correct_but_not_saved` |
+
+Accuracy and compression scorecard:
+
+| Scope | Path | Cases | Accuracy | Semantic retention | Token outcome |
+| --- | --- | --- | --- | --- | --- |
+| `Claude synthetic` | `tke` | 3 | 91.8% | `12/12` | 10761 |
+| `Claude synthetic` | `rtk-hook` | 3 | 92.9% | `15/15` | 10622 |
+| `codex` | `rtk-codex-rules` | 2 | 0.0% | `pass=0 fail=2 gateway=0 ungraded=0` | 11 |
+| `claude` | `rtk-hook` | 3 | 100.0% | `pass=3 fail=0 gateway=0 ungraded=0` | -1 |
 
 Fair-path aggregate by agent:
 
