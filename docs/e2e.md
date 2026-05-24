@@ -20,9 +20,9 @@ This file is generated from the current local E2E artifacts.
 
 | Case | Raw | TKE | RTK Hook | Notes |
 | --- | --- | --- | --- | --- |
-| `fairbuild` | pass | missing | fail | - |
-| `fairfind` | pass | missing | missing | - |
-| `fairrg` | pass | missing | missing | - |
+| `fairbuild` | pass | missing | pass | fair RTK hook path |
+| `fairfind` | fail | missing | pass | fair RTK hook path |
+| `fairrg` | pass | missing | pass | fair RTK hook path |
 | `findcase` | gateway_error | fail | gateway_error | experimental live tke path, gateway noise on RTK hook path |
 
 ## Fairness Rules

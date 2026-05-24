@@ -90,6 +90,23 @@ RTK must be compared through each agent's real integration path:
 - Codex: `rtk-codex-rules`
 - Claude: `rtk-hook`
 
+| Agent | Case | Raw | RTK path | Raw tool tokens | RTK tool tokens | Tool token delta | Verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `codex` | `fairfind` | fail | fail | 68 | 68 | 0 | `wrong_and_not_saved` |
+| `codex` | `fairrg` | fail | fail | 12 | 1 | 11 | `saved_but_wrong` |
+| `claude` | `fairbuild` | pass | pass | 1357 | 1358 | -1 | `correct_but_not_saved` |
+| `claude` | `fairfind` | fail | pass | 68 | 68 | 0 | `correct_but_not_saved` |
+| `claude` | `fairrg` | pass | pass | 1883 | 1883 | 0 | `correct_but_not_saved` |
+
+Fair-path aggregate by agent:
+
+| Agent | Variant | Cases | Pass | Fail | Gateway | Ungraded | Total tool token delta |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `codex` | `rtk-codex-rules` | 2 | 0 | 2 | 0 | 0 | 11 |
+| `claude` | `rtk-hook` | 3 | 3 | 0 | 0 | 0 | -1 |
+
+Codex RTK variant rows:
+
 | Case | Variant | Correct | Tool token savings | Verdict |
 | --- | --- | --- | --- | --- |
 | `fairfind` | `rtk-codex-rules` | fail | 0 | `wrong_and_not_saved` |
@@ -107,7 +124,9 @@ Generated from:
 
 | Case | Variant | Correct | Tool token savings | Verdict |
 | --- | --- | --- | --- | --- |
-| `fairbuild` | `rtk-hook` | fail | -2 | `wrong_and_not_saved` |
+| `fairbuild` | `rtk-hook` | pass | -1 | `correct_but_not_saved` |
+| `fairfind` | `rtk-hook` | pass | 0 | `correct_but_not_saved` |
+| `fairrg` | `rtk-hook` | pass | 0 | `correct_but_not_saved` |
 | `findcase` | `rtk-hook` | gateway_error | - | `gateway_error` |
 | `findcase` | `tke` | fail | 0 | `wrong_and_not_saved` |
 
@@ -121,7 +140,7 @@ Claude aggregate by mode:
 
 | Variant | Cases | Pass | Fail | Gateway | Ungraded | Total tool tokens saved |
 | --- | --- | --- | --- | --- | --- | --- |
-| `rtk-hook` | 2 | 0 | 1 | 1 | 0 | -2 |
+| `rtk-hook` | 4 | 3 | 0 | 1 | 0 | -1 |
 | `tke` | 1 | 0 | 1 | 0 | 0 | 0 |
 
 ## Claude Live Probes
@@ -152,8 +171,8 @@ Claude fair-attempt summary:
 | `fairbuild` | `raw` | yes | yes | no | - |
 | `fairbuild` | `rtk-hook` | yes | yes | no | - |
 | `fairfind` | `raw` | yes | yes | no | - |
-| `fairfind` | `rtk-hook` | no | no | no | - |
+| `fairfind` | `rtk-hook` | yes | yes | no | - |
 | `fairrg` | `raw` | yes | yes | no | - |
-| `fairrg` | `rtk-hook` | no | no | no | - |
+| `fairrg` | `rtk-hook` | yes | yes | no | - |
 
 Successful live compatibility probes: `compatfind`, `livebuild`, `livediff`, `livefind`, `liverg`.

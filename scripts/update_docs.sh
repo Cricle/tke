@@ -193,6 +193,78 @@ def collect_summary_rows(report, wanted_modes=None):
     return rows
 
 
+def collect_fair_compare_rows(report, agent_label, variant_mode):
+    rows = []
+    if not report:
+        return rows
+    for case in sorted(report["cases"], key=lambda item: normalize_case_name(item["name"])):
+        case_name = normalize_case_name(case["name"])
+        if not case_name.startswith("fair"):
+            continue
+        baseline = case["baseline"]
+        variant = next((item for item in case["variants"] if item["mode"] == variant_mode), None)
+        if variant is None:
+            continue
+        raw_status = baseline["correctness"]["status"]
+        variant_status = variant["sample"]["correctness"]["status"]
+        rows.append(
+            [
+                f"`{agent_label}`",
+                f"`{case_name}`",
+                raw_status,
+                variant_status,
+                str(baseline["tool_tokens"]),
+                str(variant["sample"]["tool_tokens"]),
+                str(variant["tool_tokens_saved"]),
+                f"`{variant['verdict']}`",
+            ]
+        )
+    return rows
+
+
+def collect_fair_compare_summary_rows(items):
+    rows = []
+    for agent_label, report, variant_mode in items:
+        if not report:
+            continue
+        totals = {
+            "cases": 0,
+            "pass": 0,
+            "fail": 0,
+            "gateway_error": 0,
+            "ungraded": 0,
+            "tool_tokens_saved": 0,
+        }
+        for case in report["cases"]:
+            case_name = normalize_case_name(case["name"])
+            if not case_name.startswith("fair"):
+                continue
+            variant = next((item for item in case["variants"] if item["mode"] == variant_mode), None)
+            if variant is None:
+                continue
+            totals["cases"] += 1
+            status = variant["sample"]["correctness"]["status"]
+            if status in totals:
+                totals[status] += 1
+            if status != "gateway_error":
+                totals["tool_tokens_saved"] += variant["tool_tokens_saved"]
+        if totals["cases"] == 0:
+            continue
+        rows.append(
+            [
+                f"`{agent_label}`",
+                f"`{variant_mode}`",
+                str(totals["cases"]),
+                str(totals["pass"]),
+                str(totals["fail"]),
+                str(totals["gateway_error"]),
+                str(totals["ungraded"]),
+                str(totals["tool_tokens_saved"]),
+            ]
+        )
+    return rows
+
+
 def normalize_case_name(name):
     if name.startswith("livefind") or name.startswith("compatfind"):
         return "findcase"
@@ -210,6 +282,16 @@ codex_rtk_rows = collect_variant_rows(codex, {"rtk-codex-rules"})
 claude_rows = collect_variant_rows(claude, {"tke", "rtk-hook"})
 codex_summary_rows = collect_summary_rows(codex, {"tke", "rtk-codex-rules", "rtk-direct"})
 claude_summary_rows = collect_summary_rows(claude, {"tke", "rtk-hook"})
+fair_compare_rows = (
+    collect_fair_compare_rows(codex, "codex", "rtk-codex-rules")
+    + collect_fair_compare_rows(claude, "claude", "rtk-hook")
+)
+fair_compare_summary_rows = collect_fair_compare_summary_rows(
+    [
+        ("codex", codex, "rtk-codex-rules"),
+        ("claude", claude, "rtk-hook"),
+    ]
+)
 
 benchmarks_md = [
     "# Benchmarks",
@@ -270,7 +352,7 @@ if codex:
         ]
     )
 
-if codex_rtk_rows:
+if codex_rtk_rows or fair_compare_rows:
     benchmarks_md.extend(
         [
             "",
@@ -282,11 +364,30 @@ if codex_rtk_rows:
             "- Claude: `rtk-hook`",
             "",
             md_table(
-                ["Case", "Variant", "Correct", "Tool token savings", "Verdict"],
-                codex_rtk_rows,
+                ["Agent", "Case", "Raw", "RTK path", "Raw tool tokens", "RTK tool tokens", "Tool token delta", "Verdict"],
+                fair_compare_rows or [["-", "-", "-", "-", "-", "-", "-", "-"]],
             ),
         ]
     )
+    if fair_compare_summary_rows:
+        benchmarks_md.extend(
+            [
+                "",
+                "Fair-path aggregate by agent:",
+                "",
+                md_table(
+                    ["Agent", "Variant", "Cases", "Pass", "Fail", "Gateway", "Ungraded", "Total tool token delta"],
+                    fair_compare_summary_rows,
+                ),
+                "",
+                "Codex RTK variant rows:",
+                "",
+                md_table(
+                    ["Case", "Variant", "Correct", "Tool token savings", "Verdict"],
+                    codex_rtk_rows,
+                ),
+            ]
+        )
 
 if claude:
     benchmarks_md.extend(
