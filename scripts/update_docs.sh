@@ -174,6 +174,7 @@ comparison_task_specs = [
     ("complex/code-trace", "claude_bash_trace_complex_code_trace_task", "claude_rtk_hook_trace_complex_code_trace_task"),
     ("complex/stacktrace", "claude_bash_trace_complex_stacktrace_task", "claude_rtk_hook_trace_complex_stacktrace_task"),
     ("complex/stacktrace-diff", "claude_bash_trace_complex_stacktrace_diff_task", "claude_rtk_hook_trace_complex_stacktrace_diff_task"),
+    ("complex/root-cause", "claude_bash_trace_complex_root_cause_task", "claude_rtk_hook_trace_complex_root_cause_task"),
 ]
 
 comparison_task_rows = []

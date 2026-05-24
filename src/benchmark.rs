@@ -786,6 +786,7 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
     let complex_code_trace_answer = "The combined code-trace preserves file summary, search summary, git diff summary, and cargo log summary across four Bash tool invocations.";
     let complex_stacktrace_answer = "The combined stacktrace triage preserves python traceback summary, rg search summary, and cargo log summary across three Bash tool invocations.";
     let complex_stacktrace_diff_answer = "The combined debug trace preserves python traceback summary, git diff summary, rg search summary, and cargo log summary across four Bash tool invocations.";
+    let complex_root_cause_answer = "The combined root-cause trace preserves pathlist, search, file summary, git diff summary, and cargo log summary across five Bash tool invocations.";
     let rtk_hook_find_answer = "The RTK hook sample preserves the same find pathlist-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_search_answer = "The RTK hook sample preserves the same rg search-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_diff_answer = "The RTK hook sample preserves the same git diff-stage metadata and semantic answer fragments for Claude-style hook integrations.";
@@ -794,6 +795,7 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
     let rtk_hook_complex_code_trace_answer = "The RTK hook code-trace preserves file summary, search summary, git diff summary, and cargo log summary across four Bash tool invocations.";
     let rtk_hook_complex_stacktrace_answer = "The RTK hook stacktrace triage preserves python traceback summary, rg search summary, and cargo log summary across three Bash tool invocations.";
     let rtk_hook_complex_stacktrace_diff_answer = "The RTK hook debug trace preserves python traceback summary, git diff summary, rg search summary, and cargo log summary across four Bash tool invocations.";
+    let rtk_hook_complex_root_cause_answer = "The RTK hook root-cause trace preserves pathlist, search, file summary, git diff summary, and cargo log summary across five Bash tool invocations.";
     vec![
         BenchmarkTaskSpec {
             name: "codex_api_trace_rollout_savings".to_owned(),
@@ -1291,6 +1293,68 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
             ),
         },
         BenchmarkTaskSpec {
+            name: "claude_bash_trace_complex_root_cause_task".to_owned(),
+            mode: "api".to_owned(),
+            objective: "Verify that Claude preserves the key summaries across a five-step root-cause flow with path discovery, search, file read, diff inspection, and build-log follow-up.".to_owned(),
+            required_fragments: vec![
+                "\"sc\":\"find\"".to_owned(),
+                "\"p\":\"pathlist\"".to_owned(),
+                "\"sc\":\"rg\"".to_owned(),
+                "\"sr\":\"search\"".to_owned(),
+                "\"sc\":\"sed\"".to_owned(),
+                "\"p\":\"file\"".to_owned(),
+                "\"sc\":\"git\"".to_owned(),
+                "\"p\":\"diff\"".to_owned(),
+                "\"df\":".to_owned(),
+                "\"sc\":\"cargo\"".to_owned(),
+                "\"p\":\"log\"".to_owned(),
+                "\"lg\":".to_owned(),
+                complex_root_cause_answer.to_owned(),
+            ],
+            rollout: build_claude_tool_rollout_steps(
+                &[
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_root_cause_1".to_owned(),
+                        command: "find /root/project/src -type f | head -n 200".to_owned(),
+                        output: repeated_benchmark_paths(200),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_root_cause_2".to_owned(),
+                        command: "rg -n \"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\" src".to_owned(),
+                        output: repeated_task_search_output(
+                            &[
+                                "src/tests.rs:2538:                \"result\": \"STAGE=rg -n \\\"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\\\" src\\nFILE=src/tests.rs\\nKIND=search\"",
+                                "src/e2e_report.rs:167:    let rewritten = rewrite_agent_transcript(&raw_text, config)?;",
+                                "src/app.rs:289:        Some(\"compare-e2e\") => parse_compare_e2e(args),",
+                            ],
+                            120,
+                            "src/tests.rs",
+                            "root_cause_search_trace",
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_root_cause_3".to_owned(),
+                        command: "sed -n '1,180p' src/rewrite.rs".to_owned(),
+                        output: repeated_benchmark_code(180),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_root_cause_4".to_owned(),
+                        command: "git diff -- src/lib.rs".to_owned(),
+                        output: repeated_benchmark_diff(),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_root_cause_5".to_owned(),
+                        command: "cargo test -- --nocapture | tail -n 80".to_owned(),
+                        output: format!(
+                            "{}\nerror: test failed, to rerun pass --lib\nwarning: deprecated assertion helper\n",
+                            repeated_lines("test parser::case ... ok", 120)
+                        ),
+                    },
+                ],
+                complex_root_cause_answer,
+            ),
+        },
+        BenchmarkTaskSpec {
             name: "claude_rtk_hook_trace_selected_find_stage".to_owned(),
             mode: "api".to_owned(),
             objective: "Verify that the RTK hook path preserves find pathlist-stage semantics for Claude-style hook integrations.".to_owned(),
@@ -1607,6 +1671,68 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
                     },
                 ],
                 rtk_hook_complex_stacktrace_diff_answer,
+            ),
+        },
+        BenchmarkTaskSpec {
+            name: "claude_rtk_hook_trace_complex_root_cause_task".to_owned(),
+            mode: "api".to_owned(),
+            objective: "Verify that the RTK hook path preserves the key summaries across a five-step root-cause flow with path discovery, search, file read, diff inspection, and build-log follow-up.".to_owned(),
+            required_fragments: vec![
+                "\"sc\":\"find\"".to_owned(),
+                "\"p\":\"pathlist\"".to_owned(),
+                "\"sc\":\"rg\"".to_owned(),
+                "\"sr\":\"search\"".to_owned(),
+                "\"sc\":\"sed\"".to_owned(),
+                "\"p\":\"file\"".to_owned(),
+                "\"sc\":\"git\"".to_owned(),
+                "\"p\":\"diff\"".to_owned(),
+                "\"df\":".to_owned(),
+                "\"sc\":\"cargo\"".to_owned(),
+                "\"p\":\"log\"".to_owned(),
+                "\"lg\":".to_owned(),
+                rtk_hook_complex_root_cause_answer.to_owned(),
+            ],
+            rollout: build_claude_tool_rollout_steps(
+                &[
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_root_cause_1".to_owned(),
+                        command: "find /root/project/src -type f | head -n 200".to_owned(),
+                        output: repeated_benchmark_paths(200),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_root_cause_2".to_owned(),
+                        command: "rg -n \"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\" src".to_owned(),
+                        output: repeated_task_search_output(
+                            &[
+                                "src/tests.rs:2538:                \"result\": \"STAGE=rg -n \\\"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\\\" src\\nFILE=src/tests.rs\\nKIND=search\"",
+                                "src/e2e_report.rs:167:    let rewritten = rewrite_agent_transcript(&raw_text, config)?;",
+                                "src/app.rs:289:        Some(\"compare-e2e\") => parse_compare_e2e(args),",
+                            ],
+                            120,
+                            "src/tests.rs",
+                            "rtk_root_cause_search_trace",
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_root_cause_3".to_owned(),
+                        command: "sed -n '1,180p' src/rewrite.rs".to_owned(),
+                        output: repeated_benchmark_code(180),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_root_cause_4".to_owned(),
+                        command: "git diff -- src/lib.rs".to_owned(),
+                        output: repeated_benchmark_diff(),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_root_cause_5".to_owned(),
+                        command: "cargo test -- --nocapture | tail -n 80".to_owned(),
+                        output: format!(
+                            "{}\nerror: test failed, to rerun pass --lib\nwarning: deprecated assertion helper\n",
+                            repeated_lines("test parser::case ... ok", 120)
+                        ),
+                    },
+                ],
+                rtk_hook_complex_root_cause_answer,
             ),
         },
     ]
