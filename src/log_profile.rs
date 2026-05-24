@@ -80,12 +80,7 @@ fn push_fold_chunk(
     out.push(MatchChunk {
         k: "fold".to_owned(),
         r: fold.range,
-        l: vec![format!(
-            "repeat:{} count:{} sample:{}",
-            end.saturating_sub(start),
-            fold.count,
-            fold.sample
-        )],
+        l: vec![format!("rep:{} c:{} s:{}", end.saturating_sub(start), fold.count, fold.sample)],
     });
     true
 }
@@ -131,7 +126,7 @@ fn canonicalize_log_line(line: &str) -> String {
 }
 
 fn truncate_for_sample(line: &str) -> String {
-    const MAX: usize = 96;
+    const MAX: usize = 72;
     if line.len() <= MAX {
         line.to_owned()
     } else {

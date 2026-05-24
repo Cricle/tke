@@ -26,7 +26,7 @@ Generated from:
 | `pytest_run` | log | 827 | 210 | 617 | 74.6% |
 | `npm_test` | log | 735 | 192 | 543 | 73.9% |
 | `dotnet_test` | log | 827 | 210 | 617 | 74.6% |
-| `go_test` | log | 705 | 165 | 540 | 76.6% |
+| `go_test` | log | 705 | 162 | 543 | 77.0% |
 | `ninja_build` | log | 796 | 199 | 597 | 75.0% |
 | `ps_table` | table | 655 | 153 | 502 | 76.6% |
 | `systemctl_table` | table | 682 | 126 | 556 | 81.5% |
@@ -71,7 +71,7 @@ This section is generated from the current benchmark and E2E artifacts. The clai
 
 | Evidence area | `tke` result | `rtk` result in this repo | Why this matters |
 | --- | --- | --- | --- |
-| Built-in local compression benchmarks | `33/34` cases, `57772` tokens saved, `91.1%` | No equivalent repo-local tool-output benchmark runner in this repo | `tke` can be measured locally and repeatedly without depending on agent compliance |
+| Built-in local compression benchmarks | `33/34` cases, `57775` tokens saved, `91.1%` | No equivalent repo-local tool-output benchmark runner in this repo | `tke` can be measured locally and repeatedly without depending on agent compliance |
 | Built-in rollout/task traces | `17` traces, `88935` tokens saved, `91.3%` | RTK participates only through the fairness/synthetic harness subset wired here | `tke` has broader measured coverage inside the repo |
 | Codex real E2E | `4/4` pass, `6257` tool tokens saved | `0/2` pass, `11` token delta | Current real Codex evidence favors `tke` clearly |
 | Structured output surface | `pathlist`, `search`, `diff`, `log`, `table`, and `file` profiles emit inspectable `__TKE__{...}` summaries | No equivalent repo-local structured envelope | `tke` gives a concrete artifact that tooling can compare and audit |
@@ -81,7 +81,7 @@ Current built-in totals:
 
 | Scope | Cases | Tokens saved | Savings ratio |
 | --- | --- | --- | --- |
-| Default compress benchmarks | 33 | 57772 | 91.1% |
+| Default compress benchmarks | 33 | 57775 | 91.1% |
 | Built-in rollout/task traces | 17 | 88935 | 91.3% |
 
 Per-profile compression totals:
@@ -90,7 +90,7 @@ Per-profile compression totals:
 | --- | --- | --- | --- |
 | `diff` | 1 | 3459 | 93.7% |
 | `file` | 9 | 5468 | 78.1% |
-| `log` | 12 | 6995 | 74.9% |
+| `log` | 12 | 6998 | 74.9% |
 | `pathlist` | 6 | 36421 | 98.5% |
 | `search` | 2 | 4060 | 89.9% |
 | `table` | 3 | 1369 | 71.5% |
@@ -132,7 +132,7 @@ The current local comparison is broader than raw token totals alone. `tke` now e
 | --- | --- | --- |
 | `pathlist` | `pl.d` shared dir, compact `pl.f`/`pl.l`, examples | No equivalent repo-local structured summary |
 | `search` | Grouped file chunks with full first hit and compact followups | No equivalent repo-local structured summary |
-| `log` | `lg.fail`, `lg.warn`, `lg.ff`, `lg.fw` | No equivalent repo-local structured summary |
+| `log` | `lg.fail`, `lg.warn`, `lg.first_fail`, `lg.first_warn` | No equivalent repo-local structured summary |
 | `diff` | `df.f[].p/add/del` per-file summaries | No equivalent repo-local structured summary |
 
 ## Codex Real E2E
