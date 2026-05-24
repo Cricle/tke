@@ -4,11 +4,12 @@ use crate::benchmark::estimate_text_tokens;
 use crate::rewrite::{LivePipelineDecision, detect_linux_parent_pipeline, live_pipeline_decision};
 use crate::rollout_io::InteractiveTracker;
 use crate::trim::{
-    CommandKind, TrimEnvelope, TrimProfile, TrimStats, classify_command, collect_kept_ranges,
-    collect_path_list_kept_ranges, collect_path_list_summary, collect_profile_chunks,
-    collect_table_kept_ranges, collect_table_summary, compact_args, compute_omitted_ranges,
-    create_single_shim, exit_code, match_terms, merge_ranges, profile_limits, read_stdin_if_piped,
-    real_path_string, select_profile, should_force_trim, take_head, take_tail,
+    CommandKind, TrimEnvelope, TrimProfile, TrimStats, classify_command, collect_diff_summary,
+    collect_kept_ranges, collect_path_list_kept_ranges, collect_path_list_summary,
+    collect_profile_chunks, collect_table_kept_ranges, collect_table_summary, compact_args,
+    compute_omitted_ranges, create_single_shim, exit_code, match_terms, merge_ranges,
+    profile_limits, read_stdin_if_piped, real_path_string, select_profile, should_force_trim,
+    take_head, take_tail,
 };
 use std::collections::BTreeSet;
 use std::env;
@@ -471,6 +472,11 @@ pub(crate) fn normalize_text_with_stage(
     } else {
         None
     };
+    let diff_summary = if forced && profile == TrimProfile::Diff {
+        collect_diff_summary(&lines)
+    } else {
+        None
+    };
     let log_summary = if forced && profile == TrimProfile::Log {
         Some(crate::log_profile::collect_log_summary(&lines))
     } else {
@@ -551,6 +557,7 @@ pub(crate) fn normalize_text_with_stage(
         tb: table,
         pl: pathlist,
         lg: log_summary,
+        df: diff_summary,
         b: body,
     };
     Ok(serde_json::to_string(&envelope)?)

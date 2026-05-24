@@ -296,6 +296,51 @@ pub(crate) fn collect_path_list_kept_ranges(pathlist: &PathListSummary) -> Vec<(
     crate::path_profile::collect_path_list_kept_ranges(pathlist)
 }
 
+pub(crate) fn collect_diff_summary(lines: &[&str]) -> Option<DiffSummary> {
+    let mut files = Vec::new();
+    let mut current: Option<DiffFileSummary> = None;
+
+    for line in lines {
+        if let Some(path) = line.strip_prefix("diff --git ") {
+            if let Some(file) = current.take() {
+                files.push(file);
+            }
+            let path = path
+                .split_whitespace()
+                .next()
+                .unwrap_or_default()
+                .trim_start_matches("a/")
+                .to_owned();
+            current = Some(DiffFileSummary {
+                p: path,
+                add: 0,
+                del: 0,
+            });
+            continue;
+        }
+        let Some(file) = current.as_mut() else {
+            continue;
+        };
+        if line.starts_with("+++ ") || line.starts_with("--- ") || line.starts_with("@@") {
+            continue;
+        }
+        if line.starts_with('+') {
+            file.add += 1;
+        } else if line.starts_with('-') {
+            file.del += 1;
+        }
+    }
+
+    if let Some(file) = current.take() {
+        files.push(file);
+    }
+    if files.is_empty() {
+        return None;
+    }
+    files.truncate(6);
+    Some(DiffSummary { f: files })
+}
+
 pub(crate) fn match_terms(name: &str, args: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     let mut seen = HashSet::new();
@@ -1290,6 +1335,8 @@ pub(crate) struct TrimEnvelope {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) lg: Option<LogSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) df: Option<DiffSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) b: Option<Vec<String>>,
 }
 
@@ -1363,6 +1410,20 @@ pub(crate) struct LogSummary {
     pub(crate) first_fail: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) first_warn: Option<String>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct DiffSummary {
+    pub(crate) f: Vec<DiffFileSummary>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct DiffFileSummary {
+    pub(crate) p: String,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub(crate) add: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub(crate) del: usize,
 }
 
 fn is_zero(value: &usize) -> bool {

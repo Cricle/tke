@@ -147,6 +147,9 @@ fn diff_profile_marks_hunks() {
     .expect("normalize");
     let value: serde_json::Value = serde_json::from_str(&json).expect("json");
     assert_eq!(value["p"], "diff");
+    assert_eq!(value["df"]["f"][0]["p"], "src/lib.rs");
+    assert_eq!(value["df"]["f"][0]["add"], 1);
+    assert_eq!(value["df"]["f"][0]["del"], 1);
     assert!(
         value["m"]
             .as_array()
@@ -154,6 +157,47 @@ fn diff_profile_marks_hunks() {
             .iter()
             .any(|chunk| chunk["k"] == "hunk")
     );
+}
+
+#[test]
+fn diff_profile_emits_per_file_add_delete_summary() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "diff --git a/src/lib.rs b/src/lib.rs",
+        "index 123..456 100644",
+        "--- a/src/lib.rs",
+        "+++ b/src/lib.rs",
+        "@@ -1,2 +1,3 @@",
+        "-old_line",
+        "+new_line",
+        "+new_call();",
+        "diff --git a/src/main.rs b/src/main.rs",
+        "index 999..abc 100644",
+        "--- a/src/main.rs",
+        "+++ b/src/main.rs",
+        "@@ -10,1 +10,0 @@",
+        "-removed_main",
+    ]
+    .join("\n");
+    let json = normalize_text(
+        "git",
+        &["diff".to_owned(), "--".to_owned(), "src".to_owned()],
+        "stdout",
+        CommandKind::Diff,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&json);
+    assert_eq!(value["p"], "diff");
+    let files = value["df"]["f"].as_array().expect("diff files");
+    assert_eq!(files[0]["p"], "src/lib.rs");
+    assert_eq!(files[0]["add"], 2);
+    assert_eq!(files[0]["del"], 1);
+    assert_eq!(files[1]["p"], "src/main.rs");
+    assert!(files[1]["add"].is_null());
+    assert_eq!(files[1]["del"], 1);
 }
 
 #[test]
