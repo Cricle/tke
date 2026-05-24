@@ -128,6 +128,33 @@ for task in benchmark["tasks"]:
     )
 
 
+def task_by_name(name):
+    return next((task for task in benchmark["tasks"] if task["name"] == name), None)
+
+
+comparison_task_specs = [
+    ("find/pathlist", "claude_bash_trace_selected_find_stage", "claude_rtk_hook_trace_selected_find_stage"),
+    ("search", "claude_bash_trace_selected_search_stage", "claude_rtk_hook_trace_selected_search_stage"),
+    ("build/log", "claude_bash_trace_selected_build_stage", "claude_rtk_hook_trace_selected_build_stage"),
+]
+
+comparison_task_rows = []
+for label, tke_name, rtk_name in comparison_task_specs:
+    tke_task = task_by_name(tke_name)
+    rtk_task = task_by_name(rtk_name)
+    if not tke_task or not rtk_task:
+        continue
+    comparison_task_rows.append(
+        [
+            label,
+            f"`{tke_task['tokens_saved']}` ({pct(tke_task['tokens_saved_ratio'])})",
+            f"`{rtk_task['tokens_saved']}` ({pct(rtk_task['tokens_saved_ratio'])})",
+            f"`{len(tke_task['preserved_fragments'])}/{len(tke_task['required_fragments'])}`",
+            f"`{len(rtk_task['preserved_fragments'])}/{len(rtk_task['required_fragments'])}`",
+        ]
+    )
+
+
 def collect_variant_rows(report, wanted_modes=None):
     rows = []
     if not report:
@@ -320,6 +347,13 @@ benchmarks_md = [
     md_table(
         ["Task", "Mode", "Raw tokens", "Rewritten tokens", "Tokens saved", "Savings"],
         task_rows,
+    ),
+    "",
+    "Task-mode comparison for Claude-oriented stable synthetic traces:",
+    "",
+    md_table(
+        ["Scenario", "TKE task savings", "RTK hook task savings", "TKE fragments kept", "RTK hook fragments kept"],
+        comparison_task_rows,
     ),
     "",
     "## Structured Summary Coverage",

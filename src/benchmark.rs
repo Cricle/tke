@@ -781,6 +781,7 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
     let pipeline_answer = "The selected stage is rg, so the normalized payload preserves sc=rg and sr=search instead of keeping the upstream cat or downstream head stage.";
     let find_pipeline_answer = "The selected stage is find, so the normalized payload preserves sc=find and sr=search and keeps the path list summary instead of the tail stage semantics.";
     let build_pipeline_answer = "The selected stage is cargo, so the normalized payload preserves sc=cargo and sr=build and keeps the log/error summary instead of the tail stage semantics.";
+    let rtk_hook_find_answer = "The RTK hook sample preserves the same find pathlist-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_search_answer = "The RTK hook sample preserves the same rg search-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_build_answer = "The RTK hook sample preserves the same cargo build-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     vec![
@@ -1030,6 +1031,27 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
                     ),
                 }],
                 build_pipeline_answer,
+            ),
+        },
+        BenchmarkTaskSpec {
+            name: "claude_rtk_hook_trace_selected_find_stage".to_owned(),
+            mode: "api".to_owned(),
+            objective: "Verify that the RTK hook path preserves find pathlist-stage semantics for Claude-style hook integrations.".to_owned(),
+            required_fragments: vec![
+                "\"sc\":\"find\"".to_owned(),
+                "\"sr\":\"search\"".to_owned(),
+                "\"p\":\"pathlist\"".to_owned(),
+                "\"d\":\"/root/project/target/debug/incremental/tke\"".to_owned(),
+                "\"f\":\"build-artifact-0000.o\"".to_owned(),
+                rtk_hook_find_answer.to_owned(),
+            ],
+            rollout: build_claude_tool_rollout_steps(
+                &[BenchmarkTaskStep {
+                    call_id: "claude_rtk_hook_task_find_1".to_owned(),
+                    command: "find /root/project -type f | head -n 500".to_owned(),
+                    output: repeated_benchmark_paths(500),
+                }],
+                rtk_hook_find_answer,
             ),
         },
         BenchmarkTaskSpec {

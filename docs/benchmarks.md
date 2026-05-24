@@ -16,18 +16,18 @@ Generated from:
 | `sed_code` | file | 743 | 164 | 579 | 77.9% |
 | `bat_code` | file | 743 | 165 | 578 | 77.8% |
 | `nl_code` | file | 1058 | 189 | 869 | 82.1% |
-| `rg_code` | search | 2257 | 250 | 2007 | 88.9% |
-| `grep_code` | search | 2257 | 252 | 2005 | 88.8% |
-| `find_paths` | pathlist | 8151 | 137 | 8014 | 98.3% |
-| `fd_paths` | pathlist | 8151 | 137 | 8014 | 98.3% |
-| `tree_paths` | pathlist | 3926 | 137 | 3789 | 96.5% |
-| `git_diff` | diff | 3691 | 222 | 3469 | 94.0% |
-| `cargo_build` | log | 796 | 170 | 626 | 78.6% |
-| `pytest_run` | log | 827 | 182 | 645 | 78.0% |
-| `npm_test` | log | 735 | 166 | 569 | 77.4% |
-| `dotnet_test` | log | 827 | 182 | 645 | 78.0% |
-| `go_test` | log | 705 | 139 | 566 | 80.3% |
-| `ninja_build` | log | 796 | 172 | 624 | 78.4% |
+| `rg_code` | search | 2257 | 226 | 2031 | 90.0% |
+| `grep_code` | search | 2257 | 228 | 2029 | 89.9% |
+| `find_paths` | pathlist | 8151 | 96 | 8055 | 98.8% |
+| `fd_paths` | pathlist | 8151 | 96 | 8055 | 98.8% |
+| `tree_paths` | pathlist | 3926 | 96 | 3830 | 97.6% |
+| `git_diff` | diff | 3691 | 232 | 3459 | 93.7% |
+| `cargo_build` | log | 796 | 201 | 595 | 74.7% |
+| `pytest_run` | log | 827 | 214 | 613 | 74.1% |
+| `npm_test` | log | 735 | 196 | 539 | 73.3% |
+| `dotnet_test` | log | 827 | 214 | 613 | 74.1% |
+| `go_test` | log | 705 | 169 | 536 | 76.0% |
+| `ninja_build` | log | 796 | 203 | 593 | 74.5% |
 | `ps_table` | table | 655 | 153 | 502 | 76.6% |
 | `systemctl_table` | table | 682 | 126 | 556 | 81.5% |
 
@@ -35,28 +35,37 @@ Profile averages:
 
 | Profile | Cases | Average token savings |
 | --- | --- | --- |
-| diff | 1 | 94.0% |
+| diff | 1 | 93.7% |
 | file | 9 | 77.9% |
 | generic | 1 | 0.0% |
-| log | 12 | 78.3% |
-| pathlist | 6 | 96.1% |
-| search | 2 | 88.9% |
-| table | 3 | 70.8% |
+| log | 12 | 74.4% |
+| pathlist | 6 | 96.6% |
+| search | 2 | 89.9% |
+| table | 3 | 70.6% |
 
 Built-in rollout/task benchmarks:
 
 | Task | Mode | Raw tokens | Rewritten tokens | Tokens saved | Savings |
 | --- | --- | --- | --- | --- | --- |
-| `codex_api_trace_rollout_savings` | api | 5389 | 512 | 4877 | 90.5% |
-| `codex_api_trace_default_tool_coverage` | api | 4021 | 777 | 3244 | 80.7% |
+| `codex_api_trace_rollout_savings` | api | 5389 | 505 | 4884 | 90.6% |
+| `codex_api_trace_default_tool_coverage` | api | 4021 | 769 | 3252 | 80.9% |
 | `codex_interactive_trace_selected_search_stage` | interactive | 2913 | 570 | 2343 | 80.4% |
-| `codex_interactive_trace_selected_find_stage` | interactive | 8125 | 137 | 7988 | 98.3% |
-| `codex_interactive_trace_selected_build_stage` | interactive | 1102 | 200 | 902 | 81.9% |
-| `claude_bash_trace_selected_search_stage` | api | 2416 | 526 | 1890 | 78.2% |
-| `claude_bash_trace_selected_find_stage` | api | 8164 | 176 | 7988 | 97.8% |
-| `claude_bash_trace_selected_build_stage` | api | 1141 | 239 | 902 | 79.1% |
-| `claude_rtk_hook_trace_selected_search_stage` | api | 2137 | 425 | 1712 | 80.1% |
-| `claude_rtk_hook_trace_selected_build_stage` | api | 1135 | 233 | 902 | 79.5% |
+| `codex_interactive_trace_selected_find_stage` | interactive | 8125 | 96 | 8029 | 98.8% |
+| `codex_interactive_trace_selected_build_stage` | interactive | 1102 | 230 | 872 | 79.1% |
+| `claude_bash_trace_selected_search_stage` | api | 2416 | 556 | 1860 | 77.0% |
+| `claude_bash_trace_selected_find_stage` | api | 8164 | 135 | 8029 | 98.3% |
+| `claude_bash_trace_selected_build_stage` | api | 1141 | 269 | 872 | 76.4% |
+| `claude_rtk_hook_trace_selected_find_stage` | api | 8159 | 130 | 8029 | 98.4% |
+| `claude_rtk_hook_trace_selected_search_stage` | api | 2137 | 416 | 1721 | 80.5% |
+| `claude_rtk_hook_trace_selected_build_stage` | api | 1135 | 263 | 872 | 76.8% |
+
+Task-mode comparison for Claude-oriented stable synthetic traces:
+
+| Scenario | TKE task savings | RTK hook task savings | TKE fragments kept | RTK hook fragments kept |
+| --- | --- | --- | --- | --- |
+| find/pathlist | `8029` (98.3%) | `8029` (98.4%) | `4/4` | `6/6` |
+| search | `1860` (77.0%) | `1721` (80.5%) | `3/3` | `4/4` |
+| build/log | `872` (76.4%) | `872` (76.8%) | `5/5` | `5/5` |
 
 ## Structured Summary Coverage
 
