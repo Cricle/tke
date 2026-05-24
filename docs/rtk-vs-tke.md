@@ -20,6 +20,8 @@ This document compares `rtk` and `tke` using the current repo implementation and
 
 ## How They Work Here
 
+For the full execution model, including shim activation, agent context propagation, pipeline selection, and transcript rewriting, see [docs/how-it-works.md](/root/github/tke/docs/how-it-works.md:1).
+
 ### TKE
 
 `tke` wraps both agent commands and downstream tools, then rewrites long command output into compact structured payloads. The main runtime entrypoints are:
@@ -33,6 +35,17 @@ That gives `tke` two important properties:
 - Compression is explicit and observable.
 - Results are comparatively deterministic once the command output is known.
 
+In concrete terms, the runtime chain in this repo is:
+
+1. `tke activate` or `tke <agent>` creates shims and exports `TKE_BIN`, `TKE_SHIM_DIR`, and `TKE_REAL_PATH`
+2. `run_shim(...)` decides whether the invoked name is an agent, a wrapped tool, or a passthrough
+3. `run_agent_command(...)` marks agent context and launches the real agent
+4. agent-owned tool calls reach `run_tool_command(...)`, where output is captured and normalized
+5. the normalized payload is emitted as `__TKE__{...}` with profile-specific summaries such as `pl`, `df`, and `lg`
+6. the same normalization core is reused by offline transcript rewriting through `rewrite_agent_transcript(...)`
+
+That split between live interception and offline rewriting is important: the benchmarks and E2E reports in this repo are not using a separate mock implementation, they are exercising the same core rewrite logic through different entrypoints.
+
 ### RTK
 
 In this repo, RTK is evaluated through each agent's real integration path instead of a single universal mode:
@@ -41,6 +54,15 @@ In this repo, RTK is evaluated through each agent's real integration path instea
 - Claude uses `rtk-hook` in [scripts/claude_e2e_compare.sh](/root/github/tke/scripts/claude_e2e_compare.sh:191)
 
 That means RTK behavior depends more on whether the target agent actually follows the intended path.
+
+The runtime chain is therefore different from `tke`:
+
+1. the harness selects the fair per-agent RTK mode
+2. the agent receives RTK through hook or rules integration
+3. the agent decides whether and how to follow that integration path
+4. correctness and token behavior are inferred from the resulting transcript or final answer
+
+So in this repo RTK is primarily measured as an agent-behavior path, while `tke` is measured as a local tool-output transformation path.
 
 ## Stability and Observability
 

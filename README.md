@@ -4,6 +4,8 @@ Local token shaving shim for AI coding CLIs.
 
 More detailed benchmark and real E2E notes live under [docs/README.md](./docs/README.md).
 
+If you want the internal execution model instead of usage notes, start with [docs/how-it-works.md](./docs/how-it-works.md).
+
 ## What it does
 
 - Runs as a `Rust` binary with minimal dependencies.
@@ -18,6 +20,18 @@ More detailed benchmark and real E2E notes live under [docs/README.md](./docs/RE
 - Compresses common high-frequency CLI table/list output aggressively, especially `ps`, `ss`, `systemctl`, and `docker ps`.
 - Compresses large Linux path-list output aggressively, especially `find`, `fd`, and `tree` style file discovery output.
 - Falls back to the real command when not in agent context or when a command is whitelisted.
+
+## How it works
+
+At a high level, `tke` is a local interception layer rather than a prompt-only integration:
+
+1. `tke activate` or `tke <agent>` prepends a shim directory to `PATH`
+2. agent and tool names such as `codex`, `claude`, `rg`, `git`, and `cargo` resolve to `tke` shims first
+3. the shim decides whether the current process is an agent launch, an agent-owned tool call, or a passthrough
+4. wrapped tool output is captured and normalized into a compact `__TKE__{...}` payload when it is large enough
+5. saved rollouts and JSONL transcripts can be rewritten offline with the same normalization core
+
+That means `tke` works at the tool-output layer, not only at the final-answer layer. The detailed runtime flow, pipeline handling, and RTK comparison model are documented in [docs/how-it-works.md](./docs/how-it-works.md).
 
 ## Quick start
 
