@@ -108,7 +108,7 @@ The current gap is not just aggregate token savings. `tke` now exposes explicit 
 | --- | --- | --- |
 | `pathlist` | Shared-directory compaction with `pl.d`, `pl.f`, `pl.l`, compact examples, and bucketed rows | No equivalent repo-local structured pathlist summary |
 | `search` | Grouped file-level search chunks with full first hit and compact `:line:text` followups | No equivalent repo-local grouped search summary |
-| `log` | Lightweight `lg.fail`, `lg.warn`, `lg.first_fail`, `lg.first_warn` fields plus repeated-line folding | No equivalent repo-local structured log summary |
+| `log` | Lightweight `lg.fail`, `lg.warn`, `lg.ff`, `lg.fw` fields plus repeated-line folding | No equivalent repo-local structured log summary |
 | `diff` | Lightweight `df` file summaries with per-file `p`, `add`, and `del` counts | No equivalent repo-local structured diff summary |
 
 These summaries are emitted as part of the normal `__TKE__{...}` envelope rather than as benchmark-only side data. In this repo that matters because:
@@ -141,7 +141,7 @@ Interpretation:
 
 - `tke` is currently validated on real Codex tasks.
 - `rtk-codex-rules` is the fair RTK path for Codex, but the current sampled cases do not show comparable correctness or savings.
-- On the current synthetic command benchmark side, `tke` is strong on the high-volume profiles that dominate local tool cost: `search` `89.9%`, `pathlist` `96.6%`, `diff` `93.7%`, `log` `74.4%`.
+- On the current synthetic command benchmark side, `tke` is strong on the high-volume profiles that dominate local tool cost: `search` `89.9%`, `pathlist` `96.6%`, `diff` `93.7%`, `log` `74.9%`.
 
 ### Claude
 
@@ -155,7 +155,7 @@ Interpretation:
 - `rtk-hook` is currently the stable fairness path for Claude.
 - `tke` on Claude currently prioritizes compatibility by default and should not yet be treated as equally mature live compression.
 - Even so, the underlying `tke` local compression primitives are broader and more inspectable than the current RTK fairness path, because they operate on normalized tool output rather than only on agent integration behavior.
-- In the current six-scenario stable synthetic Claude-oriented traces, `tke` saves `34831` tokens total at `91.5%`, while `rtk-hook` saves `34692` at `91.8%`; both preserve all required semantic fragments in those controlled cases.
+- In the current six-scenario stable synthetic Claude-oriented traces, `tke` saves `34847` tokens total at `91.5%`, while `rtk-hook` saves `34704` at `91.9%`; both preserve all required semantic fragments in those controlled cases.
 
 ## Important Fairness Cases
 

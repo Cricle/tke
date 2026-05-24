@@ -1407,9 +1407,9 @@ pub(crate) struct LogSummary {
     #[serde(skip_serializing_if = "is_zero")]
     pub(crate) warn: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) first_fail: Option<String>,
+    pub(crate) ff: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) first_warn: Option<String>,
+    pub(crate) fw: Option<String>,
 }
 
 #[derive(Serialize)]

@@ -62,8 +62,8 @@ pub(crate) fn collect_log_summary(lines: &[&str]) -> LogSummary {
     LogSummary {
         fail,
         warn,
-        first_fail,
-        first_warn,
+        ff: first_fail,
+        fw: first_warn,
     }
 }
 

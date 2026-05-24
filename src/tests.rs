@@ -354,7 +354,7 @@ fn log_profile_folds_repeated_lines() {
     let value: serde_json::Value = serde_json::from_str(&json).expect("json");
     assert_eq!(value["p"], "log");
     assert_eq!(value["lg"]["fail"], 1);
-    assert_eq!(value["lg"]["first_fail"], "error: build failed");
+    assert_eq!(value["lg"]["ff"], "error: build failed");
     assert!(
         value["m"]
             .as_array()
@@ -388,8 +388,8 @@ fn log_profile_emits_failure_and_warning_counts() {
     assert_eq!(value["p"], "log");
     assert_eq!(value["lg"]["fail"], 2);
     assert_eq!(value["lg"]["warn"], 1);
-    assert_eq!(value["lg"]["first_fail"], "error: build failed");
-    assert_eq!(value["lg"]["first_warn"], "warning: deprecated item used");
+    assert_eq!(value["lg"]["ff"], "error: build failed");
+    assert_eq!(value["lg"]["fw"], "warning: deprecated item used");
 }
 
 #[test]
@@ -414,11 +414,8 @@ fn log_profile_does_not_treat_zero_failed_summary_as_failure() {
     assert_eq!(value["p"], "log");
     assert_eq!(value["lg"]["fail"], 0);
     assert_eq!(value["lg"]["warn"], 1);
-    assert!(value["lg"]["first_fail"].is_null());
-    assert_eq!(
-        value["lg"]["first_warn"],
-        "warning: deprecated fixture used"
-    );
+    assert!(value["lg"]["ff"].is_null());
+    assert_eq!(value["lg"]["fw"], "warning: deprecated fixture used");
 }
 
 #[test]
