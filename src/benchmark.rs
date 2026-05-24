@@ -781,8 +781,10 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
     let pipeline_answer = "The selected stage is rg, so the normalized payload preserves sc=rg and sr=search instead of keeping the upstream cat or downstream head stage.";
     let find_pipeline_answer = "The selected stage is find, so the normalized payload preserves sc=find and sr=search and keeps the path list summary instead of the tail stage semantics.";
     let build_pipeline_answer = "The selected stage is cargo, so the normalized payload preserves sc=cargo and sr=build and keeps the log/error summary instead of the tail stage semantics.";
+    let diff_pipeline_answer = "The selected stage is git diff, so the normalized payload preserves sc=git and p=diff and keeps the diff file summary instead of raw hunks.";
     let rtk_hook_find_answer = "The RTK hook sample preserves the same find pathlist-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_search_answer = "The RTK hook sample preserves the same rg search-stage metadata and semantic answer fragments for Claude-style hook integrations.";
+    let rtk_hook_diff_answer = "The RTK hook sample preserves the same git diff-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_build_answer = "The RTK hook sample preserves the same cargo build-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     vec![
         BenchmarkTaskSpec {
@@ -1011,6 +1013,27 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
             ),
         },
         BenchmarkTaskSpec {
+            name: "claude_bash_trace_selected_diff_stage".to_owned(),
+            mode: "api".to_owned(),
+            objective: "Verify which stage is preserved when Claude inspects git diff output.".to_owned(),
+            required_fragments: vec![
+                "\"sc\":\"git\"".to_owned(),
+                "\"p\":\"diff\"".to_owned(),
+                "\"df\":".to_owned(),
+                "\"add\":3".to_owned(),
+                "\"del\":1".to_owned(),
+                diff_pipeline_answer.to_owned(),
+            ],
+            rollout: build_claude_tool_rollout_steps(
+                &[BenchmarkTaskStep {
+                    call_id: "claude_task_diff_1".to_owned(),
+                    command: "git diff -- src/lib.rs".to_owned(),
+                    output: repeated_benchmark_diff(),
+                }],
+                diff_pipeline_answer,
+            ),
+        },
+        BenchmarkTaskSpec {
             name: "claude_bash_trace_selected_build_stage".to_owned(),
             mode: "api".to_owned(),
             objective: "Verify which stage is preserved when Claude inspects build output through a cargo test | tail pipeline.".to_owned(),
@@ -1080,6 +1103,27 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
                     ),
                 }],
                 rtk_hook_search_answer,
+            ),
+        },
+        BenchmarkTaskSpec {
+            name: "claude_rtk_hook_trace_selected_diff_stage".to_owned(),
+            mode: "api".to_owned(),
+            objective: "Verify that the RTK hook path preserves git diff-stage semantics for Claude-style hook integrations.".to_owned(),
+            required_fragments: vec![
+                "\"sc\":\"git\"".to_owned(),
+                "\"p\":\"diff\"".to_owned(),
+                "\"df\":".to_owned(),
+                "\"add\":3".to_owned(),
+                "\"del\":1".to_owned(),
+                rtk_hook_diff_answer.to_owned(),
+            ],
+            rollout: build_claude_tool_rollout_steps(
+                &[BenchmarkTaskStep {
+                    call_id: "claude_rtk_hook_task_diff_1".to_owned(),
+                    command: "git diff -- src/lib.rs".to_owned(),
+                    output: repeated_benchmark_diff(),
+                }],
+                rtk_hook_diff_answer,
             ),
         },
         BenchmarkTaskSpec {

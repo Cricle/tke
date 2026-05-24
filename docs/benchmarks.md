@@ -54,17 +54,19 @@ Built-in rollout/task benchmarks:
 | `codex_interactive_trace_selected_build_stage` | interactive | 1102 | 230 | 872 | 79.1% |
 | `claude_bash_trace_selected_search_stage` | api | 2416 | 556 | 1860 | 77.0% |
 | `claude_bash_trace_selected_find_stage` | api | 8164 | 135 | 8029 | 98.3% |
+| `claude_bash_trace_selected_diff_stage` | api | 3700 | 267 | 3433 | 92.8% |
 | `claude_bash_trace_selected_build_stage` | api | 1141 | 269 | 872 | 76.4% |
 | `claude_rtk_hook_trace_selected_find_stage` | api | 8159 | 130 | 8029 | 98.4% |
 | `claude_rtk_hook_trace_selected_search_stage` | api | 2137 | 416 | 1721 | 80.5% |
+| `claude_rtk_hook_trace_selected_diff_stage` | api | 3697 | 264 | 3433 | 92.9% |
 | `claude_rtk_hook_trace_selected_build_stage` | api | 1135 | 263 | 872 | 76.8% |
 
 Claude-oriented stable synthetic summary:
 
 | Path | Raw tokens | Rewritten tokens | Tokens saved | Savings | Fragments kept |
 | --- | --- | --- | --- | --- | --- |
-| `tke` | 11721 | 960 | 10761 | 91.8% | `12/12` |
-| `rtk-hook` | 11431 | 809 | 10622 | 92.9% | `15/15` |
+| `tke` | 15421 | 1227 | 14194 | 92.0% | `18/18` |
+| `rtk-hook` | 15128 | 1073 | 14055 | 92.9% | `21/21` |
 
 Task-mode comparison for Claude-oriented stable synthetic traces:
 
@@ -72,6 +74,7 @@ Task-mode comparison for Claude-oriented stable synthetic traces:
 | --- | --- | --- | --- | --- |
 | find/pathlist | `8029` (98.3%) | `8029` (98.4%) | `4/4` | `6/6` |
 | search | `1860` (77.0%) | `1721` (80.5%) | `3/3` | `4/4` |
+| diff | `3433` (92.8%) | `3433` (92.9%) | `6/6` | `6/6` |
 | build/log | `872` (76.4%) | `872` (76.8%) | `5/5` | `5/5` |
 
 Scenario verdicts:
@@ -80,6 +83,7 @@ Scenario verdicts:
 | --- | --- | --- | --- |
 | find/pathlist | `tie` | `rtk-hook` | `tie` |
 | search | `tke` | `rtk-hook` | `tie` |
+| diff | `tie` | `rtk-hook` | `tie` |
 | build/log | `tie` | `rtk-hook` | `tie` |
 
 ## Structured Summary Coverage
@@ -137,8 +141,8 @@ Accuracy and compression scorecard:
 
 | Scope | Path | Cases | Accuracy | Compression rate | Semantic retention | Token outcome |
 | --- | --- | --- | --- | --- | --- | --- |
-| `Claude synthetic` | `tke` | 3 | `n/a` | 91.8% | `12/12` | 10761 |
-| `Claude synthetic` | `rtk-hook` | 3 | `n/a` | 92.9% | `15/15` | 10622 |
+| `Claude synthetic` | `tke` | 4 | `n/a` | 92.0% | `18/18` | 14194 |
+| `Claude synthetic` | `rtk-hook` | 4 | `n/a` | 92.9% | `21/21` | 14055 |
 | `codex` | `rtk-codex-rules` | 2 | 0.0% | `n/a` | `pass=0 fail=2 gateway=0 ungraded=0` | 11 |
 | `claude` | `rtk-hook` | 3 | 100.0% | `n/a` | `pass=3 fail=0 gateway=0 ungraded=0` | -1 |
 

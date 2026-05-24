@@ -135,6 +135,7 @@ def task_by_name(name):
 comparison_task_specs = [
     ("find/pathlist", "claude_bash_trace_selected_find_stage", "claude_rtk_hook_trace_selected_find_stage"),
     ("search", "claude_bash_trace_selected_search_stage", "claude_rtk_hook_trace_selected_search_stage"),
+    ("diff", "claude_bash_trace_selected_diff_stage", "claude_rtk_hook_trace_selected_diff_stage"),
     ("build/log", "claude_bash_trace_selected_build_stage", "claude_rtk_hook_trace_selected_build_stage"),
 ]
 

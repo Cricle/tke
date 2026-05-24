@@ -2946,9 +2946,11 @@ fn benchmark_report_contains_expected_cases() {
         "codex_interactive_trace_selected_build_stage",
         "claude_bash_trace_selected_search_stage",
         "claude_bash_trace_selected_find_stage",
+        "claude_bash_trace_selected_diff_stage",
         "claude_bash_trace_selected_build_stage",
         "claude_rtk_hook_trace_selected_find_stage",
         "claude_rtk_hook_trace_selected_search_stage",
+        "claude_rtk_hook_trace_selected_diff_stage",
         "claude_rtk_hook_trace_selected_build_stage",
     ] {
         assert!(report.tasks.iter().any(|task| task.name == name), "{name}");
@@ -3684,6 +3686,25 @@ fn claude_build_pipeline_task_rollout_is_rewritten() {
 }
 
 #[test]
+fn claude_diff_pipeline_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "claude_bash_trace_selected_diff_stage")
+        .expect("claude diff task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    assert!(haystack.contains("\"sc\":\"git\""));
+    assert!(haystack.contains("\"p\":\"diff\""));
+    assert!(haystack.contains("\"df\":"));
+    assert!(haystack.contains("\"add\":3"));
+    assert!(haystack.contains("\"del\":1"));
+}
+
+#[test]
 fn claude_rtk_hook_search_pipeline_task_rollout_is_rewritten() {
     let mut cfg = Config::default();
     cfg.min_trim_bytes = 1;
@@ -3717,6 +3738,25 @@ fn claude_rtk_hook_find_pipeline_task_rollout_is_rewritten() {
     assert!(haystack.contains("\"p\":\"pathlist\""));
     assert!(haystack.contains("\"d\":\"/root/project/target/debug/incremental/tke\""));
     assert!(haystack.contains("\"f\":\"build-artifact-0000.o\""));
+}
+
+#[test]
+fn claude_rtk_hook_diff_pipeline_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "claude_rtk_hook_trace_selected_diff_stage")
+        .expect("claude rtk hook diff task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    assert!(haystack.contains("\"sc\":\"git\""));
+    assert!(haystack.contains("\"p\":\"diff\""));
+    assert!(haystack.contains("\"df\":"));
+    assert!(haystack.contains("\"add\":3"));
+    assert!(haystack.contains("\"del\":1"));
 }
 
 #[test]
@@ -3784,9 +3824,11 @@ fn claude_benchmark_task_report_shows_positive_savings() {
     for name in [
         "claude_bash_trace_selected_search_stage",
         "claude_bash_trace_selected_find_stage",
+        "claude_bash_trace_selected_diff_stage",
         "claude_bash_trace_selected_build_stage",
         "claude_rtk_hook_trace_selected_find_stage",
         "claude_rtk_hook_trace_selected_search_stage",
+        "claude_rtk_hook_trace_selected_diff_stage",
         "claude_rtk_hook_trace_selected_build_stage",
     ] {
         let task = report
