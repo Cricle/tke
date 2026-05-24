@@ -7,7 +7,7 @@ This document compares `rtk` and `tke` using the current repo implementation and
 - `tke` is a deterministic tool-output compression layer.
 - `rtk` is an agent-specific integration layer.
 - For Codex, `tke` is currently the stronger and better-validated path.
-- For Claude, `rtk-hook` is currently the more stable fairness path; on stable synthetic traces it is slightly better on compression ratio, while `tke` is slightly better on absolute token savings.
+- For Claude, `rtk-hook` is currently the more stable fairness path; across six stable synthetic traces it is slightly better on compression ratio, while `tke` is slightly better on absolute token savings.
 
 ## Product Shape
 
@@ -112,7 +112,7 @@ Interpretation:
 - `rtk-hook` is currently the stable fairness path for Claude.
 - `tke` on Claude currently prioritizes compatibility by default and should not yet be treated as equally mature live compression.
 - Even so, the underlying `tke` local compression primitives are broader and more inspectable than the current RTK fairness path, because they operate on normalized tool output rather than only on agent integration behavior.
-- In the current stable synthetic Claude-oriented traces, `tke` saves `10761` tokens total at `91.8%`, while `rtk-hook` saves `10622` at `92.9%`; both preserve all required semantic fragments in those controlled cases.
+- In the current six-scenario stable synthetic Claude-oriented traces, `tke` saves `34831` tokens total at `91.5%`, while `rtk-hook` saves `34692` at `91.8%`; both preserve all required semantic fragments in those controlled cases.
 
 ## Important Fairness Cases
 
@@ -141,6 +141,7 @@ Current takeaway:
 
 - On stable synthetic Claude traces, `rtk-hook` is slightly ahead on compression ratio, while `tke` is slightly ahead on absolute tokens saved.
 - On those same synthetic traces, both paths preserve all required semantic fragments.
+- Those controlled traces now cover `find/pathlist`, `search`, `diff`, `build/log`, `complex/triage`, and `complex/code-trace`.
 - On current fair live Claude runs, `rtk-hook` is ahead on correctness stability, but not on token reduction.
 - On current live Codex evidence, `tke` remains the only path with clear measured savings plus passing task outcomes.
 
@@ -172,5 +173,5 @@ If the comparison standard is "which path is more stable and more token-efficien
 There is no single global winner independent of agent:
 
 - For Codex, `tke` is clearly ahead today.
-- For Claude, `rtk-hook` is currently the more stable live path; in controlled synthetic traces it leads slightly on compression ratio, while `tke` leads slightly on absolute token savings.
+- For Claude, `rtk-hook` is currently the more stable live path; in six controlled synthetic traces it leads slightly on compression ratio, while `tke` leads slightly on absolute token savings.
 - `rtk` and `tke` should be treated as different layers, not as interchangeable implementations of the same thing.

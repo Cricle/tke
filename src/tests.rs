@@ -2949,11 +2949,13 @@ fn benchmark_report_contains_expected_cases() {
         "claude_bash_trace_selected_diff_stage",
         "claude_bash_trace_selected_build_stage",
         "claude_bash_trace_complex_triage_task",
+        "claude_bash_trace_complex_code_trace_task",
         "claude_rtk_hook_trace_selected_find_stage",
         "claude_rtk_hook_trace_selected_search_stage",
         "claude_rtk_hook_trace_selected_diff_stage",
         "claude_rtk_hook_trace_selected_build_stage",
         "claude_rtk_hook_trace_complex_triage_task",
+        "claude_rtk_hook_trace_complex_code_trace_task",
     ] {
         assert!(report.tasks.iter().any(|task| task.name == name), "{name}");
     }
@@ -3836,6 +3838,62 @@ fn claude_rtk_hook_complex_triage_task_rollout_is_rewritten() {
 }
 
 #[test]
+fn claude_complex_code_trace_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "claude_bash_trace_complex_code_trace_task")
+        .expect("claude complex code trace task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    for fragment in [
+        "\"sc\":\"sed\"",
+        "\"p\":\"file\"",
+        "\"sc\":\"rg\"",
+        "\"sr\":\"search\"",
+        "\"sc\":\"git\"",
+        "\"p\":\"diff\"",
+        "\"df\":",
+        "\"sc\":\"cargo\"",
+        "\"p\":\"log\"",
+        "\"lg\":",
+    ] {
+        assert!(haystack.contains(fragment), "missing {fragment}");
+    }
+}
+
+#[test]
+fn claude_rtk_hook_complex_code_trace_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "claude_rtk_hook_trace_complex_code_trace_task")
+        .expect("claude rtk hook complex code trace task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    for fragment in [
+        "\"sc\":\"sed\"",
+        "\"p\":\"file\"",
+        "\"sc\":\"rg\"",
+        "\"sr\":\"search\"",
+        "\"sc\":\"git\"",
+        "\"p\":\"diff\"",
+        "\"df\":",
+        "\"sc\":\"cargo\"",
+        "\"p\":\"log\"",
+        "\"lg\":",
+    ] {
+        assert!(haystack.contains(fragment), "missing {fragment}");
+    }
+}
+
+#[test]
 fn codex_benchmark_task_report_shows_positive_savings() {
     let mut cfg = Config::default();
     cfg.min_trim_bytes = 1;
@@ -3885,11 +3943,13 @@ fn claude_benchmark_task_report_shows_positive_savings() {
         "claude_bash_trace_selected_diff_stage",
         "claude_bash_trace_selected_build_stage",
         "claude_bash_trace_complex_triage_task",
+        "claude_bash_trace_complex_code_trace_task",
         "claude_rtk_hook_trace_selected_find_stage",
         "claude_rtk_hook_trace_selected_search_stage",
         "claude_rtk_hook_trace_selected_diff_stage",
         "claude_rtk_hook_trace_selected_build_stage",
         "claude_rtk_hook_trace_complex_triage_task",
+        "claude_rtk_hook_trace_complex_code_trace_task",
     ] {
         let task = report
             .tasks

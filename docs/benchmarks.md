@@ -57,18 +57,20 @@ Built-in rollout/task benchmarks:
 | `claude_bash_trace_selected_diff_stage` | api | 3700 | 267 | 3433 | 92.8% |
 | `claude_bash_trace_selected_build_stage` | api | 1141 | 269 | 872 | 76.4% |
 | `claude_bash_trace_complex_triage_task` | api | 14972 | 968 | 14004 | 93.5% |
+| `claude_bash_trace_complex_code_trace_task` | api | 7682 | 1049 | 6633 | 86.3% |
 | `claude_rtk_hook_trace_selected_find_stage` | api | 8159 | 130 | 8029 | 98.4% |
 | `claude_rtk_hook_trace_selected_search_stage` | api | 2137 | 416 | 1721 | 80.5% |
 | `claude_rtk_hook_trace_selected_diff_stage` | api | 3697 | 264 | 3433 | 92.9% |
 | `claude_rtk_hook_trace_selected_build_stage` | api | 1135 | 263 | 872 | 76.8% |
 | `claude_rtk_hook_trace_complex_triage_task` | api | 14972 | 968 | 14004 | 93.5% |
+| `claude_rtk_hook_trace_complex_code_trace_task` | api | 7682 | 1049 | 6633 | 86.3% |
 
 Claude-oriented stable synthetic summary:
 
 | Path | Raw tokens | Rewritten tokens | Tokens saved | Savings | Fragments kept |
 | --- | --- | --- | --- | --- | --- |
-| `tke` | 30393 | 2195 | 28198 | 92.8% | `29/29` |
-| `rtk-hook` | 30100 | 2041 | 28059 | 93.2% | `32/32` |
+| `tke` | 38075 | 3244 | 34831 | 91.5% | `40/40` |
+| `rtk-hook` | 37782 | 3090 | 34692 | 91.8% | `43/43` |
 
 Task-mode comparison for Claude-oriented stable synthetic traces:
 
@@ -79,6 +81,7 @@ Task-mode comparison for Claude-oriented stable synthetic traces:
 | diff | `3433` (92.8%) | `3433` (92.9%) | `6/6` | `6/6` |
 | build/log | `872` (76.4%) | `872` (76.8%) | `5/5` | `5/5` |
 | complex/triage | `14004` (93.5%) | `14004` (93.5%) | `11/11` | `11/11` |
+| complex/code-trace | `6633` (86.3%) | `6633` (86.3%) | `11/11` | `11/11` |
 
 Scenario verdicts:
 
@@ -89,6 +92,7 @@ Scenario verdicts:
 | diff | `tie` | `rtk-hook` | `tie` |
 | build/log | `tie` | `rtk-hook` | `tie` |
 | complex/triage | `tie` | `tie` | `tie` |
+| complex/code-trace | `tie` | `tie` | `tie` |
 
 ## Structured Summary Coverage
 
@@ -145,8 +149,8 @@ Accuracy and compression scorecard:
 
 | Scope | Path | Cases | Accuracy | Compression rate | Semantic retention | Token outcome |
 | --- | --- | --- | --- | --- | --- | --- |
-| `Claude synthetic` | `tke` | 5 | `n/a` | 92.8% | `29/29` | 28198 |
-| `Claude synthetic` | `rtk-hook` | 5 | `n/a` | 93.2% | `32/32` | 28059 |
+| `Claude synthetic` | `tke` | 6 | `n/a` | 91.5% | `40/40` | 34831 |
+| `Claude synthetic` | `rtk-hook` | 6 | `n/a` | 91.8% | `43/43` | 34692 |
 | `codex` | `rtk-codex-rules` | 2 | 0.0% | `n/a` | `pass=0 fail=2 gateway=0 ungraded=0` | 11 |
 | `claude` | `rtk-hook` | 3 | 100.0% | `n/a` | `pass=3 fail=0 gateway=0 ungraded=0` | -1 |
 

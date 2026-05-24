@@ -783,11 +783,13 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
     let build_pipeline_answer = "The selected stage is cargo, so the normalized payload preserves sc=cargo and sr=build and keeps the log/error summary instead of the tail stage semantics.";
     let diff_pipeline_answer = "The selected stage is git diff, so the normalized payload preserves sc=git and p=diff and keeps the diff file summary instead of raw hunks.";
     let complex_triage_answer = "The combined triage trace preserves find pathlist, rg search, git diff summary, and cargo log summary across four Bash tool invocations.";
+    let complex_code_trace_answer = "The combined code-trace preserves file summary, search summary, git diff summary, and cargo log summary across four Bash tool invocations.";
     let rtk_hook_find_answer = "The RTK hook sample preserves the same find pathlist-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_search_answer = "The RTK hook sample preserves the same rg search-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_diff_answer = "The RTK hook sample preserves the same git diff-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_build_answer = "The RTK hook sample preserves the same cargo build-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_complex_triage_answer = "The RTK hook triage trace preserves find pathlist, rg search, git diff summary, and cargo log summary across four Bash tool invocations.";
+    let rtk_hook_complex_code_trace_answer = "The RTK hook code-trace preserves file summary, search summary, git diff summary, and cargo log summary across four Bash tool invocations.";
     vec![
         BenchmarkTaskSpec {
             name: "codex_api_trace_rollout_savings".to_owned(),
@@ -1114,6 +1116,61 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
             ),
         },
         BenchmarkTaskSpec {
+            name: "claude_bash_trace_complex_code_trace_task".to_owned(),
+            mode: "api".to_owned(),
+            objective: "Verify that Claude preserves the important summaries across a multi-step code-trace flow with file read, search, diff inspection, and build-log follow-up.".to_owned(),
+            required_fragments: vec![
+                "\"sc\":\"sed\"".to_owned(),
+                "\"p\":\"file\"".to_owned(),
+                "\"sc\":\"rg\"".to_owned(),
+                "\"sr\":\"search\"".to_owned(),
+                "\"sc\":\"git\"".to_owned(),
+                "\"p\":\"diff\"".to_owned(),
+                "\"df\":".to_owned(),
+                "\"sc\":\"cargo\"".to_owned(),
+                "\"p\":\"log\"".to_owned(),
+                "\"lg\":".to_owned(),
+                complex_code_trace_answer.to_owned(),
+            ],
+            rollout: build_claude_tool_rollout_steps(
+                &[
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_code_trace_file_1".to_owned(),
+                        command: "sed -n '1,180p' src/lib.rs".to_owned(),
+                        output: repeated_benchmark_code(180),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_code_trace_search_1".to_owned(),
+                        command: "rg -n \"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\" src".to_owned(),
+                        output: repeated_task_search_output(
+                            &[
+                                "src/tests.rs:2538:                \"result\": \"STAGE=rg -n \\\"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\\\" src\\nFILE=src/tests.rs\\nKIND=search\"",
+                                "src/e2e_report.rs:167:    let rewritten = rewrite_agent_transcript(&raw_text, config)?;",
+                                "src/app.rs:289:        Some(\"compare-e2e\") => parse_compare_e2e(args),",
+                            ],
+                            120,
+                            "src/tests.rs",
+                            "code_trace_search_trace",
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_code_trace_diff_1".to_owned(),
+                        command: "git diff -- src/lib.rs".to_owned(),
+                        output: repeated_benchmark_diff(),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_code_trace_build_1".to_owned(),
+                        command: "cargo test -- --nocapture | tail -n 80".to_owned(),
+                        output: format!(
+                            "{}\nerror: test failed, to rerun pass --lib\nwarning: deprecated assertion helper\n",
+                            repeated_lines("test parser::case ... ok", 120)
+                        ),
+                    },
+                ],
+                complex_code_trace_answer,
+            ),
+        },
+        BenchmarkTaskSpec {
             name: "claude_rtk_hook_trace_selected_find_stage".to_owned(),
             mode: "api".to_owned(),
             objective: "Verify that the RTK hook path preserves find pathlist-stage semantics for Claude-style hook integrations.".to_owned(),
@@ -1259,6 +1316,61 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
                     },
                 ],
                 rtk_hook_complex_triage_answer,
+            ),
+        },
+        BenchmarkTaskSpec {
+            name: "claude_rtk_hook_trace_complex_code_trace_task".to_owned(),
+            mode: "api".to_owned(),
+            objective: "Verify that the RTK hook path preserves the important summaries across a multi-step code-trace flow with file read, search, diff inspection, and build-log follow-up.".to_owned(),
+            required_fragments: vec![
+                "\"sc\":\"sed\"".to_owned(),
+                "\"p\":\"file\"".to_owned(),
+                "\"sc\":\"rg\"".to_owned(),
+                "\"sr\":\"search\"".to_owned(),
+                "\"sc\":\"git\"".to_owned(),
+                "\"p\":\"diff\"".to_owned(),
+                "\"df\":".to_owned(),
+                "\"sc\":\"cargo\"".to_owned(),
+                "\"p\":\"log\"".to_owned(),
+                "\"lg\":".to_owned(),
+                rtk_hook_complex_code_trace_answer.to_owned(),
+            ],
+            rollout: build_claude_tool_rollout_steps(
+                &[
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_code_trace_file_1".to_owned(),
+                        command: "sed -n '1,180p' src/lib.rs".to_owned(),
+                        output: repeated_benchmark_code(180),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_code_trace_search_1".to_owned(),
+                        command: "rg -n \"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\" src".to_owned(),
+                        output: repeated_task_search_output(
+                            &[
+                                "src/tests.rs:2538:                \"result\": \"STAGE=rg -n \\\"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\\\" src\\nFILE=src/tests.rs\\nKIND=search\"",
+                                "src/e2e_report.rs:167:    let rewritten = rewrite_agent_transcript(&raw_text, config)?;",
+                                "src/app.rs:289:        Some(\"compare-e2e\") => parse_compare_e2e(args),",
+                            ],
+                            120,
+                            "src/tests.rs",
+                            "code_trace_search_trace",
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_code_trace_diff_1".to_owned(),
+                        command: "git diff -- src/lib.rs".to_owned(),
+                        output: repeated_benchmark_diff(),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_code_trace_build_1".to_owned(),
+                        command: "cargo test -- --nocapture | tail -n 80".to_owned(),
+                        output: format!(
+                            "{}\nerror: test failed, to rerun pass --lib\nwarning: deprecated assertion helper\n",
+                            repeated_lines("test parser::case ... ok", 120)
+                        ),
+                    },
+                ],
+                rtk_hook_complex_code_trace_answer,
             ),
         },
     ]

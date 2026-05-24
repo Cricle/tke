@@ -138,6 +138,7 @@ comparison_task_specs = [
     ("diff", "claude_bash_trace_selected_diff_stage", "claude_rtk_hook_trace_selected_diff_stage"),
     ("build/log", "claude_bash_trace_selected_build_stage", "claude_rtk_hook_trace_selected_build_stage"),
     ("complex/triage", "claude_bash_trace_complex_triage_task", "claude_rtk_hook_trace_complex_triage_task"),
+    ("complex/code-trace", "claude_bash_trace_complex_code_trace_task", "claude_rtk_hook_trace_complex_code_trace_task"),
 ]
 
 comparison_task_rows = []
