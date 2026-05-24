@@ -16,7 +16,8 @@ use crate::rollout_stats::{collect_rollout_output_stats, rollout_string_haystack
 use crate::shim::{maybe_normalize_text, normalize_text, normalize_text_with_stage};
 use crate::trim::{
     CommandKind, ShellKind, candidate_command_names, classify_command, create_windows_cmd_shim,
-    match_terms, now_millis, read_stream_payload, render_activate_script, render_deactivate_script,
+    is_failure_signal_line, is_log_signal, is_warning_signal, match_terms, now_millis,
+    read_stream_payload, render_activate_script, render_deactivate_script,
 };
 use std::fs;
 use std::io::{self, Cursor, Read};
@@ -416,6 +417,22 @@ fn log_profile_does_not_treat_zero_failed_summary_as_failure() {
     assert_eq!(value["lg"]["warn"], 1);
     assert!(value["lg"]["ff"].is_null());
     assert_eq!(value["lg"]["fw"], "warning: deprecated fixture used");
+}
+
+#[test]
+fn log_signal_detection_uses_tokens_not_substrings() {
+    assert!(is_warning_signal("warning: deprecated fixture used"));
+    assert!(!is_warning_signal("forewarning markers are enabled"));
+    assert!(is_failure_signal_line(
+        "FAILED tests/test_parser.py::test_invalid_input"
+    ));
+    assert!(!is_failure_signal_line(
+        "test result: ok. 104 passed; 0 failed; 0 ignored"
+    ));
+    assert!(is_log_signal(
+        "panic: runtime error: index out of range",
+        &[]
+    ));
 }
 
 #[test]

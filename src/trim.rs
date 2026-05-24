@@ -1269,30 +1269,93 @@ fn is_stack_frame(line: &str) -> bool {
 }
 
 fn is_stack_summary(line: &str) -> bool {
-    let lower = line.to_ascii_lowercase();
-    lower.contains("traceback")
-        || lower.contains("stack trace")
-        || lower.contains("panic")
-        || lower.contains("exception")
+    let class = classify_log_line(line);
+    class.stack_summary
+        || class.failure && has_token_sequence(&ascii_word_tokens(line), &["stack", "trace"])
+}
+
+#[derive(Clone, Copy, Default)]
+struct LogLineClass {
+    warning: bool,
+    failure: bool,
+    stack_summary: bool,
+}
+
+fn classify_log_line(line: &str) -> LogLineClass {
+    let trimmed = line.trim();
+    let tokens = ascii_word_tokens(trimmed);
+    let warning = has_ascii_token(&tokens, "warning") || has_ascii_token(&tokens, "warn");
+    let stack_summary = has_ascii_token(&tokens, "traceback")
+        || has_ascii_token(&tokens, "panic")
+        || has_ascii_token(&tokens, "exception")
+        || has_token_sequence(&tokens, &["stack", "trace"]);
+    let failure = !is_zero_failed_summary(&tokens)
+        && (has_ascii_token(&tokens, "error")
+            || has_ascii_token(&tokens, "panic")
+            || has_ascii_token(&tokens, "exception")
+            || has_ascii_token(&tokens, "failed")
+            || has_token_sequence(&tokens, &["not", "ok"])
+            || trimmed.starts_with("--- FAIL:")
+            || trimmed.starts_with("FAIL ")
+            || trimmed.starts_with("FAILED "));
+    LogLineClass {
+        warning,
+        failure,
+        stack_summary,
+    }
+}
+
+fn ascii_word_tokens(line: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current = String::new();
+    for ch in line.chars() {
+        if ch.is_ascii_alphanumeric() {
+            current.push(ch.to_ascii_lowercase());
+        } else if !current.is_empty() {
+            out.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        out.push(current);
+    }
+    out
+}
+
+fn has_ascii_token(tokens: &[String], needle: &str) -> bool {
+    tokens.iter().any(|token| token == needle)
+}
+
+fn has_token_sequence(tokens: &[String], sequence: &[&str]) -> bool {
+    if sequence.is_empty() || tokens.len() < sequence.len() {
+        return false;
+    }
+    tokens.windows(sequence.len()).any(|window| {
+        window
+            .iter()
+            .zip(sequence)
+            .all(|(token, expected)| token == expected)
+    })
+}
+
+fn is_zero_failed_summary(tokens: &[String]) -> bool {
+    has_token_sequence(tokens, &["0", "failed"])
+        || has_token_sequence(tokens, &["0", "tests", "failed"])
+}
+
+pub(crate) fn is_warning_signal(line: &str) -> bool {
+    classify_log_line(line).warning
+}
+
+pub(crate) fn is_failure_signal_line(line: &str) -> bool {
+    classify_log_line(line).failure
 }
 
 pub(crate) fn is_log_signal(line: &str, terms: &[String]) -> bool {
-    let lower = line.to_ascii_lowercase();
-    if [
-        "error",
-        "failed",
-        "panic",
-        "exception",
-        "warning",
-        "abort",
-        "undefined",
-        "mismatch",
-    ]
-    .iter()
-    .any(|term| lower.contains(term))
-    {
+    let class = classify_log_line(line);
+    if class.warning || class.failure {
         return true;
     }
+    let lower = line.to_ascii_lowercase();
     terms
         .iter()
         .any(|term| !term.is_empty() && lower.contains(term))
