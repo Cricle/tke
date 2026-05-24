@@ -321,6 +321,20 @@ benchmarks_md = [
         ["Task", "Mode", "Raw tokens", "Rewritten tokens", "Tokens saved", "Savings"],
         task_rows,
     ),
+    "",
+    "## Structured Summary Coverage",
+    "",
+    "The current local comparison is broader than raw token totals alone. `tke` now emits repo-local structured summaries for several high-volume profiles that RTK does not expose as equivalent local envelope fields in this repo:",
+    "",
+    md_table(
+        ["Profile", "Current `tke` structure", "Current RTK position in this repo"],
+        [
+            ["`pathlist`", "`pl.d` shared dir, compact `pl.f`/`pl.l`, examples", "No equivalent repo-local structured summary"],
+            ["`search`", "Grouped file chunks with full first hit and compact followups", "No equivalent repo-local structured summary"],
+            ["`log`", "`lg.fail`, `lg.warn`, `lg.first_fail`, `lg.first_warn`", "No equivalent repo-local structured summary"],
+            ["`diff`", "`df.f[].p/add/del` per-file summaries", "No equivalent repo-local structured summary"],
+        ],
+    ),
 ]
 
 if codex:

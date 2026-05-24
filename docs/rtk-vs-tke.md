@@ -59,6 +59,30 @@ That means RTK behavior depends more on whether the target agent actually follow
 
 RTK is mostly judged through the fairness and E2E harnesses rather than through a repo-local rewriting primitive.
 
+## Current Structured Advantage
+
+The current gap is not just aggregate token savings. `tke` now exposes explicit per-profile local summaries that can be replayed, inspected, and expanded inside this repo:
+
+| Profile | `tke` current behavior | `rtk` status in this repo |
+| --- | --- | --- |
+| `pathlist` | Shared-directory compaction with `pl.d`, `pl.f`, `pl.l`, compact examples, and bucketed rows | No equivalent repo-local structured pathlist summary |
+| `search` | Grouped file-level search chunks with full first hit and compact `:line:text` followups | No equivalent repo-local grouped search summary |
+| `log` | Lightweight `lg.fail`, `lg.warn`, `lg.first_fail`, `lg.first_warn` fields plus repeated-line folding | No equivalent repo-local structured log summary |
+| `diff` | Lightweight `df` file summaries with per-file `p`, `add`, and `del` counts | No equivalent repo-local structured diff summary |
+
+These summaries are emitted as part of the normal `__TKE__{...}` envelope rather than as benchmark-only side data. In this repo that matters because:
+
+- the rewritten payload is directly observable
+- the compare tooling can inspect the same normalized structure
+- fallback stays local and deterministic instead of depending on agent compliance
+
+Implementation references:
+
+- pathlist summary fields in [src/trim.rs](/root/github/tke/src/trim.rs:1372) and compaction logic in [src/path_profile.rs](/root/github/tke/src/path_profile.rs:8)
+- grouped search compaction in [src/search_profile.rs](/root/github/tke/src/search_profile.rs:7)
+- log summary fields in [src/trim.rs](/root/github/tke/src/trim.rs:1405) and extraction in [src/log_profile.rs](/root/github/tke/src/log_profile.rs:37)
+- diff summary fields in [src/trim.rs](/root/github/tke/src/trim.rs:1416)
+
 ## Current Measured Results
 
 Source: [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:66) and [docs/e2e.md](/root/github/tke/docs/e2e.md:9).
@@ -74,6 +98,7 @@ Interpretation:
 
 - `tke` is currently validated on real Codex tasks.
 - `rtk-codex-rules` is the fair RTK path for Codex, but the current sampled cases do not show comparable correctness or savings.
+- On the command-benchmark side, `tke` is already strong on the high-volume profiles that dominate local tool cost: `search` `88.9%`, `pathlist` `96.1%`, `diff` `94.0%`, `log` `78.3%`.
 
 ### Claude
 
@@ -86,6 +111,7 @@ Interpretation:
 
 - `rtk-hook` is currently the stable fairness path for Claude.
 - `tke` on Claude currently prioritizes compatibility by default and should not yet be treated as equally mature live compression.
+- Even so, the underlying `tke` local compression primitives are broader and more inspectable than the current RTK fairness path, because they operate on normalized tool output rather than only on agent integration behavior.
 
 ## Important Fairness Cases
 
@@ -100,6 +126,15 @@ From the current fair comparison table in [docs/benchmarks.md](/root/github/tke/
 | `claude` | `fairrg` | pass | pass | `0` | `correct_but_not_saved` |
 
 The key signal is that Claude RTK currently helps more with path correctness than with measurable tool-output compression, while Codex `tke` already delivers strong measured savings on real tasks.
+
+## Horizontal Comparison Verdict
+
+If the comparison standard is "which path is more stable and more token-efficient as a local tool-output layer", the current answer is `tke`.
+
+- `tke` wins on repo-local observability.
+- `tke` wins on structured summaries across `pathlist`, `search`, `log`, and `diff`.
+- `tke` wins on measured Codex savings and current synthetic benchmark coverage.
+- `rtk` still wins on Claude-native fairness path stability today.
 
 ## Practical Recommendation
 

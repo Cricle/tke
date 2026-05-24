@@ -80,6 +80,17 @@ Agent-specific handling should stay at the boundary. The compression core should
 
 ## Execution Plan
 
+## Recently Landed
+
+The roadmap is no longer starting from zero. The following items are already implemented in the current tree:
+
+- `pathlist` shared-directory compaction with compact first/last entries and bucketed examples
+- `search` grouped-prefix compaction that keeps a full first hit per file and compact followup hits
+- lightweight structured `log` summaries with failure and warning counts plus first samples
+- lightweight structured `diff` summaries with per-file add/delete counts
+
+That changes the baseline: the next phases should extend these summaries and add deduplication, not re-argue whether local structure is possible.
+
 ## Phase 1: Harden the Current Winning Path
 
 Priority: highest
@@ -114,10 +125,10 @@ Target profiles:
 
 Implementation themes:
 
-- stronger path-list compaction with repeated-prefix handling
-- stronger search result summarization for dense match sets
-- better diff summaries centered on touched files, symbols, and hunks
-- better log extraction for test/build failures, warnings, and counts
+- extend the shipped path-list compaction with multi-root and mixed-parent cases
+- extend the shipped search summarization with denser hit clustering and better file ordering
+- extend the shipped diff summaries from file counts toward symbol and hunk summaries
+- extend the shipped log summaries from fail/warn samples toward richer test/build outcome extraction
 
 Expected outcome:
 
@@ -147,12 +158,12 @@ Priority: high
 
 Problem:
 
-Large logs still carry repeated low-value lines.
+Large logs still carry repeated low-value lines even after the current `fail`/`warn` summary pass.
 
 Implementation themes:
 
-- extract failure count, failing test names, and first error location
-- summarize warnings separately from failures
+- extract failing test names and first error location more reliably
+- keep the current warning/failure summary, then deepen it with tool-specific fields
 - normalize common build/test tools more deeply:
   - `cargo`
   - `pytest`
@@ -238,6 +249,7 @@ Today, the practical product message should be:
 - `tke` is the primary path for deterministic local tool-output compression
 - `tke` is already validated most strongly on Codex
 - `rtk` remains a useful fairness baseline and Claude integration reference
+- `tke` already has a broader local structured-summary layer than RTK in this repo
 - the next gains should come from deeper local compression and session-level deduplication, not from copying RTK's integration model
 
 ## Immediate Next Build Steps
@@ -245,7 +257,7 @@ Today, the practical product message should be:
 If implementation starts now, the best order is:
 
 1. strengthen fallback rules and regression coverage
-2. improve `search`, `pathlist`, `diff`, and `log` compression
+2. deepen the shipped `search`, `pathlist`, `diff`, and `log` summaries
 3. add session-level deduplication
 4. expand benchmark and fairness cases
 5. continue Claude shadow-mode evaluation
