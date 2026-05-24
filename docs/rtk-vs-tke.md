@@ -89,19 +89,16 @@ The strongest current claim is not "TKE wins every agent and every mode." The st
 - `tke` is better on current Codex evidence in this repo.
 - `tke` is better when you need explicit structured summaries that can be benchmarked and inspected offline.
 
-Current evidence:
+The generated source-of-truth evidence table for this claim lives in [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:67). That table is regenerated from the current benchmark and E2E artifacts, so the factual basis for this section moves with the data instead of drifting as a second hand-maintained copy.
 
-| Evidence area | `tke` result | `rtk` result in this repo | Why this matters |
-| --- | --- | --- | --- |
-| Built-in local compression benchmarks | `33/34` compress-or-pass cases behave as expected, with `57724` tokens saved across compress cases at `91.0%` | No equivalent repo-local benchmark runner that rewrites tool payloads directly | `tke` can be measured locally and repeatedly without depending on agent compliance |
-| Built-in rollout/task benchmarks | `17` built-in task traces save `88903` tokens at `91.3%` | RTK only participates through the subset of fairness/synthetic harnesses wired here | `tke` has broader measured coverage inside the repo |
-| Codex real E2E | `4/4` pass, `6257` tool tokens saved | `rtk-codex-rules` is `0/2` pass with only `11` token delta total, including a `saved_but_wrong` case | Current real Codex evidence favors `tke` clearly |
-| Structured output surface | `pathlist`, `search`, `diff`, `log`, `table`, and `file` profiles emit inspectable `__TKE__{...}` summaries | No equivalent repo-local structured envelope | `tke` gives a concrete artifact that tooling can compare and audit |
-| Claude stable synthetic traces | `34831` tokens saved | `34692` tokens saved | Even where `rtk-hook` slightly leads on compression ratio, `tke` still wins on absolute token savings |
+In short, the current generated evidence says:
+
+- `tke` wins on local compression infrastructure and observability.
+- `tke` wins on the current real Codex evidence in this repo.
+- `tke` wins on structured, profile-specific compression surfaces that RTK does not expose here as repo-local artifacts.
+- Claude remains mixed: `rtk-hook` is still the more stable live fairness path, while `tke` is slightly ahead on absolute token savings in the controlled synthetic traces.
 
 If the comparison standard is "which implementation gives this repo the stronger local compression primitive and the stronger current Codex result," the answer is already `tke`.
-
-The generated source-of-truth table for this section now lives in [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:52), so the evidence summary can be refreshed together with the benchmark artifacts instead of drifting as a hand-maintained note.
 
 ## Current Structured Advantage
 
@@ -127,25 +124,7 @@ Implementation references:
 - log summary fields in [src/trim.rs](/root/github/tke/src/trim.rs:1405) and extraction in [src/log_profile.rs](/root/github/tke/src/log_profile.rs:37)
 - diff summary fields in [src/trim.rs](/root/github/tke/src/trim.rs:1416)
 
-The measured built-in benchmark totals are also materially strong on their own:
-
-| Scope | Cases | Tokens saved | Savings ratio |
-| --- | --- | --- | --- |
-| Default compress benchmarks | `33` | `57724` | `91.0%` |
-| Built-in rollout/task traces | `17` | `88903` | `91.3%` |
-
-Per-profile compression in the current benchmark suite:
-
-| Profile | Cases | Tokens saved | Savings ratio |
-| --- | --- | --- | --- |
-| `pathlist` | `6` | `36421` | `98.5%` |
-| `diff` | `1` | `3459` | `93.7%` |
-| `search` | `2` | `4060` | `89.9%` |
-| `file` | `9` | `5468` | `78.1%` |
-| `log` | `12` | `6947` | `74.4%` |
-| `table` | `3` | `1369` | `71.5%` |
-
-RTK in this repo does not currently expose a comparable repo-local profile-by-profile compression surface, which is itself part of the advantage: `tke` can be tuned by profile because the profile outputs are explicit.
+The generated benchmark totals and per-profile compression table also live in [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:77). RTK in this repo does not currently expose a comparable repo-local profile-by-profile compression surface, which is itself part of the advantage: `tke` can be tuned by profile because the profile outputs are explicit.
 
 ## Current Measured Results
 
