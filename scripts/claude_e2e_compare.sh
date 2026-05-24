@@ -45,6 +45,11 @@ if [[ -z "$CLAUDE_API_KEY" ]]; then
   exit 2
 fi
 
+if [[ -z "$HOST_CLAUDE_BIN" || ! -x "$HOST_CLAUDE_BIN" ]]; then
+  echo "claude binary not found; set CLAUDE_BIN or install claude on PATH" >&2
+  exit 2
+fi
+
 mkdir -p "$OUT_DIR" "$WORK_ROOT"
 
 RUN_ROOT="$(mktemp -d "$WORK_ROOT/${MODE}.XXXXXX")"
@@ -58,7 +63,8 @@ cp "$(readlink -f "$HOST_TKE_BIN")" "$BIN_ROOT/tke"
 if [[ -x "$HOST_RTK_BIN" ]]; then
   cp "$(readlink -f "$HOST_RTK_BIN")" "$BIN_ROOT/rtk"
 fi
-chmod +x "$HOST_TKE_BIN" "$HOST_CLAUDE_BIN" 2>/dev/null || :
+chmod +x "$HOST_TKE_BIN" 2>/dev/null || :
+chmod +x "$HOST_CLAUDE_BIN" 2>/dev/null || :
 if [[ -x "$HOST_RTK_BIN" ]]; then
   chmod +x "$HOST_RTK_BIN" 2>/dev/null || :
 fi
@@ -160,6 +166,7 @@ CLAUDE_TKE_LIVE_TOOLS="${16}"
 HOST_TOOL_PATH="${17}"
 HOST_CARGO_HOME="${18}"
 HOST_RUSTUP_HOME="${19}"
+HOST_CLAUDE_BIN="${20}"
 
 export HOME="$HOME_ROOT"
 export PATH="$BIN_ROOT:$HOST_TOOL_PATH"
@@ -172,7 +179,7 @@ export ANTHROPIC_AUTH_TOKEN="$CLAUDE_API_KEY"
 export ANTHROPIC_MODEL="$CLAUDE_MODEL"
 export CLAUDE_CODE_SIMPLE=1
 
-CLAUDE_LAUNCH="${CLAUDE_BIN:-$(command -v claude)}"
+CLAUDE_LAUNCH="$HOST_CLAUDE_BIN"
 if [[ "$MODE" == "wrapped" || "$MODE" == "tke" ]]; then
   eval "$("$BIN_ROOT/tke" activate --shim-dir "$SHIM_DIR" claude)"
   if command -v claude >/dev/null 2>&1; then
@@ -235,7 +242,8 @@ runuser -u "$RUN_AS_USER" -- "$RUN_SCRIPT" \
   "$CLAUDE_TKE_LIVE_TOOLS" \
   "$HOST_TOOL_PATH" \
   "$HOST_CARGO_HOME" \
-  "$HOST_RUSTUP_HOME"
+  "$HOST_RUSTUP_HOME" \
+  "$HOST_CLAUDE_BIN"
 
 cp -f "$TMP_STREAM_OUT" "$RAW_STREAM_OUT" 2>/dev/null || : 
 cp -f "$TMP_TEXT_OUT" "$RAW_TEXT_OUT" 2>/dev/null || :
