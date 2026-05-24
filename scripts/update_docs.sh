@@ -176,6 +176,7 @@ comparison_task_specs = [
     ("complex/stacktrace-diff", "claude_bash_trace_complex_stacktrace_diff_task", "claude_rtk_hook_trace_complex_stacktrace_diff_task"),
     ("complex/root-cause", "claude_bash_trace_complex_root_cause_task", "claude_rtk_hook_trace_complex_root_cause_task"),
     ("answer-consistency", "claude_bash_trace_answer_consistency_task", "claude_rtk_hook_trace_answer_consistency_task"),
+    ("candidate-root-cause", "claude_bash_trace_candidate_root_cause_task", "claude_rtk_hook_trace_candidate_root_cause_task"),
 ]
 
 comparison_task_rows = []
@@ -575,12 +576,20 @@ evidence_rows.append(
 if comparison_totals_rows:
     tke_summary = comparison_totals_rows[0]
     rtk_summary = comparison_totals_rows[1]
+    tke_saved = parse_int_cell(tke_summary[3])
+    rtk_saved = parse_int_cell(rtk_summary[3])
+    if tke_saved > rtk_saved:
+        comparison_claim = "`tke` currently leads on absolute token savings, while `rtk-hook` may still differ on ratio depending on task mix"
+    elif tke_saved < rtk_saved:
+        comparison_claim = "`rtk-hook` currently leads on both absolute token savings and ratio in the stable synthetic Claude traces, while `tke` remains competitive on fragment retention"
+    else:
+        comparison_claim = "The two paths are currently tied on absolute token savings, with any remaining difference coming from ratio or fragment details"
     evidence_rows.append(
         [
             "Claude stable synthetic traces",
             f"`{tke_summary[3]}` tokens saved at `{tke_summary[4]}`",
             f"`{rtk_summary[3]}` tokens saved at `{rtk_summary[4]}`",
-            "`tke` is slightly ahead on absolute token savings even where `rtk-hook` is slightly ahead on ratio",
+            comparison_claim,
         ]
     )
 

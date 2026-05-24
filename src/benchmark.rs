@@ -788,6 +788,7 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
     let complex_stacktrace_diff_answer = "The combined debug trace preserves python traceback summary, git diff summary, rg search summary, and cargo log summary across four Bash tool invocations.";
     let complex_root_cause_answer = "The combined root-cause trace preserves pathlist, search, file summary, git diff summary, and cargo log summary across five Bash tool invocations.";
     let answer_consistency_answer = "The root cause is in src/tests.rs; find preserved the pathlist, rg isolated normalize_text and compare-e2e, git diff preserved the file summary, and cargo log preserved the failing test signal.";
+    let candidate_root_cause_answer = "The root cause is in src/tests.rs, not src/e2e_report.rs; find preserved both candidates, rg kept both traces, sed isolated the answer-consistency assertions in src/tests.rs, git diff only changed src/tests.rs, and cargo log failed in claude_answer_consistency_task_rollout_is_rewritten.";
     let rtk_hook_find_answer = "The RTK hook sample preserves the same find pathlist-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_search_answer = "The RTK hook sample preserves the same rg search-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_diff_answer = "The RTK hook sample preserves the same git diff-stage metadata and semantic answer fragments for Claude-style hook integrations.";
@@ -798,6 +799,7 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
     let rtk_hook_complex_stacktrace_diff_answer = "The RTK hook debug trace preserves python traceback summary, git diff summary, rg search summary, and cargo log summary across four Bash tool invocations.";
     let rtk_hook_complex_root_cause_answer = "The RTK hook root-cause trace preserves pathlist, search, file summary, git diff summary, and cargo log summary across five Bash tool invocations.";
     let rtk_hook_answer_consistency_answer = "The RTK hook root cause answer still points at src/tests.rs and preserves the same pathlist, search, diff, and log conclusions across four Bash tool invocations.";
+    let rtk_hook_candidate_root_cause_answer = "The RTK hook root cause is still src/tests.rs rather than src/e2e_report.rs; find, rg, sed, git diff, and cargo log all converge on the answer-consistency assertions in src/tests.rs.";
     vec![
         BenchmarkTaskSpec {
             name: "codex_api_trace_rollout_savings".to_owned(),
@@ -1416,6 +1418,98 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
             ),
         },
         BenchmarkTaskSpec {
+            name: "claude_bash_trace_candidate_root_cause_task".to_owned(),
+            mode: "api".to_owned(),
+            objective: "Verify that Claude can preserve enough evidence to choose the right root-cause file when search returns two plausible candidates but only one is supported by file, diff, and build evidence.".to_owned(),
+            required_fragments: vec![
+                "\"sc\":\"find\"".to_owned(),
+                "\"p\":\"pathlist\"".to_owned(),
+                "tests.rs".to_owned(),
+                "e2e_report.rs".to_owned(),
+                "\"sc\":\"rg\"".to_owned(),
+                "\"sr\":\"search\"".to_owned(),
+                "src/tests.rs:4201:fn claude_answer_consistency_task_rollout_is_rewritten() {".to_owned(),
+                "src/e2e_report.rs:167:fn build_variant_verdict(".to_owned(),
+                "\"sc\":\"sed\"".to_owned(),
+                "\"p\":\"file\"".to_owned(),
+                "fn claude_answer_consistency_task_rollout_is_rewritten()".to_owned(),
+                "\"sc\":\"git\"".to_owned(),
+                "\"p\":\"diff\"".to_owned(),
+                "\"df\":".to_owned(),
+                "\"p\":\"src/tests.rs\"".to_owned(),
+                "\"sc\":\"cargo\"".to_owned(),
+                "\"p\":\"log\"".to_owned(),
+                "\"lg\":".to_owned(),
+                "FAILED src/tests.rs::claude_answer_consistency_task_rollout_is_rewritten".to_owned(),
+                candidate_root_cause_answer.to_owned(),
+            ],
+            rollout: build_claude_tool_rollout_steps(
+                &[
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_candidate_root_cause_1".to_owned(),
+                        command: "find /root/project/src -maxdepth 1 -type f | sort | head -n 120".to_owned(),
+                        output: repeated_candidate_root_cause_paths(120),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_candidate_root_cause_2".to_owned(),
+                        command: "rg -n \"claude_answer_consistency_task_rollout_is_rewritten|build_variant_verdict|compare-e2e\" src".to_owned(),
+                        output: repeated_task_search_output(
+                            &[
+                                "src/tests.rs:4201:fn claude_answer_consistency_task_rollout_is_rewritten() {",
+                                "src/tests.rs:4208:    assert!(haystack.contains(\"compare-e2e\"));",
+                                "src/tests.rs:4210:    assert!(haystack.contains(\"failing test signal\"));",
+                                "src/e2e_report.rs:167:fn build_variant_verdict(expected_result_match: bool, tool_tokens_saved: isize) -> String {",
+                                "src/e2e_report.rs:174:    if expected_result_match && tool_tokens_saved > 0 {",
+                                "src/app.rs:289:        Some(\"compare-e2e\") => parse_compare_e2e(args),",
+                            ],
+                            140,
+                            "src/tests.rs",
+                            "candidate_root_cause_search_trace",
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_candidate_root_cause_3".to_owned(),
+                        command: "sed -n '4198,4246p' src/tests.rs".to_owned(),
+                        output: repeated_task_code_block(
+                            &[
+                                "#[test]",
+                                "fn claude_answer_consistency_task_rollout_is_rewritten() {",
+                                "    let task = benchmark_task_specs()",
+                                "        .into_iter()",
+                                "        .find(|task| task.name == \"claude_bash_trace_answer_consistency_task\")",
+                                "        .expect(\"claude answer consistency task\");",
+                                "    assert!(haystack.contains(\"compare-e2e\"));",
+                                "    assert!(haystack.contains(\"failing test signal\"));",
+                                "}",
+                                "#[test]",
+                                "fn claude_rtk_hook_answer_consistency_task_rollout_is_rewritten() {",
+                                "    let task = benchmark_task_specs()",
+                                "        .into_iter()",
+                                "        .find(|task| task.name == \"claude_rtk_hook_trace_answer_consistency_task\")",
+                                "        .expect(\"claude rtk hook answer consistency task\");",
+                                "}",
+                            ],
+                            12,
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_candidate_root_cause_4".to_owned(),
+                        command: "git diff -- src/tests.rs".to_owned(),
+                        output: repeated_benchmark_named_diff("src/tests.rs", "answer_consistency_case"),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_candidate_root_cause_5".to_owned(),
+                        command: "cargo test --quiet".to_owned(),
+                        output: format!(
+                            "{}\nFAILED src/tests.rs::claude_answer_consistency_task_rollout_is_rewritten\nerror: test failed, to rerun pass --lib\nwarning: deprecated assertion helper\n",
+                            repeated_lines("test parser::case ... ok", 120)
+                        ),
+                    },
+                ],
+                candidate_root_cause_answer,
+            ),
+        },
+        BenchmarkTaskSpec {
             name: "claude_rtk_hook_trace_selected_find_stage".to_owned(),
             mode: "api".to_owned(),
             objective: "Verify that the RTK hook path preserves find pathlist-stage semantics for Claude-style hook integrations.".to_owned(),
@@ -1855,6 +1949,98 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
                 rtk_hook_answer_consistency_answer,
             ),
         },
+        BenchmarkTaskSpec {
+            name: "claude_rtk_hook_trace_candidate_root_cause_task".to_owned(),
+            mode: "api".to_owned(),
+            objective: "Verify that the RTK hook path can preserve enough evidence to choose the right root-cause file when search returns two plausible candidates but only one is supported by file, diff, and build evidence.".to_owned(),
+            required_fragments: vec![
+                "\"sc\":\"find\"".to_owned(),
+                "\"p\":\"pathlist\"".to_owned(),
+                "tests.rs".to_owned(),
+                "e2e_report.rs".to_owned(),
+                "\"sc\":\"rg\"".to_owned(),
+                "\"sr\":\"search\"".to_owned(),
+                "src/tests.rs:4201:fn claude_answer_consistency_task_rollout_is_rewritten() {".to_owned(),
+                "src/e2e_report.rs:167:fn build_variant_verdict(".to_owned(),
+                "\"sc\":\"sed\"".to_owned(),
+                "\"p\":\"file\"".to_owned(),
+                "fn claude_answer_consistency_task_rollout_is_rewritten()".to_owned(),
+                "\"sc\":\"git\"".to_owned(),
+                "\"p\":\"diff\"".to_owned(),
+                "\"df\":".to_owned(),
+                "\"p\":\"src/tests.rs\"".to_owned(),
+                "\"sc\":\"cargo\"".to_owned(),
+                "\"p\":\"log\"".to_owned(),
+                "\"lg\":".to_owned(),
+                "FAILED src/tests.rs::claude_answer_consistency_task_rollout_is_rewritten".to_owned(),
+                rtk_hook_candidate_root_cause_answer.to_owned(),
+            ],
+            rollout: build_claude_tool_rollout_steps(
+                &[
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_candidate_root_cause_1".to_owned(),
+                        command: "find /root/project/src -maxdepth 1 -type f | sort | head -n 120".to_owned(),
+                        output: repeated_candidate_root_cause_paths(120),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_candidate_root_cause_2".to_owned(),
+                        command: "rg -n \"claude_answer_consistency_task_rollout_is_rewritten|build_variant_verdict|compare-e2e\" src".to_owned(),
+                        output: repeated_task_search_output(
+                            &[
+                                "src/tests.rs:4201:fn claude_answer_consistency_task_rollout_is_rewritten() {",
+                                "src/tests.rs:4208:    assert!(haystack.contains(\"compare-e2e\"));",
+                                "src/tests.rs:4210:    assert!(haystack.contains(\"failing test signal\"));",
+                                "src/e2e_report.rs:167:fn build_variant_verdict(expected_result_match: bool, tool_tokens_saved: isize) -> String {",
+                                "src/e2e_report.rs:174:    if expected_result_match && tool_tokens_saved > 0 {",
+                                "src/app.rs:289:        Some(\"compare-e2e\") => parse_compare_e2e(args),",
+                            ],
+                            140,
+                            "src/tests.rs",
+                            "rtk_candidate_root_cause_search_trace",
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_candidate_root_cause_3".to_owned(),
+                        command: "sed -n '4198,4246p' src/tests.rs".to_owned(),
+                        output: repeated_task_code_block(
+                            &[
+                                "#[test]",
+                                "fn claude_answer_consistency_task_rollout_is_rewritten() {",
+                                "    let task = benchmark_task_specs()",
+                                "        .into_iter()",
+                                "        .find(|task| task.name == \"claude_bash_trace_answer_consistency_task\")",
+                                "        .expect(\"claude answer consistency task\");",
+                                "    assert!(haystack.contains(\"compare-e2e\"));",
+                                "    assert!(haystack.contains(\"failing test signal\"));",
+                                "}",
+                                "#[test]",
+                                "fn claude_rtk_hook_answer_consistency_task_rollout_is_rewritten() {",
+                                "    let task = benchmark_task_specs()",
+                                "        .into_iter()",
+                                "        .find(|task| task.name == \"claude_rtk_hook_trace_answer_consistency_task\")",
+                                "        .expect(\"claude rtk hook answer consistency task\");",
+                                "}",
+                            ],
+                            12,
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_candidate_root_cause_4".to_owned(),
+                        command: "git diff -- src/tests.rs".to_owned(),
+                        output: repeated_benchmark_named_diff("src/tests.rs", "answer_consistency_case"),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_candidate_root_cause_5".to_owned(),
+                        command: "cargo test --quiet".to_owned(),
+                        output: format!(
+                            "{}\nFAILED src/tests.rs::claude_answer_consistency_task_rollout_is_rewritten\nerror: test failed, to rerun pass --lib\nwarning: deprecated assertion helper\n",
+                            repeated_lines("test parser::case ... ok", 120)
+                        ),
+                    },
+                ],
+                rtk_hook_candidate_root_cause_answer,
+            ),
+        },
     ]
 }
 
@@ -1897,6 +2083,22 @@ fn repeated_benchmark_paths(count: usize) -> String {
         .join("\n")
 }
 
+fn repeated_candidate_root_cause_paths(count: usize) -> String {
+    let mut rows = vec![
+        "/root/project/src/tests.rs".to_owned(),
+        "/root/project/src/e2e_report.rs".to_owned(),
+        "/root/project/src/app.rs".to_owned(),
+        "/root/project/src/benchmark.rs".to_owned(),
+    ];
+    while rows.len() < count {
+        rows.push(format!(
+            "/root/project/src/candidate_module_{:03}.rs",
+            rows.len()
+        ));
+    }
+    rows.join("\n")
+}
+
 fn repeated_benchmark_ls_long() -> String {
     let mut rows = vec!["total 160".to_owned()];
     for idx in 0..40 {
@@ -1931,18 +2133,19 @@ fn repeated_benchmark_wc() -> String {
     .join("\n")
 }
 
-fn repeated_benchmark_diff() -> String {
+fn repeated_benchmark_named_diff(path: &str, symbol_prefix: &str) -> String {
     let mut rows = vec![
-        "diff --git a/src/lib.rs b/src/lib.rs".to_owned(),
+        format!("diff --git a/{path} b/{path}"),
         "index 1234567..89abcde 100644".to_owned(),
-        "--- a/src/lib.rs".to_owned(),
-        "+++ b/src/lib.rs".to_owned(),
+        format!("--- a/{path}"),
+        format!("+++ b/{path}"),
     ];
     for idx in 0..120 {
         rows.push(format!(
-            "@@ -{},3 +{},6 @@ pub fn function_{}() {{",
+            "@@ -{},3 +{},6 @@ pub fn {}_{}() {{",
             idx * 10 + 1,
             idx * 10 + 1,
+            symbol_prefix,
             idx
         ));
         rows.push("-    old_call();".to_owned());
@@ -1952,6 +2155,10 @@ fn repeated_benchmark_diff() -> String {
         rows.push(" }".to_owned());
     }
     rows.join("\n")
+}
+
+fn repeated_benchmark_diff() -> String {
+    repeated_benchmark_named_diff("src/lib.rs", "function")
 }
 
 fn repeated_benchmark_build_log(kind: &str) -> String {

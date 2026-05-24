@@ -9,6 +9,10 @@ HOST_RUST_TOOLCHAIN_BIN="${HOST_RUST_TOOLCHAIN_BIN:-$(dirname "$(rustup which ca
 HOST_TOOL_PATH="${HOST_TOOL_PATH:-$HOST_RUST_TOOLCHAIN_BIN:/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin}"
 RUN_ROOT="${RUN_ROOT:-/tmp/tke-claude-harness-check}"
 
+if [[ ! -f "$HOST_TKE_BIN" && -f "$ROOT/target/release/tke" ]]; then
+  HOST_TKE_BIN="$ROOT/target/release/tke"
+fi
+
 if ! TKE_BIN_REAL="$(readlink -f "$HOST_TKE_BIN" 2>/dev/null)"; then
   TKE_BIN_REAL="$HOST_TKE_BIN"
 fi
