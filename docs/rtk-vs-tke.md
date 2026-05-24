@@ -81,6 +81,26 @@ So in this repo RTK is primarily measured as an agent-behavior path, while `tke`
 
 RTK is mostly judged through the fairness and E2E harnesses rather than through a repo-local rewriting primitive.
 
+## Where TKE Is Clearly Better Today
+
+The strongest current claim is not "TKE wins every agent and every mode." The strongest current claim is narrower and better supported:
+
+- `tke` is better as a repo-local, deterministic tool-output compression layer.
+- `tke` is better on current Codex evidence in this repo.
+- `tke` is better when you need explicit structured summaries that can be benchmarked and inspected offline.
+
+Current evidence:
+
+| Evidence area | `tke` result | `rtk` result in this repo | Why this matters |
+| --- | --- | --- | --- |
+| Built-in local compression benchmarks | `33/34` compress-or-pass cases behave as expected, with `57724` tokens saved across compress cases at `91.0%` | No equivalent repo-local benchmark runner that rewrites tool payloads directly | `tke` can be measured locally and repeatedly without depending on agent compliance |
+| Built-in rollout/task benchmarks | `17` built-in task traces save `88903` tokens at `91.3%` | RTK only participates through the subset of fairness/synthetic harnesses wired here | `tke` has broader measured coverage inside the repo |
+| Codex real E2E | `4/4` pass, `6257` tool tokens saved | `rtk-codex-rules` is `0/2` pass with only `11` token delta total, including a `saved_but_wrong` case | Current real Codex evidence favors `tke` clearly |
+| Structured output surface | `pathlist`, `search`, `diff`, `log`, `table`, and `file` profiles emit inspectable `__TKE__{...}` summaries | No equivalent repo-local structured envelope | `tke` gives a concrete artifact that tooling can compare and audit |
+| Claude stable synthetic traces | `34831` tokens saved | `34692` tokens saved | Even where `rtk-hook` slightly leads on compression ratio, `tke` still wins on absolute token savings |
+
+If the comparison standard is "which implementation gives this repo the stronger local compression primitive and the stronger current Codex result," the answer is already `tke`.
+
 ## Current Structured Advantage
 
 The current gap is not just aggregate token savings. `tke` now exposes explicit per-profile local summaries that can be replayed, inspected, and expanded inside this repo:
@@ -104,6 +124,26 @@ Implementation references:
 - grouped search compaction in [src/search_profile.rs](/root/github/tke/src/search_profile.rs:7)
 - log summary fields in [src/trim.rs](/root/github/tke/src/trim.rs:1405) and extraction in [src/log_profile.rs](/root/github/tke/src/log_profile.rs:37)
 - diff summary fields in [src/trim.rs](/root/github/tke/src/trim.rs:1416)
+
+The measured built-in benchmark totals are also materially strong on their own:
+
+| Scope | Cases | Tokens saved | Savings ratio |
+| --- | --- | --- | --- |
+| Default compress benchmarks | `33` | `57724` | `91.0%` |
+| Built-in rollout/task traces | `17` | `88903` | `91.3%` |
+
+Per-profile compression in the current benchmark suite:
+
+| Profile | Cases | Tokens saved | Savings ratio |
+| --- | --- | --- | --- |
+| `pathlist` | `6` | `36421` | `98.5%` |
+| `diff` | `1` | `3459` | `93.7%` |
+| `search` | `2` | `4060` | `89.9%` |
+| `file` | `9` | `5468` | `78.1%` |
+| `log` | `12` | `6947` | `74.4%` |
+| `table` | `3` | `1369` | `71.5%` |
+
+RTK in this repo does not currently expose a comparable repo-local profile-by-profile compression surface, which is itself part of the advantage: `tke` can be tuned by profile because the profile outputs are explicit.
 
 ## Current Measured Results
 
@@ -166,6 +206,13 @@ Current takeaway:
 - Those controlled traces now cover `find/pathlist`, `search`, `diff`, `build/log`, `complex/triage`, and `complex/code-trace`.
 - On current fair live Claude runs, `rtk-hook` is ahead on correctness stability, but not on token reduction.
 - On current live Codex evidence, `tke` remains the only path with clear measured savings plus passing task outcomes.
+
+So the evidence-based comparison is:
+
+- `tke` is already ahead on local compression infrastructure.
+- `tke` is already ahead on current Codex effectiveness.
+- `rtk-hook` is still ahead on current Claude live-path stability.
+- Claude synthetic traces are close enough that the honest claim is "mixed, but favorable to `tke` on absolute savings."
 
 ## Horizontal Comparison Verdict
 
