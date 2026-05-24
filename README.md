@@ -122,6 +122,8 @@ bash scripts/codex_real_suite.sh /root/github/tke
 
 `benchmark-commands` runs a built-in benchmark suite for the default high-frequency command families that `tke` optimizes, including code reading, search, path discovery, table/list output, diff, and build/test logs. It also includes fixed "real codex task" rollout benchmarks that simulate multi-step agent work on the same objective, and scans local rollout corpus files such as `.tmp-*.jsonl` and `.tke/interactive/*.jsonl`. The output is a JSON summary of byte and approximate token savings.
 
+For the Claude local harness itself, `bash scripts/verify_claude_harness.sh` verifies the isolated shell setup, `TKE_REAL_PATH`, and cargo/rustup cache wiring without making an external API call.
+
 ## Fair RTK Comparisons
 
 RTK does not integrate with every agent in the same way:

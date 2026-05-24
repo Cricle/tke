@@ -420,6 +420,20 @@ fn normalize_cmp(value: &str) -> String {
 }
 
 fn evaluate_result(path: &Path, fields: &BTreeMap<String, String>) -> E2eCorrectnessReport {
+    let raw_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default();
+    if let Ok(text) = fs::read_to_string(path)
+        && (text.contains("API Error: 504") || text.contains("origin_gateway_timeout"))
+    {
+        return E2eCorrectnessReport {
+            status: "gateway_error".to_owned(),
+            checked_fields: Vec::new(),
+            notes: vec![format!("{raw_name} hit transient gateway timeout")],
+        };
+    }
+
     let Some(expectation) = case_expectation(path) else {
         return E2eCorrectnessReport {
             status: "ungraded".to_owned(),

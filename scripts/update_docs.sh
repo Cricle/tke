@@ -129,6 +129,7 @@ def collect_variant_rows(report, wanted_modes=None):
     if not report:
         return rows
     for case in report["cases"]:
+        case_name = normalize_case_name(case["name"])
         for variant in case["variants"]:
             mode = variant["mode"]
             if wanted_modes and mode not in wanted_modes:
@@ -136,7 +137,7 @@ def collect_variant_rows(report, wanted_modes=None):
             correctness = variant["sample"]["correctness"]["status"]
             rows.append(
                 [
-                    f"`{case['name']}`",
+                    f"`{case_name}`",
                     f"`{mode}`",
                     correctness,
                     str(variant["tool_tokens_saved"]),
@@ -183,6 +184,16 @@ def collect_summary_rows(report, wanted_modes=None):
             ]
         )
     return rows
+
+
+def normalize_case_name(name):
+    if name.startswith("livefind") or name.startswith("compatfind"):
+        return "findcase"
+    if name.startswith("livebuild"):
+        return "buildcase"
+    if name.startswith("liverg"):
+        return "rgcase"
+    return name
 
 
 codex_tke_rows = collect_variant_rows(codex, {"tke"})
@@ -289,6 +300,7 @@ if claude:
             "",
             "- `Claude + tke` currently defaults to compatibility mode in live CLI usage. This keeps agent and tool I/O transparent unless `TKE_CLAUDE_LIVE_TOOLS=1` is set.",
             "- The offline transcript rewriter and compare reports still measure potential savings on saved Claude stream JSONL output.",
+            "- `gateway_error` means the gateway returned a transient upstream failure such as Cloudflare 504; treat those samples as infrastructure noise rather than a correctness verdict on the harness itself.",
             "",
             "Claude aggregate by mode:",
             "",
@@ -355,7 +367,7 @@ def build_status_map(report):
     if not report:
         return status
     for case in report["cases"]:
-        entry = status.setdefault(case["name"], {"raw": "missing"})
+        entry = status.setdefault(normalize_case_name(case["name"]), {"raw": "missing"})
         entry["raw"] = case["baseline"]["correctness"]["status"]
         for variant in case["variants"]:
             entry[variant["mode"]] = variant["sample"]["correctness"]["status"]
@@ -367,6 +379,8 @@ claude_status = build_status_map(claude)
 
 
 def pass_label(status):
+    if status == "gateway_error":
+        return "gateway_error"
     if status == "pass":
         return "pass"
     if status == "fail":

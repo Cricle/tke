@@ -2208,6 +2208,202 @@ fn compare_e2e_report_shows_positive_tool_savings_for_large_tke_payload() {
 }
 
 #[test]
+fn compare_e2e_report_grades_claude_live_cases_using_builtin_expectations() {
+    let base = temp_test_dir("claude-live-e2e-cases");
+    fs::create_dir_all(base.join(".tmp-claude-e2e")).expect("mkdir");
+
+    let find_raw = base.join(".tmp-claude-e2e/findcase.raw.stream.jsonl");
+    fs::write(
+        &find_raw,
+        [
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_find_raw",
+                            "content": repeated_lines("src/tests.rs", 17)
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": "STAGE=find src -type f | head -n 40\nFILE=src/tests.rs\nCOUNT=17"
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write find raw");
+
+    let livefind = base.join(".tmp-claude-e2e/findcase.tke.stream.jsonl");
+    fs::write(
+        &livefind,
+        [
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_find",
+                            "content": "__TKE__{\"v\":1,\"cmd\":\"find\",\"sc\":\"find\",\"sr\":\"search\",\"p\":\"pathlist\",\"c\":17}"
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": "STAGE=find src -type f | head -n 40\nFILE=src/tests.rs\nCOUNT=17"
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write livefind");
+
+    let build_raw = base.join(".tmp-claude-e2e/buildcase.raw.stream.jsonl");
+    fs::write(
+        &build_raw,
+        [
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_build_raw",
+                            "content": "test result: ok. 104 passed; 0 failed; 0 ignored; 0 measured"
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": "STAGE=cargo test --lib -- --nocapture\nFILE=src/lib.rs\nCOUNT=0"
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write build raw");
+
+    let livebuild = base.join(".tmp-claude-e2e/buildcase.tke.stream.jsonl");
+    fs::write(
+        &livebuild,
+        [
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_build",
+                            "content": "__TKE__{\"v\":1,\"cmd\":\"cargo\",\"sc\":\"cargo\",\"sr\":\"build\",\"p\":\"log\",\"lg\":{\"fail\":0}}"
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": "STAGE=cargo test --lib -- --nocapture\nFILE=src/lib.rs\nCOUNT=0"
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write livebuild");
+
+    let rg_raw = base.join(".tmp-claude-e2e/rgcase.raw.stream.jsonl");
+    fs::write(
+        &rg_raw,
+        [
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_rg_raw",
+                            "content": repeated_lines("src/tests.rs:10:assert benchmark normalize claude", 8)
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": "STAGE=rg -n \"assert|benchmark|normalize|claude\" src/tests.rs\nFILE=src/tests.rs\nKIND=search"
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write rg raw");
+
+    let liverg = base.join(".tmp-claude-e2e/rgcase.tke.stream.jsonl");
+    fs::write(
+        &liverg,
+        [
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_rg",
+                            "content": "__TKE__{\"v\":1,\"cmd\":\"rg\",\"sc\":\"rg\",\"sr\":\"search\",\"p\":\"search\"}"
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": "STAGE=rg -n \"assert|benchmark|normalize|claude\" src/tests.rs\nFILE=src/tests.rs\nKIND=search"
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write liverg");
+
+    let report = build_e2e_compare_report(
+        vec![base.join(".tmp-claude-e2e")],
+        Some("claude"),
+        &Config::default(),
+    )
+    .expect("report");
+
+    let find_case = report
+        .cases
+        .iter()
+        .find(|case| case.name == "findcase")
+        .expect("findcase case");
+    assert_eq!(find_case.variants[0].sample.correctness.status, "pass");
+
+    let build_case = report
+        .cases
+        .iter()
+        .find(|case| case.name == "buildcase")
+        .expect("buildcase case");
+    assert_eq!(build_case.variants[0].sample.correctness.status, "pass");
+
+    let rg_case = report
+        .cases
+        .iter()
+        .find(|case| case.name == "rgcase")
+        .expect("rgcase case");
+    assert_eq!(rg_case.variants[0].sample.correctness.status, "pass");
+}
+
+#[test]
 fn compare_e2e_report_supports_multiple_variants_including_rtk() {
     let base = temp_test_dir("e2e-report-rtk");
     fs::create_dir_all(base.join(".tmp-codex-e2e")).expect("mkdir");

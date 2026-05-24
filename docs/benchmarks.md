@@ -103,20 +103,21 @@ Generated from:
 
 | Case | Variant | Correct | Tool token savings | Verdict |
 | --- | --- | --- | --- | --- |
-| `findcase` | `rtk-hook` | pass | 0 | `correct_but_not_saved` |
-| `findcase` | `tke` | fail | 67 | `saved_but_wrong` |
+| `findcase` | `rtk-hook` | gateway_error | 0 | `wrong_and_not_saved` |
+| `findcase` | `tke` | fail | 0 | `wrong_and_not_saved` |
 
 Compatibility notes:
 
 - `Claude + tke` currently defaults to compatibility mode in live CLI usage. This keeps agent and tool I/O transparent unless `TKE_CLAUDE_LIVE_TOOLS=1` is set.
 - The offline transcript rewriter and compare reports still measure potential savings on saved Claude stream JSONL output.
+- `gateway_error` means the gateway returned a transient upstream failure such as Cloudflare 504; treat those samples as infrastructure noise rather than a correctness verdict on the harness itself.
 
 Claude aggregate by mode:
 
 | Variant | Cases | Pass | Fail | Ungraded | Total tool tokens saved |
 | --- | --- | --- | --- | --- | --- |
-| `rtk-hook` | 1 | 1 | 0 | 0 | 0 |
-| `tke` | 1 | 0 | 1 | 0 | 67 |
+| `rtk-hook` | 1 | 0 | 0 | 0 | 0 |
+| `tke` | 1 | 0 | 1 | 0 | 0 |
 
 Claude attempt summary:
 
