@@ -1,0 +1,3255 @@
+use crate::app::{AppError, Config, Dispatch, default_tool_commands, parse_dispatch};
+use crate::adapter::{
+    rewrite_agent_transcript, rewrite_claude_jsonl, rewrite_codex_jsonl, rewrite_generic_jsonl,
+};
+use crate::benchmark::{
+    RolloutCompareReport, benchmark_specs, benchmark_task_specs, build_benchmark_report,
+};
+use crate::e2e_report::build_e2e_compare_report;
+use crate::rewrite::{
+    LivePipelineDecision, classify_stage_role, live_pipeline_decision,
+    live_pipeline_should_passthrough, parse_command_execution, parse_live_shell_pipeline,
+    rewrite_command_item_fields,
+};
+use crate::rollout_stats::{collect_rollout_output_stats, rollout_string_haystack};
+use crate::rollout_io::{InteractiveTracker, capture_interactive};
+use crate::shim::{maybe_normalize_text, normalize_text, normalize_text_with_stage};
+use crate::trim::{
+    CommandKind, ShellKind, candidate_command_names, classify_command,
+    create_windows_cmd_shim, match_terms, now_millis, read_stream_payload,
+    render_activate_script, render_deactivate_script,
+};
+use std::fs;
+use std::io::{self, Cursor, Read};
+use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
+
+static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+fn value_from_json(raw: &str) -> serde_json::Value {
+    serde_json::from_str(raw).expect("json")
+}
+
+fn temp_test_dir(label: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("tke-{label}-{}", now_millis()))
+}
+
+fn set_env_var(key: &str, value: impl AsRef<std::ffi::OsStr>) {
+    unsafe {
+        std::env::set_var(key, value);
+    }
+}
+
+fn remove_env_var(key: &str) {
+    unsafe {
+        std::env::remove_var(key);
+    }
+}
+
+fn repeated_lines(prefix: &str, count: usize) -> String {
+    crate::benchmark::repeated_lines(prefix, count)
+}
+
+struct WouldBlockReader;
+
+impl Read for WouldBlockReader {
+    fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+        Err(io::Error::from(io::ErrorKind::WouldBlock))
+    }
+}
+
+#[test]
+fn small_payload_keeps_body() {
+    let cfg = Config::default();
+    let text = "line1\nline2\nline3\n";
+    let json = normalize_text(
+        "cat",
+        &["foo.rs".to_owned()],
+        "stdout",
+        CommandKind::File,
+        text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("json");
+    assert!(value.get("t").is_none());
+    assert_eq!(value["b"][0], "line1");
+}
+
+#[test]
+fn large_payload_trims_ranges() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    cfg.head_lines = 2;
+    cfg.tail_lines = 2;
+    let text = (0..12)
+        .map(|idx| format!("line-{idx} error"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let json = normalize_text(
+        "cargo",
+        &["test".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("json");
+    assert_eq!(value["t"], true);
+    assert!(value["o"].as_array().is_some());
+    assert!(value["m"].as_array().expect("matches").len() >= 1);
+}
+
+#[test]
+fn match_terms_include_errors_and_args() {
+    let terms = match_terms("cargo", &["test".to_owned(), "AuthFailure".to_owned()]);
+    assert!(terms.contains(&"authfailure".to_owned()));
+    assert!(terms.contains(&"error".to_owned()));
+}
+
+#[test]
+fn read_stream_payload_reads_normal_input() {
+    let mut reader = Cursor::new(b"hello\nworld".to_vec());
+    let payload = read_stream_payload(&mut reader).expect("payload");
+    assert_eq!(payload, Some(b"hello\nworld".to_vec()));
+}
+
+#[test]
+fn read_stream_payload_ignores_empty_would_block() {
+    let mut reader = WouldBlockReader;
+    let payload = read_stream_payload(&mut reader).expect("payload");
+    assert_eq!(payload, None);
+}
+
+#[test]
+fn diff_profile_marks_hunks() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "diff --git a/src/lib.rs b/src/lib.rs",
+        "index 123..456 100644",
+        "--- a/src/lib.rs",
+        "+++ b/src/lib.rs",
+        "@@ -1,3 +1,4 @@",
+        "-old",
+        "+new",
+        " unchanged",
+    ]
+    .join("\n");
+    let json = normalize_text(
+        "git",
+        &["diff".to_owned()],
+        "stdout",
+        CommandKind::Diff,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("json");
+    assert_eq!(value["p"], "diff");
+    assert!(
+        value["m"]
+            .as_array()
+            .expect("matches")
+            .iter()
+            .any(|chunk| chunk["k"] == "hunk")
+    );
+}
+
+#[test]
+fn stacktrace_profile_detected() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "Traceback (most recent call last):",
+        "  File \"app.py\", line 10, in <module>",
+        "  File \"svc.py\", line 20, in run",
+        "ValueError: boom",
+    ]
+    .join("\n");
+    let json = normalize_text(
+        "python",
+        &["script.py".to_owned()],
+        "stderr",
+        CommandKind::Generic,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("json");
+    assert_eq!(value["p"], "stacktrace");
+    assert!(
+        value["m"]
+            .as_array()
+            .expect("matches")
+            .iter()
+            .any(|chunk| chunk["k"] == "frame")
+    );
+}
+
+#[test]
+fn search_profile_prefers_result_lines() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "src/lib.rs:10:fn normalize_text(",
+        "src/lib.rs:20:fn collect_profile_chunks(",
+        "src/main.rs:5:fn run()",
+    ]
+    .join("\n");
+    let json = normalize_text(
+        "rg",
+        &["normalize".to_owned()],
+        "stdout",
+        CommandKind::Search,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("json");
+    assert_eq!(value["p"], "search");
+    assert!(
+        value["m"]
+            .as_array()
+            .expect("matches")
+            .iter()
+            .all(|chunk| chunk["k"] == "file" || chunk["k"] == "result")
+    );
+}
+
+#[test]
+fn search_profile_groups_results_by_file() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = (0..40)
+        .map(|idx| format!("src/lib.rs:{}:pub fn alpha_{}() {{}}", idx + 1, idx))
+        .chain((0..20).map(|idx| format!("src/main.rs:{}:pub fn beta_{}() {{}}", idx + 1, idx)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let json = normalize_text(
+        "rg",
+        &["fn".to_owned()],
+        "stdout",
+        CommandKind::Search,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&json);
+    let chunks = value["m"].as_array().expect("matches");
+    assert!(chunks.iter().any(|chunk| chunk["k"] == "file"));
+}
+
+#[test]
+fn log_profile_folds_repeated_lines() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "Compiling crate_a v0.1.0",
+        "Compiling crate_a v0.1.0",
+        "Compiling crate_a v0.1.0",
+        "Compiling crate_a v0.1.0",
+        "error: build failed",
+    ]
+    .join("\n");
+    let json = normalize_text(
+        "cargo",
+        &["build".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("json");
+    assert_eq!(value["p"], "log");
+    assert!(
+        value["m"]
+            .as_array()
+            .expect("matches")
+            .iter()
+            .any(|chunk| chunk["k"] == "fold")
+    );
+}
+
+#[test]
+fn table_profile_detected_for_ps_output() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+            "USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND",
+            "root        3142  100  0.0   7324  3192 ?        Ss   08:09   0:00 /bin/bash -c ps aux --sort=-%cpu | head -n 25",
+            "root        2553  2.2  2.5 357624 101588 pts/1   Sl+  08:08   0:00 codex",
+            "root         674  0.3  1.1 1262168 45772 ?       Ssl  07:56   0:02 cloudflared",
+            "root         683  0.2  0.7 1530044 30480 ?       Ssl  07:56   0:01 proxima",
+            "root         665  0.1  2.6 1304956 105920 ?      Ssl  07:56   0:01 1panel-agent",
+            "root           1  0.1  0.3 167764 12476 ?        Ss   07:56   0:00 /sbin/init nopti",
+        ]
+        .join("\n");
+    let json = normalize_text(
+        "ps",
+        &["aux".to_owned(), "--sort=-%cpu".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&json);
+    assert_eq!(value["p"], "table");
+    assert!(value["tb"].is_object());
+    assert_eq!(value["tb"]["c"][0], "USER");
+    assert!(
+        value["tb"]["r"]
+            .as_array()
+            .expect("rows")
+            .iter()
+            .any(|row| row["v"].to_string().to_ascii_lowercase().contains("codex"))
+    );
+}
+
+#[test]
+fn maybe_normalize_prefers_table_summary_when_cheaper() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+            "USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND",
+            "root        3142  100  0.0   7324  3192 ?        Ss   08:09   0:00 /bin/bash -c ps aux --sort=-%cpu | head -n 25",
+            "root        2553  2.2  2.5 357624 101588 pts/1   Sl+  08:08   0:00 codex",
+            "root         674  0.3  1.1 1262168 45772 ?       Ssl  07:56   0:02 cloudflared",
+            "root         683  0.2  0.7 1530044 30480 ?       Ssl  07:56   0:01 proxima",
+            "root         665  0.1  2.6 1304956 105920 ?      Ssl  07:56   0:01 1panel-agent",
+            "root           1  0.1  0.3 167764 12476 ?        Ss   07:56   0:00 /sbin/init nopti",
+            "root        1063  0.0  1.6 1440068 66960 ?       Sl   07:56   0:00 cloud-monitor-agent",
+            "root        2546  0.0  1.2 1403548 48180 pts/1   Sl+  08:08   0:00 node codex",
+            "root         886  0.0  1.1 1313072 46252 ?       Ssl  07:56   0:00 mihomo",
+            "root         710  0.0  1.4 1950568 57672 ?       Ssl  07:56   0:00 containerd",
+            "root         964  0.0  2.2 2271304 91340 ?       Ssl  07:56   0:00 dockerd",
+        ]
+        .join("\n");
+    let normalized = maybe_normalize_text(
+        "ps",
+        &["aux".to_owned(), "--sort=-%cpu".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &cfg,
+        None,
+    )
+    .expect("normalize");
+    assert!(normalized.is_some());
+    let payload = normalized.expect("payload");
+    let value = value_from_json(&payload);
+    assert_eq!(value["p"], "table");
+}
+
+#[test]
+fn table_profile_can_trigger_below_default_trim_bytes() {
+    let cfg = Config::default();
+    let text = [
+        "CONTAINER ID   IMAGE          STATUS       PORTS      NAMES",
+        "abc123         redis:7        Up 2 hours   6379/tcp   redis-main",
+        "def456         postgres:16    Up 2 hours   5432/tcp   pg-main",
+        "ghi789         nginx:latest   Exited (0)              web-old",
+        "jkl012         app:v1         Up 5 mins    8080/tcp   app-blue",
+        "mno345         app:v2         Up 1 min     8081/tcp   app-green",
+        "pqr678         worker:v2      Up 1 min                worker-green",
+        "stu901         sidekiq:v2     Restarting              sidekiq-green",
+        "vwx234         cron:v1        Exited (137)            cron-old",
+        "yz5678         proxy:v3       Up 3 days    80/tcp     edge-proxy",
+        "qwe111         admin:v1       Up 3 days    9000/tcp   admin-ui",
+        "rty222         mail:v1        Up 1 day     25/tcp     smtp",
+    ]
+    .join("\n");
+    assert!(text.len() < cfg.min_trim_bytes);
+    let normalized = maybe_normalize_text(
+        "docker",
+        &["ps".to_owned(), "-a".to_owned(), "--no-trunc".to_owned()],
+        "stdout",
+        CommandKind::Generic,
+        &text,
+        &cfg,
+        None,
+    )
+    .expect("normalize");
+    assert!(normalized.is_some());
+}
+
+#[test]
+fn compare_rollout_reports_savings_for_realish_ps_output() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let output = [
+            "USER         PID %CPU %MEM    VSZ   RSS TTY      STAT START   TIME COMMAND",
+            "root        3142  100  0.0   7324  3192 ?        Ss   08:09   0:00 /bin/bash -c ps aux --sort=-%cpu | head -n 25",
+            "root        2553  2.2  2.5 357624 101588 pts/1   Sl+  08:08   0:00 /root/.nvm/.../codex",
+            "root         674  0.3  1.1 1262168 45772 ?       Ssl  07:56   0:02 cloudflared --token secret",
+            "root         683  0.2  0.7 1530044 30480 ?       Ssl  07:56   0:01 /opt/proxima/proxima",
+            "root        2696  0.1  0.3 102660 15264 pts/1    S+   08:08   0:00 git-remote-https https://github.com/openai/plugins.git",
+            "root         665  0.1  2.6 1304956 105920 ?      Ssl  07:56   0:01 /usr/bin/1panel-agent",
+            "root           1  0.1  0.3 167764 12476 ?        Ss   07:56   0:00 /sbin/init nopti",
+            "root        1063  0.0  1.6 1440068 66960 ?       Sl   07:56   0:00 cloud-monitor-agent worker",
+            "root        2546  0.0  1.2 1403548 48180 pts/1   Sl+  08:08   0:00 node /root/.nvm/.../codex",
+            "root         886  0.0  1.1 1313072 46252 ?       Ssl  07:56   0:00 mihomo",
+            "root         710  0.0  1.4 1950568 57672 ?       Ssl  07:56   0:00 containerd",
+            "root         964  0.0  2.2 2271304 91340 ?       Ssl  07:56   0:00 dockerd",
+            "root        2408  0.0  0.1  11028  7764 pts/1    Ss   08:08   0:00 /bin/bash",
+            "root          63  0.0  0.0      0     0 ?        I    07:56   0:00 [kworker/3:1-events]",
+            "root         673  0.0  1.5 1366336 60272 ?       Ssl  07:56   0:00 cloud-monitor-agent start",
+            "root         685  0.0  0.1 221780  4376 ?        Ssl  07:56   0:00 rsyslogd -n -iNONE",
+            "root         266  0.0  0.3  33208 13396 ?        Ss   07:56   0:00 systemd-journald",
+            "root          39  0.0  0.0      0     0 ?        I    07:56   0:00 [kworker/u10:1-writeback]",
+            "root        2407  0.0  0.0   7016  2532 ?        Ss   08:08   0:00 SCREEN -S t",
+            "earlyoom     679  0.0  0.0   2480   884 ?        SLs  07:56   0:00 earlyoom",
+            "root         668  0.0  0.8 1308624 32080 ?       Ssl  07:56   0:00 assist-client start",
+            "root        1843  0.0  0.0      0     0 ?        I    08:07   0:00 [kworker/u9:1-events_unbound]",
+            "root         667  0.0  0.8 1292420 33452 ?       Ssl  07:56   0:00 /usr/bin/1panel-core",
+            "70          1411  0.0  0.6 175360 26788 ?        Ss   07:56   0:00 postgres",
+        ]
+        .join("\n");
+    let jsonl = [
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "arguments": "{\"cmd\":\"ps aux --sort=-%cpu | head -n 25\",\"yield_time_ms\":1000}",
+                    "call_id": "call_7"
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "call_7",
+                    "output": format!(
+                        "Chunk ID: eebb60\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 757\nOutput:\n{output}\n"
+                    )
+                }
+            })
+            .to_string(),
+        ]
+        .join("\n");
+    let rewritten = rewrite_codex_jsonl(&jsonl, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let raw_stats = collect_rollout_output_stats(&jsonl, &cfg);
+    let rewritten_stats = collect_rollout_output_stats(&rewritten, &cfg);
+    assert!(rewritten_stats.approx_tokens < raw_stats.approx_tokens);
+    assert!(rewritten_stats.bytes < raw_stats.bytes);
+}
+
+#[test]
+fn file_profile_extracts_code_blocks() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "use std::io;",
+        "",
+        "pub fn normalize_text() {",
+        "    let x = 1;",
+        "    println!(\"{}\", x);",
+        "}",
+        "",
+        "pub struct Config {",
+        "    value: usize,",
+        "}",
+    ]
+    .join("\n");
+    let json = normalize_text(
+        "cat",
+        &["src/lib.rs".to_owned()],
+        "stdout",
+        CommandKind::File,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("json");
+    assert_eq!(value["p"], "file");
+    assert!(
+        value["m"]
+            .as_array()
+            .expect("matches")
+            .iter()
+            .any(|chunk| chunk["k"] == "block" || chunk["k"] == "decl")
+    );
+}
+
+#[test]
+fn rewrites_codex_command_execution_output() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let line = serde_json::json!({
+        "type": "item.completed",
+        "item": {
+            "id": "item_1",
+            "type": "command_execution",
+            "command": "/bin/bash -lc 'cat /tmp/demo.rs'",
+            "aggregated_output": format!("{}\n", repeated_lines("pub fn a() {}", 200)),
+            "exit_code": 0,
+            "status": "completed"
+        }
+    })
+    .to_string();
+    let rewritten = rewrite_codex_jsonl(&line, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let value: serde_json::Value =
+        serde_json::from_str(rewritten.lines().next().expect("line")).expect("json");
+    let output = value["item"]["aggregated_output"]
+        .as_str()
+        .expect("aggregated_output");
+    assert!(output.starts_with("__TKE__"));
+    let nested = value_from_json(output.trim_start_matches("__TKE__"));
+    assert_eq!(nested["sc"], "cat");
+    assert_eq!(nested["sr"], "source");
+}
+
+#[test]
+fn parses_shell_wrapped_command_execution() {
+    let parsed =
+        parse_command_execution("/bin/bash -lc \"env FOO=1 cat /tmp/demo.txt | sed -n '1p'\"");
+    assert_eq!(parsed.selected_stage().name, "cat");
+    assert_eq!(
+        parsed.selected_stage().args.first().map(String::as_str),
+        Some("/tmp/demo.txt")
+    );
+}
+
+#[test]
+fn parses_powershell_wrapped_command_execution() {
+    let parsed = parse_command_execution(
+        "pwsh -Command \"Get-Content /tmp/demo.txt | rg -n section | Select-Object -First 1\"",
+    );
+    assert_eq!(parsed.selected_stage().name, "rg");
+    assert_eq!(parsed.selected_stage().role.as_str(), "search");
+}
+
+#[test]
+fn rewrites_multiple_command_output_fields() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let mut value = serde_json::json!({
+        "item": {
+            "type": "command_execution",
+            "command": "/bin/bash -lc 'python tool.py'",
+            "stdout": format!("Traceback (most recent call last):\n{}\nValueError: boom\n", repeated_lines("  File \"x.py\", line 1, in run", 80)),
+            "stderr": format!("{}\n", repeated_lines("warning: noisy", 120)),
+            "output": format!("{}\n", repeated_lines("pub fn alpha() {}", 180))
+        }
+    });
+    let parsed = parse_command_execution("/bin/bash -lc 'python tool.py'");
+    let changed = rewrite_command_item_fields(&mut value["item"], &parsed, &cfg).expect("rewrite");
+    assert!(changed);
+    assert!(
+        value["item"]["stdout"]
+            .as_str()
+            .expect("stdout")
+            .starts_with("__TKE__")
+    );
+    assert!(
+        value["item"]["stderr"]
+            .as_str()
+            .expect("stderr")
+            .starts_with("__TKE__")
+    );
+    assert!(
+        value["item"]["output"]
+            .as_str()
+            .expect("output")
+            .starts_with("__TKE__")
+    );
+}
+
+#[test]
+fn rewrite_is_idempotent_for_prefixed_output() {
+    let cfg = Config::default();
+    let mut value = serde_json::json!({
+        "item": {
+            "type": "command_execution",
+            "command": "/bin/bash -lc 'cat /tmp/demo.rs'",
+            "aggregated_output": "__TKE__{\"v\":1}"
+        }
+    });
+    let parsed = parse_command_execution("/bin/bash -lc 'cat /tmp/demo.rs'");
+    let changed = rewrite_command_item_fields(&mut value["item"], &parsed, &cfg).expect("rewrite");
+    assert!(!changed);
+    assert_eq!(value["item"]["aggregated_output"], "__TKE__{\"v\":1}");
+}
+
+#[test]
+fn rewrite_skips_empty_fields() {
+    let cfg = Config::default();
+    let mut value = serde_json::json!({
+        "item": {
+            "type": "command_execution",
+            "command": "/bin/bash -lc 'cat /tmp/demo.rs'",
+            "aggregated_output": ""
+        }
+    });
+    let parsed = parse_command_execution("/bin/bash -lc 'cat /tmp/demo.rs'");
+    let changed = rewrite_command_item_fields(&mut value["item"], &parsed, &cfg).expect("rewrite");
+    assert!(!changed);
+}
+
+#[test]
+fn non_jsonl_input_is_not_rewritten() {
+    let cfg = Config::default();
+    let rewritten = rewrite_codex_jsonl("not-json\nstill-not-json\n", &cfg).expect("rewrite");
+    assert!(rewritten.is_none());
+}
+
+#[test]
+fn non_jsonl_input_is_not_rewritten_for_claude() {
+    let cfg = Config::default();
+    let rewritten = rewrite_claude_jsonl("not-json\nstill-not-json\n", &cfg).expect("rewrite");
+    assert!(rewritten.is_none());
+}
+
+#[test]
+fn parses_nested_shell_invocation() {
+    let parsed = parse_command_execution(
+        "/bin/bash -lc \"sh -c 'rg -n fn /tmp/tke-codex/big.rs | sed -n 1p'\"",
+    );
+    assert_eq!(parsed.selected_stage().name, "rg");
+    assert!(
+        parsed
+            .selected_stage()
+            .args
+            .iter()
+            .any(|arg: &String| arg.contains("/tmp/tke-codex/big.rs"))
+    );
+}
+
+#[test]
+fn parses_xargs_payload_command() {
+    let parsed =
+        parse_command_execution("/bin/bash -lc \"printf '/tmp/tke-codex/big.rs\\n' | xargs cat\"");
+    assert_eq!(parsed.selected_stage().name, "cat");
+}
+
+#[test]
+fn stage_selection_prefers_search_over_filter() {
+    let parsed = parse_command_execution(
+        "env FOO=1 echo ignore | rg -n fn /tmp/tke-codex/big.rs | sed -n 1p",
+    );
+    assert_eq!(parsed.selected_stage().name, "rg");
+}
+
+#[test]
+fn stage_selection_prefers_search_over_source_in_mixed_pipeline() {
+    let parsed =
+        parse_command_execution("cat /tmp/tke-codex/huge.txt | rg -n '^SECTION 599' | head -n 1");
+    assert_eq!(parsed.selected_stage().name, "rg");
+}
+
+#[test]
+fn live_pipeline_passthrough_skips_multi_stage_cat_rg_head_pipeline() {
+    let parsed =
+        parse_live_shell_pipeline("cat /tmp/tke-codex/huge.txt | rg -n '^SECTION 599' | head -n 1");
+    assert!(live_pipeline_should_passthrough(&parsed, "cat"));
+    assert!(live_pipeline_should_passthrough(&parsed, "rg"));
+    assert!(!live_pipeline_should_passthrough(&parsed, "head"));
+}
+
+#[test]
+fn live_pipeline_passthrough_skips_multi_stage_find_head_pipeline() {
+    let parsed = parse_live_shell_pipeline("find src -name '*.rs' | head -n 20");
+    assert!(live_pipeline_should_passthrough(&parsed, "find"));
+    assert!(!live_pipeline_should_passthrough(&parsed, "head"));
+}
+
+#[test]
+fn live_pipeline_passthrough_skips_multi_stage_build_tail_pipeline() {
+    let parsed = parse_live_shell_pipeline("cargo test -- --nocapture | tail -n 80");
+    assert!(live_pipeline_should_passthrough(&parsed, "cargo"));
+    assert!(!live_pipeline_should_passthrough(&parsed, "tail"));
+}
+
+#[test]
+fn live_pipeline_decision_normalizes_last_stage_with_selected_search_metadata() {
+    let parsed =
+        parse_live_shell_pipeline("cat /tmp/tke-codex/huge.txt | rg -n '^SECTION 599' | head -n 1");
+    match live_pipeline_decision(&parsed, "head") {
+        LivePipelineDecision::Normalize(selected) => {
+            assert_eq!(selected.name, "rg");
+            assert_eq!(selected.role.as_str(), "search");
+        }
+        _ => panic!("expected normalize"),
+    }
+}
+
+#[test]
+fn live_pipeline_decision_normalizes_last_stage_for_build_tail() {
+    let parsed = parse_live_shell_pipeline("cargo test -- --nocapture | tail -n 80");
+    match live_pipeline_decision(&parsed, "tail") {
+        LivePipelineDecision::Normalize(selected) => {
+            assert_eq!(selected.name, "cargo");
+            assert_eq!(selected.role.as_str(), "build");
+        }
+        _ => panic!("expected normalize"),
+    }
+}
+
+#[test]
+fn default_tool_commands_cover_common_reading_tools() {
+    let cfg = Config::default();
+    for name in [
+        "ls", "find", "fd", "bat", "nl", "awk", "cut", "sort", "uniq", "wc", "tree", "xargs",
+    ] {
+        assert!(cfg.is_tool_command(name), "missing tool command {name}");
+    }
+}
+
+#[test]
+fn default_tool_commands_cover_core_agent_workflows() {
+    let cfg = Config::default();
+    for name in [
+        "cat", "sed", "rg", "grep", "git", "cargo", "pytest", "npm", "pnpm", "yarn", "dotnet",
+        "go", "cmake", "ctest", "make", "ninja", "node", "tail", "head", "ls", "find", "fd",
+        "bat", "nl", "awk", "cut", "sort", "uniq", "wc", "tree", "xargs",
+    ] {
+        assert!(cfg.is_tool_command(name), "missing tool command {name}");
+    }
+}
+
+#[test]
+fn stage_selection_prefers_find_for_file_discovery_pipeline() {
+    let parsed = parse_command_execution("find src -name '*.rs' | head -n 20");
+    assert_eq!(parsed.selected_stage().name, "find");
+    assert_eq!(parsed.selected_stage().role.as_str(), "search");
+}
+
+#[test]
+fn stage_selection_prefers_fd_over_filter() {
+    let parsed = parse_command_execution("fd normalize src | sort | head -n 10");
+    assert_eq!(parsed.selected_stage().name, "fd");
+    assert_eq!(parsed.selected_stage().role.as_str(), "search");
+}
+
+#[test]
+fn stage_selection_prefers_build_over_tail() {
+    let parsed = parse_command_execution("cargo test -- --nocapture | tail -n 80");
+    assert_eq!(parsed.selected_stage().name, "cargo");
+    assert_eq!(parsed.selected_stage().role.as_str(), "build");
+}
+
+#[test]
+fn classify_common_code_reading_commands() {
+    assert!(matches!(
+        classify_command("bat", &["src/lib.rs".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command("nl", &["-ba".to_owned(), "src/lib.rs".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command(
+            "find",
+            &["src".to_owned(), "-name".to_owned(), "*.rs".to_owned()]
+        ),
+        CommandKind::Search
+    ));
+    assert!(matches!(
+        classify_command("ls", &["-l".to_owned(), "src".to_owned()]),
+        CommandKind::Log
+    ));
+    assert!(matches!(
+        classify_command("ls", &["src".to_owned()]),
+        CommandKind::Search
+    ));
+    assert!(matches!(
+        classify_command("tree", &["-a".to_owned(), "src".to_owned()]),
+        CommandKind::Search
+    ));
+    assert!(matches!(
+        classify_command("awk", &["{print}".to_owned(), "src/lib.rs".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command("wc", &["-l".to_owned(), "src/lib.rs".to_owned()]),
+        CommandKind::Generic
+    ));
+}
+
+#[test]
+fn stage_roles_cover_default_tool_commands() {
+    for (name, expected) in [
+        ("cat", "source"),
+        ("rg", "search"),
+        ("grep", "search"),
+        ("find", "search"),
+        ("fd", "search"),
+        ("tree", "search"),
+        ("sed", "filter"),
+        ("awk", "filter"),
+        ("cut", "filter"),
+        ("sort", "filter"),
+        ("uniq", "filter"),
+        ("head", "summarize"),
+        ("tail", "summarize"),
+        ("wc", "summarize"),
+        ("cargo", "build"),
+        ("dotnet", "build"),
+        ("go", "build"),
+        ("cmake", "build"),
+        ("ctest", "build"),
+        ("make", "build"),
+        ("ninja", "build"),
+        ("node", "build"),
+    ] {
+        assert_eq!(classify_stage_role(name).as_str(), expected, "{name}");
+    }
+}
+
+#[test]
+fn classify_common_build_and_test_commands_as_log() {
+    for (name, args) in [
+        ("dotnet", vec!["test".to_owned()]),
+        ("go", vec!["test".to_owned(), "./...".to_owned()]),
+        ("cmake", vec!["--build".to_owned(), "build".to_owned()]),
+        ("ctest", vec!["--output-on-failure".to_owned()]),
+        ("make", vec!["test".to_owned()]),
+        ("ninja", vec!["-C".to_owned(), "build".to_owned(), "test".to_owned()]),
+        ("node", vec!["--test".to_owned()]),
+    ] {
+        assert!(matches!(classify_command(name, &args), CommandKind::Log), "{name}");
+    }
+}
+
+#[test]
+fn search_profile_detected_for_find_results() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = (0..32)
+        .map(|idx| format!("src/module_{idx:03}.rs"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let normalized = normalize_text(
+        "find",
+        &["src".to_owned(), "-name".to_owned(), "*.rs".to_owned()],
+        "stdout",
+        CommandKind::Search,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "pathlist");
+    assert!(value["pl"].is_object());
+}
+
+#[test]
+fn file_profile_detected_for_numbered_code_output() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = (1..=40)
+        .map(|idx| match idx % 8 {
+            1 => format!("{idx:>6}\tpub fn function_{idx}() {{"),
+            2 => format!("{idx:>6}\t    let value = {idx};"),
+            3 => format!("{idx:>6}\t    println!(\"{{}}\", value);"),
+            4 => format!("{idx:>6}\t}}"),
+            5 => format!("{idx:>6}\t"),
+            6 => format!("{idx:>6}\tpub struct Struct{idx} {{"),
+            7 => format!("{idx:>6}\t    field: usize,"),
+            _ => format!("{idx:>6}\t}}"),
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let normalized = normalize_text(
+        "nl",
+        &["-ba".to_owned(), "src/lib.rs".to_owned()],
+        "stdout",
+        CommandKind::File,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "file");
+}
+
+#[test]
+fn pathlist_profile_detected_for_find_output() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = (0..40)
+        .map(|idx| format!("/root/project/src/module_{idx:03}.rs"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let normalized = normalize_text(
+        "find",
+        &["src".to_owned(), "-name".to_owned(), "*.rs".to_owned()],
+        "stdout",
+        CommandKind::Search,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "pathlist");
+    assert_eq!(value["pl"]["rc"], 40);
+}
+
+#[test]
+fn pathlist_profile_detected_for_medium_find_output() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = (0..16)
+        .map(|idx| format!("/root/project/src/module_{idx:03}.rs"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let normalized = maybe_normalize_text(
+        "find",
+        &["src".to_owned(), "-name".to_owned(), "*.rs".to_owned()],
+        "stdout",
+        CommandKind::Search,
+        &text,
+        &cfg,
+        None,
+    )
+    .expect("normalize");
+    assert!(normalized.is_some());
+    let value = value_from_json(&normalized.expect("payload"));
+    assert_eq!(value["p"], "pathlist");
+    assert_eq!(value["pl"]["rc"], 16);
+}
+
+#[test]
+fn pathlist_profile_compacts_real_findcase_under_default_config() {
+    let cfg = Config::default();
+    let text = [
+        "src/tests.rs",
+        "src/release.rs",
+        "src/path_profile.rs",
+        "src/main.rs",
+        "src/benchmark.rs",
+        "src/e2e_report.rs",
+        "src/rollout_io.rs",
+        "src/shim.rs",
+        "src/trim.rs",
+        "src/search_profile.rs",
+        "src/rewrite.rs",
+        "src/file_profile.rs",
+        "src/log_profile.rs",
+        "src/app.rs",
+        "src/lib.rs",
+        "src/adapter.rs",
+        "src/rollout_stats.rs",
+    ]
+    .join("\n");
+    let normalized = maybe_normalize_text(
+        "head",
+        &["-n".to_owned(), "40".to_owned()],
+        "stdout",
+        CommandKind::Search,
+        &text,
+        &cfg,
+        Some(("find", "search")),
+    )
+    .expect("normalize");
+    assert!(normalized.is_some(), "expected real findcase to compress");
+    let value = value_from_json(&normalized.expect("payload"));
+    assert_eq!(value["p"], "pathlist");
+    assert_eq!(value["pl"]["rc"], 17);
+    assert_eq!(value["pl"]["d"], "src");
+}
+
+#[test]
+fn pathlist_profile_detected_for_ls_name_output() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = (0..40)
+        .map(|idx| {
+            if idx % 7 == 0 {
+                format!("module_{idx:03}")
+            } else {
+                format!("module_{idx:03}.rs")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let normalized = maybe_normalize_text(
+        "ls",
+        &["src".to_owned()],
+        "stdout",
+        CommandKind::Search,
+        &text,
+        &cfg,
+        None,
+    )
+    .expect("normalize");
+    assert!(normalized.is_some());
+    let value = value_from_json(&normalized.expect("payload"));
+    assert_eq!(value["p"], "pathlist");
+    assert_eq!(value["pl"]["rc"], 40);
+}
+
+#[test]
+fn file_profile_prefers_decl_chunks_for_large_code_reads() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "use serde::{Deserialize, Serialize};",
+        "use std::collections::HashMap;",
+        "",
+        "pub struct Config {",
+        "    field: usize,",
+        "}",
+        "",
+        "impl Config {",
+        "    pub fn load() -> Self {",
+        "        Self { field: 1 }",
+        "    }",
+        "}",
+        "",
+        "pub fn helper() {",
+        "    println!(\"hi\");",
+        "}",
+    ]
+    .join("\n");
+    let normalized = normalize_text(
+        "cat",
+        &["src/lib.rs".to_owned()],
+        "stdout",
+        CommandKind::File,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "file");
+    assert!(
+        value["m"]
+            .as_array()
+            .expect("matches")
+            .iter()
+            .any(|chunk| chunk["k"] == "decl")
+    );
+}
+
+#[test]
+fn compare_rollout_reports_savings_for_path_list_output() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let output = (0..200)
+        .map(|idx| format!("/root/project/target/debug/incremental/tke/build-artifact-{idx:03}.o"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let jsonl = [
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "arguments": "{\"cmd\":\"find /root/project -type f | head -n 200\",\"yield_time_ms\":1000}",
+                    "call_id": "call_path_1"
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "call_path_1",
+                    "output": format!(
+                        "Chunk ID: demo\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 1000\nOutput:\n{output}\n"
+                    )
+                }
+            })
+            .to_string(),
+        ]
+        .join("\n");
+    let rewritten = rewrite_codex_jsonl(&jsonl, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let raw_stats = collect_rollout_output_stats(&jsonl, &cfg);
+    let rewritten_stats = collect_rollout_output_stats(&rewritten, &cfg);
+    assert!(rewritten_stats.approx_tokens < raw_stats.approx_tokens);
+    assert!(rewritten_stats.bytes < raw_stats.bytes);
+}
+
+#[test]
+fn selected_stage_metadata_is_embedded_for_search_pipeline() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let parsed =
+        parse_command_execution("cat /tmp/tke-codex/huge.txt | rg -n '^SECTION 599' | head -n 1");
+    let selected = parsed.selected_stage();
+    let json = normalize_text_with_stage(
+        &selected.name,
+        &selected.args,
+        "stdout",
+        classify_command(&selected.name, &selected.args),
+        "2397:SECTION 599\n",
+        &cfg,
+        Some((&selected.name, selected.role.as_str())),
+    )
+    .expect("normalize");
+    let value = value_from_json(&json);
+    assert_eq!(value["sc"], "rg");
+    assert_eq!(value["sr"], "search");
+    assert_eq!(value["p"], "search");
+}
+
+#[test]
+fn normalize_search_pipeline_tail_uses_selected_search_profile() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let parsed = parse_command_execution("find src -name '*.rs' | head -n 40");
+    let selected = parsed.selected_stage();
+    let text = (0..120)
+        .map(|idx| format!("src/module_{idx:03}.rs"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let json = normalize_text_with_stage(
+        &selected.name,
+        &selected.args,
+        "stdout",
+        classify_command(&selected.name, &selected.args),
+        &text,
+        &cfg,
+        Some((&selected.name, selected.role.as_str())),
+    )
+    .expect("normalize");
+    let value = value_from_json(&json);
+    assert_eq!(value["sc"], "find");
+    assert_eq!(value["sr"], "search");
+    assert_eq!(value["p"], "pathlist");
+    assert_eq!(value["pl"]["rc"], 120);
+}
+
+#[test]
+fn normalize_build_pipeline_tail_uses_selected_build_profile() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let parsed = parse_command_execution("cargo test -- --nocapture | tail -n 80");
+    let selected = parsed.selected_stage();
+    let text = repeated_lines("test parser::case ... ok", 120)
+        + "\nerror: test failed, to rerun pass --lib\nwarning: deprecated assertion helper\n";
+    let json = normalize_text_with_stage(
+        &selected.name,
+        &selected.args,
+        "stdout",
+        classify_command(&selected.name, &selected.args),
+        &text,
+        &cfg,
+        Some((&selected.name, selected.role.as_str())),
+    )
+    .expect("normalize");
+    let value = value_from_json(&json);
+    assert_eq!(value["sc"], "cargo");
+    assert_eq!(value["sr"], "build");
+    assert_eq!(value["p"], "log");
+    let haystack = rollout_string_haystack(&json);
+    assert!(haystack.contains("error: test failed"));
+    assert!(haystack.contains("warning: deprecated assertion helper"));
+}
+
+#[test]
+fn codex_event_replay_preserves_selected_search_stage() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let line = serde_json::json!({
+        "type": "item.completed",
+        "item": {
+            "id": "item_9",
+            "type": "command_execution",
+            "command": "/bin/bash -lc 'cat /tmp/tke-codex/huge.txt | rg -n \"SECTION 599\" | head'",
+            "aggregated_output": format!("{}\n", repeated_lines("2397:SECTION 599", 180)),
+            "exit_code": 0,
+            "status": "completed"
+        }
+    })
+    .to_string();
+    let rewritten = rewrite_codex_jsonl(&line, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let value = value_from_json(rewritten.lines().next().expect("line"));
+    let nested = value_from_json(
+        value["item"]["aggregated_output"]
+            .as_str()
+            .expect("aggregated_output")
+            .trim_start_matches("__TKE__"),
+    );
+    assert_eq!(nested["sc"], "rg");
+    assert_eq!(nested["sr"], "search");
+}
+
+#[test]
+fn rewrites_exec_command_function_call_output() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let jsonl = [
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "arguments": "{\"cmd\":\"cat /tmp/demo.rs | rg -n beta | head -n 1\",\"yield_time_ms\":1000}",
+                    "call_id": "call_1"
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "call_1",
+                    "output": format!(
+                        "Chunk ID: 13b6ef\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 500\nOutput:\n{}\n",
+                        repeated_lines("2:pub fn beta() {}", 160)
+                    )
+                }
+            })
+            .to_string(),
+        ]
+        .join("\n");
+    let rewritten = rewrite_codex_jsonl(&jsonl, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let second = rewritten.lines().nth(1).expect("second line");
+    let value = value_from_json(second);
+    let nested = value_from_json(
+        value["payload"]["output"]
+            .as_str()
+            .expect("output")
+            .trim_start_matches("__TKE__"),
+    );
+    assert_eq!(nested["sc"], "rg");
+    assert_eq!(nested["sr"], "search");
+    assert_eq!(nested["p"], "search");
+}
+
+#[test]
+fn rewrites_exec_command_error_output() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let jsonl = [
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "arguments": "{\"cmd\":\"cat /tmp/demo.rs | rg -n beta | head -n 1 .\",\"yield_time_ms\":1000}",
+                    "call_id": "call_2"
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "call_2",
+                    "output": format!(
+                        "Chunk ID: 15b935\nWall time: 0.0000 seconds\nProcess exited with code 1\nOriginal token count: 500\nOutput:\n{}\n",
+                        repeated_lines("head: error reading '.': Is a directory", 120)
+                    )
+                }
+            })
+            .to_string(),
+        ]
+        .join("\n");
+    let rewritten = rewrite_codex_jsonl(&jsonl, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let second = rewritten.lines().nth(1).expect("second line");
+    let value = value_from_json(second);
+    let nested = value_from_json(
+        value["payload"]["output"]
+            .as_str()
+            .expect("output")
+            .trim_start_matches("__TKE__"),
+    );
+    assert_eq!(nested["s"], "stderr");
+    assert_eq!(nested["sc"], "rg");
+}
+
+#[test]
+fn rewrites_claude_tool_result_output() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let jsonl = [
+        serde_json::json!({
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_1",
+                        "name": "Bash",
+                        "input": {
+                            "command": "cat /tmp/demo.rs | rg -n beta | head -n 1"
+                        }
+                    }
+                ]
+            }
+        })
+        .to_string(),
+        serde_json::json!({
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_1",
+                        "content": format!("{}\n", repeated_lines("2:pub fn beta() {}", 160))
+                    }
+                ]
+            }
+        })
+        .to_string(),
+    ]
+    .join("\n");
+    let rewritten = rewrite_claude_jsonl(&jsonl, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let second = rewritten.lines().nth(1).expect("second line");
+    let value = value_from_json(second);
+    let content = value["message"]["content"][0]["content"]
+        .as_str()
+        .expect("content");
+    assert!(content.starts_with("__TKE__"));
+    let nested = value_from_json(content.trim_start_matches("__TKE__"));
+    assert_eq!(nested["sc"], "rg");
+    assert_eq!(nested["sr"], "search");
+    assert_eq!(nested["p"], "search");
+}
+
+#[test]
+fn rewrites_claude_tool_result_text_block_array() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let jsonl = [
+        serde_json::json!({
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "toolu_2",
+                        "name": "bash",
+                        "input": {
+                            "cmd": "cargo test -- --nocapture | tail -n 80"
+                        }
+                    }
+                ]
+            }
+        })
+        .to_string(),
+        serde_json::json!({
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_2",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": format!("{}\n", repeated_lines("error: test failed", 120))
+                            }
+                        ]
+                    }
+                ]
+            }
+        })
+        .to_string(),
+    ]
+    .join("\n");
+    let rewritten = rewrite_agent_transcript(&jsonl, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let second = rewritten.lines().nth(1).expect("second line");
+    let value = value_from_json(second);
+    let text = value["message"]["content"][0]["content"][0]["text"]
+        .as_str()
+        .expect("text");
+    assert!(text.starts_with("__TKE__"));
+    let nested = value_from_json(text.trim_start_matches("__TKE__"));
+    assert_eq!(nested["sc"], "cargo");
+    assert_eq!(nested["sr"], "build");
+    assert_eq!(nested["p"], "log");
+}
+
+#[test]
+fn generic_rewrite_alias_matches_agent_rewriter() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let jsonl = serde_json::json!({
+        "type": "item.completed",
+        "item": {
+            "id": "item_generic_1",
+            "type": "command_execution",
+            "command": "pwsh -Command \"Get-Content /tmp/demo.rs | rg -n beta | Select-Object -First 1\"",
+            "aggregated_output": format!("{}\n", repeated_lines("2:pub fn beta() {}", 160)),
+            "exit_code": 0,
+            "status": "completed"
+        }
+    })
+    .to_string();
+    let via_generic = rewrite_generic_jsonl(&jsonl, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let via_agent = rewrite_agent_transcript(&jsonl, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    assert_eq!(via_generic, via_agent);
+}
+
+#[test]
+fn compare_rollout_reports_savings() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let large_output = (0..80)
+        .map(|idx| format!("src/demo.rs:{}:pub fn beta_{}() {{}}", idx + 1, idx))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let jsonl = [
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "arguments": "{\"cmd\":\"cat /tmp/demo.rs | rg -n beta | head -n 1\",\"yield_time_ms\":1000}",
+                    "call_id": "call_3"
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "call_3",
+                    "output": format!(
+                        "Chunk ID: 13b6ef\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 500\nOutput:\n{large_output}\n"
+                    )
+                }
+            })
+            .to_string(),
+        ]
+        .join("\n");
+    let rewritten = rewrite_codex_jsonl(&jsonl, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let raw_stats = collect_rollout_output_stats(&jsonl, &cfg);
+    let rewritten_stats = collect_rollout_output_stats(&rewritten, &cfg);
+    let report = RolloutCompareReport::from_stats(
+        Path::new("/tmp/demo.jsonl"),
+        true,
+        raw_stats,
+        rewritten_stats,
+    );
+    assert!(report.changed);
+    assert_eq!(report.raw_fields, 1);
+    assert_eq!(report.rewritten_fields, 1);
+    assert!(
+        report.bytes_saved > 0,
+        "report bytes_saved={}",
+        report.bytes_saved
+    );
+    assert!(
+        report.tokens_saved > 0,
+        "report tokens_saved={}",
+        report.tokens_saved
+    );
+}
+
+#[test]
+fn compare_rollout_reports_grouped_search_savings() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let large_output = (0..120)
+        .map(|idx| format!("src/lib.rs:{}:pub fn beta_{}() {{}}", idx + 1, idx))
+        .chain((0..80).map(|idx| format!("src/main.rs:{}:pub fn gamma_{}() {{}}", idx + 1, idx)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let jsonl = [
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call",
+                    "name": "exec_command",
+                    "arguments": "{\"cmd\":\"rg -n 'fn' src\",\"yield_time_ms\":1000}",
+                    "call_id": "call_rg_group"
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "call_rg_group",
+                    "output": format!(
+                        "Chunk ID: 13b6ef\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 500\nOutput:\n{large_output}\n"
+                    )
+                }
+            })
+            .to_string(),
+        ]
+        .join("\n");
+    let rewritten = rewrite_codex_jsonl(&jsonl, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let raw_stats = collect_rollout_output_stats(&jsonl, &cfg);
+    let rewritten_stats = collect_rollout_output_stats(&rewritten, &cfg);
+    assert!(rewritten_stats.approx_tokens < raw_stats.approx_tokens);
+    assert!(rewritten_stats.bytes < raw_stats.bytes);
+}
+
+#[test]
+fn parse_capture_interactive_dispatch() {
+    let dispatch = parse_dispatch(
+        "tke",
+        vec![
+            "tke".to_owned(),
+            "capture-interactive".to_owned(),
+            "--source".to_owned(),
+            "/tmp/source.jsonl".to_owned(),
+            "--output".to_owned(),
+            "/tmp/out".to_owned(),
+        ],
+    )
+    .expect("dispatch");
+    match dispatch {
+        Dispatch::CaptureInteractive { source, output } => {
+            assert_eq!(source, Some(PathBuf::from("/tmp/source.jsonl")));
+            assert_eq!(output, Some(PathBuf::from("/tmp/out")));
+        }
+        other => panic!("unexpected dispatch: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_activate_accepts_shell() {
+    let dispatch = parse_dispatch(
+        "tke",
+        vec![
+            "tke".to_owned(),
+            "activate".to_owned(),
+            "--shell".to_owned(),
+            "powershell".to_owned(),
+            "codex".to_owned(),
+        ],
+    )
+    .expect("dispatch");
+    match dispatch {
+        Dispatch::Activate {
+            agents,
+            shim_dir,
+            shell,
+        } => {
+            assert_eq!(agents, vec!["codex".to_owned()]);
+            assert!(shim_dir.is_none());
+            assert_eq!(shell, Some(ShellKind::PowerShell));
+        }
+        other => panic!("unexpected dispatch: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_install_dispatch() {
+    let dispatch = parse_dispatch(
+        "tke",
+        vec![
+            "tke".to_owned(),
+            "install".to_owned(),
+            "--bin-dir".to_owned(),
+            "/tmp/tke-bin".to_owned(),
+        ],
+    )
+    .expect("dispatch");
+    match dispatch {
+        Dispatch::Install { bin_dir } => {
+            assert_eq!(bin_dir, Some(PathBuf::from("/tmp/tke-bin")));
+        }
+        other => panic!("unexpected dispatch: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_run_dispatch() {
+    let dispatch = parse_dispatch(
+        "tke",
+        vec![
+            "tke".to_owned(),
+            "run".to_owned(),
+            "--shim-dir".to_owned(),
+            "/tmp/tke-shims".to_owned(),
+            "codex".to_owned(),
+            "exec".to_owned(),
+            "--json".to_owned(),
+        ],
+    )
+    .expect("dispatch");
+    match dispatch {
+        Dispatch::Run {
+            name,
+            args,
+            shim_dir,
+        } => {
+            assert_eq!(name, "codex");
+            assert_eq!(args, vec!["exec", "--json"]);
+            assert_eq!(shim_dir, Some(PathBuf::from("/tmp/tke-shims")));
+        }
+        other => panic!("unexpected dispatch: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_agent_alias_dispatch() {
+    let dispatch = parse_dispatch(
+        "tke",
+        vec![
+            "tke".to_owned(),
+            "codex".to_owned(),
+            "exec".to_owned(),
+            "--json".to_owned(),
+        ],
+    )
+    .expect("dispatch");
+    match dispatch {
+        Dispatch::Run {
+            name,
+            args,
+            shim_dir,
+        } => {
+            assert_eq!(name, "codex");
+            assert_eq!(args, vec!["exec", "--json"]);
+            assert!(shim_dir.is_none());
+        }
+        other => panic!("unexpected dispatch: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_tk_driver_alias_dispatch() {
+    let dispatch = parse_dispatch(
+        "tk",
+        vec!["tk".to_owned(), "codex".to_owned(), "exec".to_owned()],
+    )
+    .expect("dispatch");
+    match dispatch {
+        Dispatch::Run {
+            name,
+            args,
+            shim_dir,
+        } => {
+            assert_eq!(name, "codex");
+            assert_eq!(args, vec!["exec"]);
+            assert!(shim_dir.is_none());
+        }
+        other => panic!("unexpected dispatch: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_shim_subcommand_dispatch() {
+    let dispatch = parse_dispatch(
+        "tke",
+        vec![
+            "tke".to_owned(),
+            "shim".to_owned(),
+            "rg".to_owned(),
+            "-n".to_owned(),
+            "fn".to_owned(),
+            "src".to_owned(),
+        ],
+    )
+    .expect("dispatch");
+    match dispatch {
+        Dispatch::ShimExec { name, args } => {
+            assert_eq!(name, "rg");
+            assert_eq!(args, vec!["-n", "fn", "src"]);
+        }
+        other => panic!("unexpected dispatch: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_benchmark_commands_dispatch() {
+    let dispatch = parse_dispatch(
+        "tke",
+        vec!["tke".to_owned(), "benchmark-commands".to_owned()],
+    )
+    .expect("dispatch");
+    assert!(matches!(
+        dispatch,
+        Dispatch::BenchmarkCommands { check: false }
+    ));
+}
+
+#[test]
+fn parse_compare_e2e_dispatch() {
+    let dispatch = parse_dispatch(
+        "tke",
+        vec![
+            "tke".to_owned(),
+            "compare-e2e".to_owned(),
+            "--source".to_owned(),
+            "/tmp/e2e".to_owned(),
+            "--agent".to_owned(),
+            "claude".to_owned(),
+        ],
+    )
+    .expect("dispatch");
+    match dispatch {
+        Dispatch::CompareE2e { sources, agent } => {
+            assert_eq!(sources, vec![PathBuf::from("/tmp/e2e")]);
+            assert_eq!(agent, Some("claude".to_owned()));
+        }
+        other => panic!("unexpected dispatch: {other:?}"),
+    }
+}
+
+#[test]
+fn compare_e2e_report_pairs_raw_and_tke_samples() {
+    let base = temp_test_dir("e2e-report");
+    fs::create_dir_all(base.join(".tmp-claude-e2e")).expect("mkdir");
+    let raw = base.join(".tmp-claude-e2e/rgcase.raw.stream.jsonl");
+    let wrapped = base.join(".tmp-claude-e2e/rgcase.tke.stream.jsonl");
+    fs::write(
+        &raw,
+        [
+            serde_json::json!({
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "call_1",
+                            "name": "Bash",
+                            "input": {"command": "rg -n fn src/lib.rs"}
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_1",
+                            "content": "10:fn alpha()\n11:fn beta()\n"
+                        }
+                    ]
+                },
+                "tool_use_result": {
+                    "stdout": "__TKE__{\"v\":1,\"cmd\":\"rg\",\"p\":\"search\",\"h\":[\"10:fn alpha()\"],\"ta\":[\"11:fn beta()\"],\"m\":[{\"k\":\"result\",\"r\":[0,2],\"l\":[\"10:fn alpha()\",\"11:fn beta()\"]}]}"
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": "STAGE=normalize_text, FILE=src/tests.rs, KIND=test-focus"
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write raw");
+    fs::write(
+        &wrapped,
+        [
+            serde_json::json!({
+                "type": "assistant",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "call_1",
+                            "name": "Bash",
+                            "input": {"command": "rg -n fn src/lib.rs"}
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_1",
+                            "content": "__TKE__{\"v\":1,\"cmd\":\"rg\",\"p\":\"search\",\"h\":[\"10:fn alpha()\"],\"ta\":[\"11:fn beta()\"],\"m\":[{\"k\":\"result\",\"r\":[0,2],\"l\":[\"10:fn alpha()\",\"11:fn beta()\"]}]}"
+                        }
+                    ]
+                },
+                "tool_use_result": {
+                    "stdout": "10:fn alpha()\n11:fn beta()\n"
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": "STAGE=normalize_text_with_stage, FILE=src/tests.rs, KIND=function"
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write wrapped");
+
+    let report = build_e2e_compare_report(
+        vec![base.join(".tmp-claude-e2e")],
+        Some("claude"),
+        &Config::default(),
+    )
+    .expect("report");
+    assert_eq!(report.cases.len(), 1);
+    let case = &report.cases[0];
+    assert_eq!(case.agent, "claude");
+    assert_eq!(case.name, "rgcase");
+    assert_eq!(case.baseline.mode, "raw");
+    assert!(!case.baseline.tool_has_tke);
+    assert_eq!(
+        case.baseline.result,
+        "STAGE=normalize_text, FILE=src/tests.rs, KIND=test-focus"
+    );
+    assert_eq!(case.baseline.correctness.status, "pass");
+    assert_eq!(
+        case.baseline.result_fields.get("FILE").map(String::as_str),
+        Some("src/tests.rs")
+    );
+    assert_eq!(case.variants.len(), 1);
+    let variant = &case.variants[0];
+    assert_eq!(variant.mode, "tke");
+    assert!(variant.sample.tool_has_tke);
+    assert!(!variant.exact_result_match);
+    assert!(variant.semantic_result_match);
+    assert!(variant.expected_result_match);
+    assert_eq!(variant.verdict, "correct_but_not_saved");
+    assert_eq!(
+        variant.sample.result,
+        "STAGE=normalize_text_with_stage, FILE=src/tests.rs, KIND=function"
+    );
+}
+
+#[test]
+fn compare_e2e_report_marks_wrong_variant_when_expected_fields_fail() {
+    let base = temp_test_dir("e2e-report-wrong");
+    fs::create_dir_all(base.join(".tmp-codex-e2e")).expect("mkdir");
+    let raw = base.join(".tmp-codex-e2e/rgcase.raw.jsonl");
+    let wrong = base.join(".tmp-codex-e2e/rgcase.rtk-direct.jsonl");
+    fs::write(
+        &raw,
+        [
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "aggregated_output": repeated_lines("10: long raw line", 40)
+                }
+            }).to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": "STAGE=normalize_text, FILE=src/tests.rs, KIND=test-focus"
+                }
+            }).to_string(),
+        ].join("\n"),
+    ).expect("write raw");
+    fs::write(
+        &wrong,
+        [
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "aggregated_output": "1 result in src/shim.rs"
+                }
+            }).to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": "STAGE=normalize_text_with_stage, FILE=src/shim.rs, KIND=function"
+                }
+            }).to_string(),
+        ].join("\n"),
+    ).expect("write wrong");
+
+    let report = build_e2e_compare_report(
+        vec![base.join(".tmp-codex-e2e")],
+        Some("codex"),
+        &Config::default(),
+    ).expect("report");
+    let case = &report.cases[0];
+    let variant = &case.variants[0];
+    assert_eq!(variant.mode, "rtk-direct");
+    assert!(!variant.expected_result_match);
+    assert!(!variant.semantic_result_match);
+    assert_eq!(variant.verdict, "saved_but_wrong");
+    assert!(
+        variant
+            .sample
+            .correctness
+            .notes
+            .iter()
+            .any(|note| note.contains("src/tests.rs"))
+    );
+}
+
+#[test]
+fn compare_e2e_report_grades_findcase_and_buildcase_expectations() {
+    let base = temp_test_dir("e2e-report-extra-cases");
+    fs::create_dir_all(base.join(".tmp-codex-e2e")).expect("mkdir");
+
+    let find_raw = base.join(".tmp-codex-e2e/findcase.raw.jsonl");
+    let find_tke = base.join(".tmp-codex-e2e/findcase.tke.jsonl");
+    fs::write(
+        &find_raw,
+        [
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "aggregated_output": repeated_lines("src/tests.rs", 17)
+                }
+            }).to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": "STAGE=find, FILE=src/tests.rs, COUNT=17"
+                }
+            }).to_string(),
+        ].join("\n"),
+    ).expect("write find raw");
+    fs::write(
+        &find_tke,
+        [
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "aggregated_output": "__TKE__{\"v\":1,\"cmd\":\"head\",\"sc\":\"find\",\"sr\":\"search\",\"p\":\"pathlist\",\"pl\":{\"rc\":17}}"
+                }
+            }).to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": "STAGE=find, FILE=src/tests.rs, COUNT=17"
+                }
+            }).to_string(),
+        ].join("\n"),
+    ).expect("write find tke");
+
+    let build_raw = base.join(".tmp-codex-e2e/buildcase.raw.jsonl");
+    let build_tke = base.join(".tmp-codex-e2e/buildcase.tke.jsonl");
+    fs::write(
+        &build_raw,
+        [
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "aggregated_output": "test result: ok. 100 passed; 0 failed; 0 ignored"
+                }
+            }).to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": "STAGE=cargo, FILE=src/lib.rs, COUNT=0"
+                }
+            }).to_string(),
+        ].join("\n"),
+    ).expect("write build raw");
+    fs::write(
+        &build_tke,
+        [
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "aggregated_output": "__TKE__{\"v\":1,\"cmd\":\"tail\",\"sc\":\"cargo\",\"sr\":\"build\",\"p\":\"log\",\"lg\":{\"fail\":0}}"
+                }
+            }).to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": "STAGE=cargo, FILE=src/lib.rs, COUNT=0"
+                }
+            }).to_string(),
+        ].join("\n"),
+    ).expect("write build tke");
+
+    let report = build_e2e_compare_report(
+        vec![base.join(".tmp-codex-e2e")],
+        Some("codex"),
+        &Config::default(),
+    ).expect("report");
+
+    let find_case = report
+        .cases
+        .iter()
+        .find(|case| case.name == "findcase")
+        .expect("find case");
+    assert_eq!(find_case.baseline.correctness.status, "pass");
+    assert!(find_case.variants[0].expected_result_match);
+
+    let build_case = report
+        .cases
+        .iter()
+        .find(|case| case.name == "buildcase")
+        .expect("build case");
+    assert_eq!(build_case.baseline.correctness.status, "pass");
+    assert!(build_case.variants[0].expected_result_match);
+}
+
+#[test]
+fn compare_e2e_report_shows_positive_tool_savings_for_large_tke_payload() {
+    let base = temp_test_dir("e2e-report-large");
+    fs::create_dir_all(base.join(".tmp-claude-e2e")).expect("mkdir");
+    let raw = base.join(".tmp-claude-e2e/large.raw.stream.jsonl");
+    let wrapped = base.join(".tmp-claude-e2e/large.tke.stream.jsonl");
+    let raw_tool = repeated_lines("123: very long benchmark match line", 120);
+    let wrapped_tool =
+        "__TKE__{\"v\":1,\"cmd\":\"rg\",\"p\":\"search\",\"h\":[\"123: very long benchmark match line\"],\"o\":[[1,120]],\"st\":{\"tb\":4096}}";
+    fs::write(
+        &raw,
+        [
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_1",
+                            "content": raw_tool
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": "OK"
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write raw");
+    fs::write(
+        &wrapped,
+        [
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_1",
+                            "content": wrapped_tool
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": "OK"
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write wrapped");
+
+    let report = build_e2e_compare_report(
+        vec![base.join(".tmp-claude-e2e")],
+        Some("claude"),
+        &Config::default(),
+    )
+    .expect("report");
+    let case = report
+        .cases
+        .iter()
+        .find(|case| case.name == "large")
+        .expect("large case");
+    assert_eq!(case.variants.len(), 1);
+    let variant = &case.variants[0];
+    assert!(variant.tool_bytes_saved > 0);
+    assert!(variant.tool_tokens_saved > 0);
+}
+
+#[test]
+fn compare_e2e_report_supports_multiple_variants_including_rtk() {
+    let base = temp_test_dir("e2e-report-rtk");
+    fs::create_dir_all(base.join(".tmp-codex-e2e")).expect("mkdir");
+    let raw = base.join(".tmp-codex-e2e/rgcase.raw.jsonl");
+    let tke = base.join(".tmp-codex-e2e/rgcase.tke.jsonl");
+    let rtk = base.join(".tmp-codex-e2e/rgcase.rtk-direct.jsonl");
+    fs::write(
+        &raw,
+        [
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "aggregated_output": repeated_lines("10: long raw line", 80)
+                }
+            }).to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": "STAGE=normalize_text, FILE=src/tests.rs, KIND=test-focus"
+                }
+            }).to_string(),
+        ].join("\n"),
+    ).expect("write raw");
+    fs::write(
+        &tke,
+        [
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "aggregated_output": "__TKE__{\"v\":1,\"cmd\":\"rg\",\"p\":\"search\",\"h\":[\"10: long raw line\"],\"o\":[[1,80]]}"
+                }
+            }).to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": "STAGE=normalize_text_with_stage, FILE=src/tests.rs, KIND=function"
+                }
+            }).to_string(),
+        ].join("\n"),
+    ).expect("write tke");
+    fs::write(
+        &rtk,
+        [
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "aggregated_output": "1 result in src/tests.rs"
+                }
+            }).to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": "STAGE=normalize_text_with_stage, FILE=src/shim.rs, KIND=function"
+                }
+            }).to_string(),
+        ].join("\n"),
+    ).expect("write rtk");
+    let rtk_rules = base.join(".tmp-codex-e2e/rgcase.rtk-codex-rules.jsonl");
+    fs::write(
+        &rtk_rules,
+        [
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "aggregated_output": "1 result in src/tests.rs"
+                }
+            }).to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": "STAGE=normalize_text, FILE=src/tests.rs, KIND=test-focus"
+                }
+            }).to_string(),
+        ].join("\n"),
+    ).expect("write rtk rules");
+
+    let report = build_e2e_compare_report(
+        vec![base.join(".tmp-codex-e2e")],
+        Some("codex"),
+        &Config::default(),
+    ).expect("report");
+    assert_eq!(report.cases.len(), 1);
+    assert_eq!(report.summary.len(), 1);
+    let summary = report
+        .summary
+        .iter()
+        .find(|summary| summary.agent == "codex")
+        .expect("codex summary");
+    assert_eq!(summary.cases, 1);
+    assert_eq!(summary.variants, 3);
+    assert_eq!(summary.saved_and_correct, 2);
+    assert_eq!(summary.correct_but_not_saved, 0);
+    assert_eq!(summary.saved_but_wrong, 1);
+    assert_eq!(summary.wrong_and_not_saved, 0);
+    assert!(summary.total_tool_tokens_saved > 0);
+    let case = &report.cases[0];
+    assert_eq!(case.variants.len(), 3);
+    assert!(case.variants.iter().any(|variant| variant.mode == "tke"));
+    assert!(case.variants.iter().any(|variant| variant.mode == "rtk-direct"));
+    assert!(case
+        .variants
+        .iter()
+        .any(|variant| variant.mode == "rtk-codex-rules"));
+    assert!(
+        case.variants
+            .iter()
+            .find(|variant| variant.mode == "tke")
+            .expect("tke")
+            .expected_result_match
+    );
+    assert!(
+        !case.variants
+            .iter()
+            .find(|variant| variant.mode == "rtk-direct")
+            .expect("rtk")
+            .expected_result_match
+    );
+}
+
+#[test]
+fn benchmark_report_contains_expected_cases() {
+    let cfg = Config::default();
+    let report = build_benchmark_report(&cfg).expect("benchmark");
+    for name in [
+        "cat_code",
+        "sed_code",
+        "bat_code",
+        "nl_code",
+        "awk_code",
+        "cut_code",
+        "head_code",
+        "tail_code",
+        "rg_code",
+        "grep_code",
+        "find_paths",
+        "fd_paths",
+        "tree_paths",
+        "sort_paths",
+        "uniq_paths",
+        "ls_long",
+        "ls_names",
+        "wc_summary",
+        "git_diff",
+        "cargo_build",
+        "pytest_run",
+        "npm_test",
+        "pnpm_test",
+        "yarn_test",
+        "dotnet_test",
+        "go_test",
+        "cmake_build",
+        "ctest_run",
+        "make_build",
+        "ninja_build",
+        "node_test",
+        "ps_table",
+        "systemctl_table",
+        "xargs_cat",
+    ] {
+        assert!(report.cases.iter().any(|case| case.name == name), "{name}");
+    }
+    for name in [
+        "codex_api_trace_rollout_savings",
+        "codex_api_trace_default_tool_coverage",
+        "codex_interactive_trace_selected_search_stage",
+        "codex_interactive_trace_selected_find_stage",
+        "codex_interactive_trace_selected_build_stage",
+        "claude_bash_trace_selected_search_stage",
+        "claude_bash_trace_selected_find_stage",
+        "claude_bash_trace_selected_build_stage",
+    ] {
+        assert!(report.tasks.iter().any(|task| task.name == name), "{name}");
+    }
+}
+
+#[test]
+fn benchmark_report_shows_positive_savings_for_core_cases() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let report = build_benchmark_report(&cfg).expect("benchmark");
+    for case in &report.cases {
+        match case.expected.as_str() {
+            "compress" => {
+                assert!(case.tokens_saved > 0, "{}", case.name);
+                assert!(case.bytes_saved > 0, "{}", case.name);
+            }
+            "pass_through" => {
+                assert_eq!(case.tokens_saved, 0, "{}", case.name);
+                assert_eq!(case.bytes_saved, 0, "{}", case.name);
+            }
+            other => panic!("unexpected expectation {other}"),
+        }
+    }
+}
+
+#[test]
+fn log_profiles_preserve_failure_and_warning_semantics() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    for (name, args, command, output, required) in [
+        (
+            "cargo",
+            vec!["test".to_owned()],
+            "cargo test -- --nocapture",
+            format!(
+                "{}\nwarning: deprecated item used\nerror: test failed, to rerun pass --lib\n",
+                repeated_lines("test module::case ... ok", 120)
+            ),
+            vec!["warning: deprecated item used", "error: test failed"],
+        ),
+        (
+            "dotnet",
+            vec!["test".to_owned()],
+            "dotnet test",
+            format!(
+                "{}\nFailed!  - Failed:     3, Passed:   117, Skipped:     0, Total:   120\nerror CS1002: ; expected\n",
+                repeated_lines("Passed TestCase.Subcase", 120)
+            ),
+            vec!["Failed!  - Failed:     3", "error CS1002: ; expected"],
+        ),
+        (
+            "go",
+            vec!["test".to_owned(), "./...".to_owned()],
+            "go test ./...",
+            format!(
+                "{}\n--- FAIL: TestParser (0.00s)\npanic: runtime error: index out of range\n",
+                repeated_lines("ok   github.com/acme/mod/pkg 0.013s", 120)
+            ),
+            vec!["--- FAIL: TestParser", "panic: runtime error"],
+        ),
+        (
+            "pytest",
+            vec!["-q".to_owned()],
+            "pytest -q",
+            format!(
+                "{}\nFAILED tests/test_parser.py::test_invalid_input - AssertionError: expected boom\nwarning: deprecated fixture used\n",
+                repeated_lines(".", 120)
+            ),
+            vec!["FAILED tests/test_parser.py::test_invalid_input", "warning: deprecated fixture used"],
+        ),
+        (
+            "npm",
+            vec!["test".to_owned()],
+            "npm test",
+            format!(
+                "{}\nnpm ERR! Test failed.  See above for more details.\nerror: Expected status 200 but got 500\n",
+                repeated_lines("PASS src/parser.test.ts", 120)
+            ),
+            vec!["npm ERR! Test failed.", "error: Expected status 200 but got 500"],
+        ),
+        (
+            "pnpm",
+            vec!["test".to_owned()],
+            "pnpm test",
+            format!(
+                "{}\nFAIL src/parser.test.ts\nwarning: obsolete lockfile entry\n",
+                repeated_lines("✓ parser handles literals", 120)
+            ),
+            vec!["FAIL src/parser.test.ts", "warning: obsolete lockfile entry"],
+        ),
+        (
+            "yarn",
+            vec!["test".to_owned()],
+            "yarn test",
+            format!(
+                "{}\nerror Command failed with exit code 1.\nFAIL src/parser.test.ts\n",
+                repeated_lines("PASS src/lexer.test.ts", 120)
+            ),
+            vec!["error Command failed with exit code 1.", "FAIL src/parser.test.ts"],
+        ),
+        (
+            "cmake",
+            vec!["--build".to_owned(), "build".to_owned()],
+            "cmake --build build",
+            format!(
+                "{}\nCMake Error at src/CMakeLists.txt:17 (add_executable): target sources missing\nFAILED: app\n",
+                repeated_lines("[42/200] Building CXX object src/app.o", 120)
+            ),
+            vec!["CMake Error", "FAILED: app"],
+        ),
+        (
+            "ctest",
+            vec!["--output-on-failure".to_owned()],
+            "ctest --output-on-failure",
+            format!(
+                "{}\n99% tests passed, 1 tests failed out of 120\nThe following tests FAILED:\n 42 - parser_test (Failed)\n",
+                repeated_lines("Test #12: io_test ... Passed", 120)
+            ),
+            vec!["1 tests failed out of 120", "42 - parser_test (Failed)"],
+        ),
+        (
+            "make",
+            vec!["test".to_owned()],
+            "make test",
+            format!(
+                "{}\nmake: *** [Makefile:42: test] Error 2\nwarning: stale generated file\n",
+                repeated_lines("[ 84%] Built target parser", 120)
+            ),
+            vec!["make: *** [Makefile:42: test] Error 2", "warning: stale generated file"],
+        ),
+        (
+            "ninja",
+            vec!["-C".to_owned(), "build".to_owned(), "test".to_owned()],
+            "ninja -C build test",
+            format!(
+                "{}\nninja: build stopped: subcommand failed.\nFAILED: build/tests/parser_test\n",
+                repeated_lines("[10/120] Building CXX object core.o", 120)
+            ),
+            vec!["ninja: build stopped: subcommand failed.", "FAILED: build/tests/parser_test"],
+        ),
+        (
+            "node",
+            vec!["--test".to_owned()],
+            "node --test",
+            format!(
+                "{}\nnot ok 12 - parser handles invalid input\nerror: Expected value to be truthy\n",
+                repeated_lines("ok 1 - should parse simple expression", 120)
+            ),
+            vec!["not ok 12 - parser handles invalid input", "error: Expected value to be truthy"],
+        ),
+    ] {
+        let normalized = normalize_text(
+            name,
+            &args,
+            "stdout",
+            CommandKind::Log,
+            &output,
+            &cfg,
+        )
+        .expect("normalize");
+        let value = value_from_json(&normalized);
+        assert_eq!(value["p"], "log", "{command}");
+        let haystack = rollout_string_haystack(&normalized);
+        for fragment in required {
+            assert!(haystack.contains(fragment), "{command} missing `{fragment}`");
+        }
+    }
+}
+
+#[test]
+fn compressed_search_and_file_outputs_preserve_semantic_answer_fragments() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+
+    let search_output = (0..80)
+        .map(|idx| format!("src/lib.rs:{}:pub fn beta_{}() {{}}", idx + 1, idx))
+        .chain((0..40).map(|idx| format!("src/main.rs:{}:struct Gamma{};", idx + 1, idx)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let search = normalize_text(
+        "rg",
+        &["fn|struct".to_owned(), "src".to_owned()],
+        "stdout",
+        CommandKind::Search,
+        &search_output,
+        &cfg,
+    )
+    .expect("normalize");
+    let search_haystack = rollout_string_haystack(&search);
+    for fragment in ["src/lib.rs", "pub fn beta_0() {}", "struct Gamma0;"] {
+        assert!(search_haystack.contains(fragment), "search missing `{fragment}`");
+    }
+
+    let file_output = [
+        "use std::io;",
+        "",
+        "pub struct Config {",
+        "    field: usize,",
+        "}",
+        "",
+        "impl Config {",
+        "    pub fn load() -> Self {",
+        "        Self { field: 1 }",
+        "    }",
+        "}",
+        "",
+        "pub fn helper() {",
+        "    println!(\"hi\");",
+        "}",
+    ]
+    .join("\n");
+    let file = normalize_text(
+        "cat",
+        &["src/lib.rs".to_owned()],
+        "stdout",
+        CommandKind::File,
+        &file_output,
+        &cfg,
+    )
+    .expect("normalize");
+    let file_haystack = rollout_string_haystack(&file);
+    for fragment in ["pub struct Config", "pub fn load()", "pub fn helper()"] {
+        assert!(file_haystack.contains(fragment), "file missing `{fragment}`");
+    }
+}
+
+#[test]
+fn benchmark_report_covers_default_tool_families() {
+    let report = build_benchmark_report(&Config::default()).expect("benchmark");
+    let commands = report
+        .cases
+        .iter()
+        .map(|case| case.command.as_str())
+        .collect::<Vec<_>>();
+    for needle in [
+        "cat ",
+        "sed ",
+        "bat ",
+        "nl ",
+        "awk ",
+        "cut ",
+        "head ",
+        "tail ",
+        "rg ",
+        "grep ",
+        "git ",
+        "cargo ",
+        "pytest ",
+        "npm ",
+        "pnpm ",
+        "yarn ",
+        "dotnet ",
+        "go ",
+        "cmake ",
+        "ctest ",
+        "make ",
+        "ninja ",
+        "node ",
+        "find ",
+        "fd ",
+        "tree ",
+        "sort",
+        "uniq",
+        "wc ",
+        "ls ",
+        "ps ",
+        "systemctl ",
+        "xargs ",
+    ] {
+        assert!(commands.iter().any(|cmd| cmd.contains(needle)), "{needle}");
+    }
+}
+
+#[test]
+fn benchmark_specs_cover_default_tool_commands() {
+    let specs = benchmark_specs();
+    let commands = specs.iter().map(|spec| spec.command.as_str()).collect::<Vec<_>>();
+    for tool in default_tool_commands() {
+        match *tool {
+            "cat" => assert!(commands.iter().any(|cmd| cmd == &"cat src/lib.rs"), "{tool}"),
+            "sed" => assert!(
+                commands
+                    .iter()
+                    .any(|cmd| cmd.starts_with("sed -n ") && cmd.contains("src/lib.rs")),
+                "{tool}"
+            ),
+            "rg" => assert!(commands.iter().any(|cmd| cmd.starts_with("rg ")), "{tool}"),
+            "grep" => assert!(commands.iter().any(|cmd| cmd.starts_with("grep ")), "{tool}"),
+            "git" => assert!(commands.iter().any(|cmd| cmd.starts_with("git diff")), "{tool}"),
+            "cargo" => assert!(commands.iter().any(|cmd| cmd.starts_with("cargo ")), "{tool}"),
+            "pytest" => assert!(commands.iter().any(|cmd| cmd.starts_with("pytest ")), "{tool}"),
+            "npm" => assert!(commands.iter().any(|cmd| cmd.starts_with("npm ")), "{tool}"),
+            "pnpm" => assert!(commands.iter().any(|cmd| cmd.starts_with("pnpm ")), "{tool}"),
+            "yarn" => assert!(commands.iter().any(|cmd| cmd.starts_with("yarn ")), "{tool}"),
+            "tail" => assert!(commands.iter().any(|cmd| cmd.starts_with("tail ")), "{tool}"),
+            "head" => assert!(commands.iter().any(|cmd| cmd.starts_with("head ")), "{tool}"),
+            "dotnet" => assert!(commands.iter().any(|cmd| cmd.starts_with("dotnet ")), "{tool}"),
+            "go" => assert!(commands.iter().any(|cmd| cmd.starts_with("go ")), "{tool}"),
+            "cmake" => assert!(commands.iter().any(|cmd| cmd.starts_with("cmake ")), "{tool}"),
+            "ctest" => assert!(commands.iter().any(|cmd| cmd.starts_with("ctest ")), "{tool}"),
+            "make" => assert!(commands.iter().any(|cmd| cmd.starts_with("make ")), "{tool}"),
+            "ninja" => assert!(commands.iter().any(|cmd| cmd.starts_with("ninja ")), "{tool}"),
+            "node" => assert!(commands.iter().any(|cmd| cmd.starts_with("node ")), "{tool}"),
+            "ls" => assert!(commands.iter().any(|cmd| cmd.starts_with("ls ")), "{tool}"),
+            "find" => assert!(commands.iter().any(|cmd| cmd.starts_with("find ")), "{tool}"),
+            "fd" => assert!(commands.iter().any(|cmd| cmd.starts_with("fd ")), "{tool}"),
+            "bat" => assert!(commands.iter().any(|cmd| cmd.starts_with("bat ")), "{tool}"),
+            "nl" => assert!(commands.iter().any(|cmd| cmd.starts_with("nl ")), "{tool}"),
+            "awk" => assert!(commands.iter().any(|cmd| cmd.starts_with("awk ")), "{tool}"),
+            "cut" => assert!(commands.iter().any(|cmd| cmd.starts_with("cut ")), "{tool}"),
+            "sort" => assert!(commands.iter().any(|cmd| cmd.contains("| sort")), "{tool}"),
+            "uniq" => assert!(commands.iter().any(|cmd| cmd.contains("| uniq")), "{tool}"),
+            "wc" => assert!(commands.iter().any(|cmd| cmd.starts_with("wc ")), "{tool}"),
+            "tree" => assert!(commands.iter().any(|cmd| cmd.starts_with("tree ")), "{tool}"),
+            "xargs" => assert!(commands.iter().any(|cmd| cmd.contains("xargs cat")), "{tool}"),
+            other => panic!("unexpected default tool command {other}"),
+        }
+    }
+}
+
+#[test]
+fn default_tool_commands_have_expected_command_kinds() {
+    for tool in default_tool_commands() {
+        let args = match *tool {
+            "git" => vec!["diff".to_owned()],
+            "cargo" => vec!["build".to_owned()],
+            "pytest" => vec!["-q".to_owned()],
+            "npm" | "pnpm" | "yarn" => vec!["test".to_owned()],
+            "dotnet" => vec!["test".to_owned()],
+            "go" => vec!["test".to_owned(), "./...".to_owned()],
+            "cmake" => vec!["--build".to_owned(), "build".to_owned()],
+            "ctest" => vec!["--output-on-failure".to_owned()],
+            "make" => vec!["test".to_owned()],
+            "ninja" => vec!["-C".to_owned(), "build".to_owned(), "test".to_owned()],
+            "node" => vec!["--test".to_owned()],
+            "ls" => vec!["src".to_owned()],
+            "find" => vec!["src".to_owned()],
+            "fd" => vec![".".to_owned(), "src".to_owned()],
+            "tree" => vec!["-a".to_owned(), "-L".to_owned(), "3".to_owned(), "src".to_owned()],
+            "head" | "tail" => vec!["-n".to_owned(), "20".to_owned(), "src/lib.rs".to_owned()],
+            "sed" => vec!["-n".to_owned(), "1,20p".to_owned(), "src/lib.rs".to_owned()],
+            "bat" => vec!["--style=plain".to_owned(), "src/lib.rs".to_owned()],
+            "nl" => vec!["-ba".to_owned(), "src/lib.rs".to_owned()],
+            "awk" => vec!["{print}".to_owned(), "src/lib.rs".to_owned()],
+            "cut" => vec!["-c1-120".to_owned(), "src/lib.rs".to_owned()],
+            "sort" | "uniq" | "wc" | "xargs" => Vec::new(),
+            _ => vec!["src/lib.rs".to_owned()],
+        };
+
+        let kind = classify_command(tool, &args);
+        match *tool {
+            "cat" | "sed" | "tail" | "head" | "bat" | "nl" | "awk" | "cut" => {
+                assert!(matches!(kind, CommandKind::File), "{tool}");
+            }
+            "rg" | "grep" | "find" | "fd" | "tree" | "ls" => {
+                assert!(matches!(kind, CommandKind::Search), "{tool}");
+            }
+            "git" => assert!(matches!(kind, CommandKind::Diff), "{tool}"),
+            "cargo" | "pytest" | "npm" | "pnpm" | "yarn" | "dotnet" | "go" | "cmake"
+            | "ctest" | "make" | "ninja" | "node" => {
+                assert!(matches!(kind, CommandKind::Log), "{tool}");
+            }
+            "sort" | "uniq" | "wc" | "xargs" => {
+                assert!(matches!(kind, CommandKind::Generic), "{tool}");
+            }
+            other => panic!("unexpected default tool command {other}"),
+        }
+    }
+}
+
+#[test]
+fn frequent_command_families_preserve_semantic_fragments() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+
+    let code_sample = (0..80)
+        .flat_map(|idx| {
+            [
+                format!("pub struct Config{idx} {{"),
+                format!("    field_{idx}: usize,"),
+                "}".to_owned(),
+                format!("pub fn load_{idx}() -> usize {{"),
+                format!("    field_{idx}"),
+                "}".to_owned(),
+            ]
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    for (name, args, kind, text, fragments) in [
+        (
+            "sed",
+            vec!["-n".to_owned(), "1,120p".to_owned(), "src/lib.rs".to_owned()],
+            CommandKind::File,
+            code_sample.clone(),
+            vec!["pub struct Config0 {", "pub fn load_0() -> usize {"],
+        ),
+        (
+            "bat",
+            vec!["--style=plain".to_owned(), "src/lib.rs".to_owned()],
+            CommandKind::File,
+            code_sample.clone(),
+            vec!["pub struct Config0 {", "pub fn load_0() -> usize {"],
+        ),
+        (
+            "head",
+            vec!["-n".to_owned(), "120".to_owned(), "src/lib.rs".to_owned()],
+            CommandKind::File,
+            code_sample.clone(),
+            vec!["pub struct Config0 {", "pub fn load_0() -> usize {"],
+        ),
+        (
+            "tail",
+            vec!["-n".to_owned(), "120".to_owned(), "src/lib.rs".to_owned()],
+            CommandKind::File,
+            code_sample.clone(),
+            vec!["pub struct Config0 {", "pub fn load_0() -> usize {"],
+        ),
+        (
+            "grep",
+            vec!["-n".to_owned(), "Config".to_owned(), "src/lib.rs".to_owned()],
+            CommandKind::Search,
+            (0..80)
+                .map(|idx| format!("src/lib.rs:{}:pub struct Config{};", idx + 1, idx))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            vec!["src/lib.rs:1:pub struct Config0;", "Config79"],
+        ),
+        (
+            "find",
+            vec!["src".to_owned()],
+            CommandKind::Search,
+            (0..220)
+                .map(|idx| format!("/root/project/src/module_{idx:03}.rs"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            vec!["/root/project/src", "module_219.rs"],
+        ),
+        (
+            "fd",
+            vec![".".to_owned(), "src".to_owned()],
+            CommandKind::Search,
+            (0..220)
+                .map(|idx| format!("/root/project/src/bin/tool_{idx:03}.rs"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            vec!["/root/project/src/bin", "tool_219.rs"],
+        ),
+        (
+            "tree",
+            vec!["-a".to_owned(), "-L".to_owned(), "4".to_owned(), "src".to_owned()],
+            CommandKind::Search,
+            (0..120)
+                .map(|idx| format!("src/module_{idx:03}/file_{idx:03}.rs"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            vec!["module_000", "file_119.rs"],
+        ),
+        (
+            "ls",
+            vec!["src".to_owned()],
+            CommandKind::Search,
+            (0..160)
+                .map(|idx| format!("module_{idx:03}.rs"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            vec!["module_000.rs", "module_159.rs"],
+        ),
+        (
+            "git",
+            vec!["diff".to_owned(), "--".to_owned(), "src/lib.rs".to_owned()],
+            CommandKind::Diff,
+            [
+                "diff --git a/src/lib.rs b/src/lib.rs",
+                "index 123..456 100644",
+                "--- a/src/lib.rs",
+                "+++ b/src/lib.rs",
+                "@@ -1,3 +1,4 @@",
+                "-old_call();",
+                "+new_call();",
+            ]
+            .join("\n"),
+            vec!["diff --git a/src/lib.rs b/src/lib.rs", "+new_call();"],
+        ),
+    ] {
+        let normalized =
+            normalize_text(name, &args, "stdout", kind, &text, &cfg).expect("normalize");
+        let haystack = rollout_string_haystack(&normalized);
+        for fragment in fragments {
+            assert!(haystack.contains(fragment), "{name} missing `{fragment}`");
+        }
+    }
+}
+
+#[test]
+fn benchmark_report_shows_positive_savings_for_agent_tasks() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let report = build_benchmark_report(&cfg).expect("benchmark");
+    assert!(!report.tasks.is_empty());
+    for task in &report.tasks {
+        assert!(task.changed, "{}", task.name);
+        assert!(task.tokens_saved > 0, "{}", task.name);
+        assert!(task.bytes_saved > 0, "{}", task.name);
+        assert_eq!(
+            task.required_fragments.len(),
+            task.preserved_fragments.len(),
+            "{}",
+            task.name
+        );
+    }
+}
+
+#[test]
+fn benchmark_agent_task_rollout_preserves_required_fragments() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    for task in benchmark_task_specs() {
+        let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+            .expect("rewrite")
+            .expect("changed");
+        let haystack = rollout_string_haystack(&rewritten);
+        for fragment in &task.required_fragments {
+            assert!(
+                haystack.contains(fragment),
+                "{} missing {}",
+                task.name,
+                fragment
+            );
+        }
+    }
+}
+
+#[test]
+fn codex_search_pipeline_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "codex_interactive_trace_selected_search_stage")
+        .expect("codex search task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    assert!(haystack.contains("\"sc\":\"rg\""));
+    assert!(haystack.contains("\"sr\":\"search\""));
+}
+
+#[test]
+fn codex_find_pipeline_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "codex_interactive_trace_selected_find_stage")
+        .expect("codex find task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    assert!(haystack.contains("\"sc\":\"find\""));
+    assert!(haystack.contains("\"sr\":\"search\""));
+    assert!(haystack.contains("\"p\":\"pathlist\""));
+}
+
+#[test]
+fn codex_build_pipeline_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "codex_interactive_trace_selected_build_stage")
+        .expect("codex build task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    assert!(haystack.contains("\"sc\":\"cargo\""));
+    assert!(haystack.contains("\"sr\":\"build\""));
+    assert!(haystack.contains("\"p\":\"log\""));
+    assert!(haystack.contains("error: test failed, to rerun pass --lib"));
+}
+
+#[test]
+fn claude_benchmark_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "claude_bash_trace_selected_search_stage")
+        .expect("claude task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    assert!(haystack.contains("\"sc\":\"rg\""));
+    assert!(haystack.contains("\"sr\":\"search\""));
+}
+
+#[test]
+fn claude_find_pipeline_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "claude_bash_trace_selected_find_stage")
+        .expect("claude find task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    assert!(haystack.contains("\"sc\":\"find\""));
+    assert!(haystack.contains("\"sr\":\"search\""));
+    assert!(haystack.contains("\"p\":\"pathlist\""));
+}
+
+#[test]
+fn claude_build_pipeline_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "claude_bash_trace_selected_build_stage")
+        .expect("claude build task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    assert!(haystack.contains("\"sc\":\"cargo\""));
+    assert!(haystack.contains("\"sr\":\"build\""));
+    assert!(haystack.contains("\"p\":\"log\""));
+    assert!(haystack.contains("error: test failed, to rerun pass --lib"));
+}
+
+#[test]
+fn codex_benchmark_task_report_shows_positive_savings() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let report = build_benchmark_report(&cfg).expect("benchmark");
+    for name in [
+        "codex_interactive_trace_selected_search_stage",
+        "codex_interactive_trace_selected_find_stage",
+        "codex_interactive_trace_selected_build_stage",
+    ] {
+        let task = report
+            .tasks
+            .iter()
+            .find(|task| task.name == name)
+            .expect("codex report task");
+        assert!(
+            task.changed,
+            "name={} changed={} tokens_saved={} bytes_saved={}",
+            task.name,
+            task.changed,
+            task.tokens_saved,
+            task.bytes_saved
+        );
+        assert!(
+            task.tokens_saved > 0,
+            "name={} changed={} tokens_saved={} bytes_saved={}",
+            task.name,
+            task.changed,
+            task.tokens_saved,
+            task.bytes_saved
+        );
+        assert!(
+            task.bytes_saved > 0,
+            "name={} changed={} tokens_saved={} bytes_saved={}",
+            task.name,
+            task.changed,
+            task.tokens_saved,
+            task.bytes_saved
+        );
+    }
+}
+
+#[test]
+fn claude_benchmark_task_report_shows_positive_savings() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let report = build_benchmark_report(&cfg).expect("benchmark");
+    for name in [
+        "claude_bash_trace_selected_search_stage",
+        "claude_bash_trace_selected_find_stage",
+        "claude_bash_trace_selected_build_stage",
+    ] {
+        let task = report
+            .tasks
+            .iter()
+            .find(|task| task.name == name)
+            .expect("claude report task");
+        assert!(
+            task.changed,
+            "name={} changed={} tokens_saved={} bytes_saved={}",
+            task.name,
+            task.changed,
+            task.tokens_saved,
+            task.bytes_saved
+        );
+        assert!(
+            task.tokens_saved > 0,
+            "name={} changed={} tokens_saved={} bytes_saved={}",
+            task.name,
+            task.changed,
+            task.tokens_saved,
+            task.bytes_saved
+        );
+        assert!(
+            task.bytes_saved > 0,
+            "name={} changed={} tokens_saved={} bytes_saved={}",
+            task.name,
+            task.changed,
+            task.tokens_saved,
+            task.bytes_saved
+        );
+    }
+}
+
+#[test]
+fn render_posix_activate_script() {
+    let script = render_activate_script(
+        ShellKind::Posix,
+        Path::new("/tmp/tke"),
+        Path::new("/tmp/shims"),
+        "/usr/bin:/bin",
+        &["codex".to_owned()],
+        &["cat".to_owned(), "rg".to_owned()],
+    );
+    assert!(script.contains("export TKE_BIN='/tmp/tke'"));
+    assert!(script.contains("export PATH='/tmp/shims':$PATH"));
+}
+
+#[test]
+fn render_powershell_activate_script() {
+    let script = render_activate_script(
+        ShellKind::PowerShell,
+        Path::new("C:\\tke\\tke.exe"),
+        Path::new("C:\\tke\\shims"),
+        "C:\\Windows\\System32;C:\\Windows",
+        &["codex".to_owned()],
+        &["cat".to_owned(), "rg".to_owned()],
+    );
+    assert!(script.contains("$env:TKE_BIN = 'C:\\tke\\tke.exe'"));
+    assert!(script.contains("$env:PATH = 'C:\\tke\\shims' + ';' + $env:PATH"));
+}
+
+#[test]
+fn render_cmd_activate_script() {
+    let script = render_activate_script(
+        ShellKind::Cmd,
+        Path::new("C:\\tke\\tke.exe"),
+        Path::new("C:\\tke\\shims"),
+        "C:\\Windows\\System32;C:\\Windows",
+        &["codex".to_owned()],
+        &["cat".to_owned()],
+    );
+    assert!(script.contains("set \"TKE_BIN=C:\\tke\\tke.exe\""));
+    assert!(script.contains("set \"PATH=C:\\tke\\shims;%PATH%\""));
+}
+
+#[test]
+fn render_powershell_deactivate_script_restores_real_path() {
+    let script = render_deactivate_script(ShellKind::PowerShell);
+    assert!(script.contains("$env:TKE_REAL_PATH"));
+    assert!(script.contains("Remove-Item Env:TKE_BIN"));
+}
+
+#[test]
+fn candidate_command_names_expand_windows_pathext() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    set_env_var("PATHEXT", ".EXE;.CMD");
+    let names = candidate_command_names("rg");
+    remove_env_var("PATHEXT");
+    let rendered = names
+        .iter()
+        .map(|value| value.to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+    if cfg!(windows) {
+        assert!(rendered.contains(&"rg".to_owned()));
+        assert!(rendered.contains(&"rg.EXE".to_owned()) || rendered.contains(&"rg.exe".to_owned()));
+        assert!(rendered.contains(&"rg.CMD".to_owned()) || rendered.contains(&"rg.cmd".to_owned()));
+    } else {
+        assert_eq!(rendered, vec!["rg".to_owned()]);
+    }
+}
+
+#[test]
+fn create_windows_cmd_shim_writes_wrapper() {
+    let base = temp_test_dir("windows-shim");
+    fs::create_dir_all(&base).expect("base");
+    let exe = base.join("tke.exe");
+    fs::write(&exe, b"").expect("exe");
+    create_windows_cmd_shim(&base, &exe, "rg").expect("shim");
+    let wrapper = fs::read_to_string(base.join("rg.cmd")).expect("wrapper");
+    assert!(wrapper.contains("tke.exe"));
+    assert!(wrapper.contains("shim \"%~n0\" %*"));
+}
+
+#[test]
+fn capture_interactive_rewrites_explicit_source_and_output() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let base = temp_test_dir("capture-explicit");
+    let source = base.join("rollout.jsonl");
+    let output_dir = base.join("out");
+    fs::create_dir_all(&base).expect("base");
+    let line = serde_json::json!({
+        "type": "item.completed",
+        "item": {
+            "id": "item_11",
+            "type": "command_execution",
+            "command": "/bin/bash -lc 'cat /tmp/demo.rs | rg -n fn | head'",
+            "aggregated_output": format!("{}\n", repeated_lines("1:pub fn alpha() {}", 160)),
+            "exit_code": 0,
+            "status": "completed"
+        }
+    })
+    .to_string();
+    fs::write(&source, format!("{line}\n")).expect("write source");
+
+    capture_interactive(Some(source.clone()), Some(output_dir.clone()), &cfg).expect("capture");
+
+    let mirrored = output_dir.join("rollout.jsonl");
+    let raw = fs::read_to_string(mirrored).expect("mirrored");
+    let value = value_from_json(raw.lines().next().expect("line"));
+    let nested = value_from_json(
+        value["item"]["aggregated_output"]
+            .as_str()
+            .expect("aggregated_output")
+            .trim_start_matches("__TKE__"),
+    );
+    assert_eq!(nested["sc"], "rg");
+    assert_eq!(nested["sr"], "search");
+}
+
+#[test]
+fn capture_interactive_uses_codex_home_latest_rollout() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let base = temp_test_dir("capture-defaults");
+    let codex_home = base.join("codex-home");
+    let sessions = codex_home.join("sessions/2026/05/23");
+    let project = base.join("project");
+    fs::create_dir_all(&sessions).expect("sessions");
+    fs::create_dir_all(&project).expect("project");
+    let rollout = sessions.join("rollout-latest.jsonl");
+    let line = serde_json::json!({
+        "type": "item.completed",
+        "item": {
+            "id": "item_12",
+            "type": "command_execution",
+            "command": "/bin/bash -lc 'cat /tmp/demo.rs | rg -n fn | head'",
+            "aggregated_output": format!("{}\n", repeated_lines("1:pub fn alpha() {}", 160)),
+            "exit_code": 0,
+            "status": "completed"
+        }
+    })
+    .to_string();
+    fs::write(&rollout, format!("{line}\n")).expect("write rollout");
+
+    let original_cwd = std::env::current_dir().expect("cwd");
+    let original_codex_home = std::env::var_os("CODEX_HOME");
+    std::env::set_current_dir(&project).expect("chdir");
+    set_env_var("CODEX_HOME", &codex_home);
+
+    let result = capture_interactive(None, None, &cfg);
+
+    if let Some(value) = original_codex_home {
+        set_env_var("CODEX_HOME", value);
+    } else {
+        remove_env_var("CODEX_HOME");
+    }
+    std::env::set_current_dir(original_cwd).expect("restore cwd");
+
+    result.expect("capture");
+    let mirrored = project.join(".tke/interactive/rollout-latest.jsonl");
+    assert!(mirrored.exists());
+}
+
+#[test]
+fn capture_interactive_errors_without_rollout() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    let cfg = Config::default();
+    let base = temp_test_dir("capture-missing");
+    let codex_home = base.join("codex-home");
+    let project = base.join("project");
+    fs::create_dir_all(codex_home.join("sessions")).expect("sessions");
+    fs::create_dir_all(&project).expect("project");
+
+    let original_cwd = std::env::current_dir().expect("cwd");
+    let original_codex_home = std::env::var_os("CODEX_HOME");
+    std::env::set_current_dir(&project).expect("chdir");
+    set_env_var("CODEX_HOME", &codex_home);
+
+    let err = capture_interactive(None, None, &cfg).expect_err("missing rollout");
+
+    if let Some(value) = original_codex_home {
+        set_env_var("CODEX_HOME", value);
+    } else {
+        remove_env_var("CODEX_HOME");
+    }
+    std::env::set_current_dir(original_cwd).expect("restore cwd");
+
+    assert!(matches!(err, AppError::Usage(_)));
+    assert!(
+        err.to_string()
+            .contains("could not find a codex rollout jsonl")
+    );
+}
+
+#[test]
+fn interactive_tracker_writes_rewritten_rollout_copy() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let base = temp_test_dir("tracker-write");
+    let sessions = base.join("sessions/2026/05/23");
+    let output_dir = base.join("project/.tke/interactive");
+    fs::create_dir_all(&sessions).expect("sessions");
+    fs::create_dir_all(base.join("project")).expect("project");
+
+    let rollout = sessions.join("rollout-test.jsonl");
+    let line = serde_json::json!({
+        "type": "item.completed",
+        "item": {
+            "id": "item_1",
+            "type": "command_execution",
+            "command": "/bin/bash -lc 'cat /tmp/demo.rs | rg -n fn | head'",
+            "aggregated_output": format!("{}\n", repeated_lines("1:pub fn alpha() {}", 160)),
+            "exit_code": 0,
+            "status": "completed"
+        }
+    })
+    .to_string();
+    fs::write(&rollout, format!("{line}\n")).expect("write rollout");
+
+    let original_cwd = std::env::current_dir().expect("cwd");
+    std::env::set_current_dir(base.join("project")).expect("chdir");
+    let tracker = InteractiveTracker {
+        sessions_dir: base.join("sessions"),
+        started_at_ms: 0,
+    };
+    tracker.finish(&cfg).expect("finish");
+    std::env::set_current_dir(original_cwd).expect("restore cwd");
+
+    let mirrored = output_dir.join("rollout-test.jsonl");
+    let raw = fs::read_to_string(mirrored).expect("mirrored");
+    let value = value_from_json(raw.lines().next().expect("line"));
+    let nested = value_from_json(
+        value["item"]["aggregated_output"]
+            .as_str()
+            .expect("aggregated_output")
+            .trim_start_matches("__TKE__"),
+    );
+    assert_eq!(nested["sc"], "rg");
+    assert_eq!(nested["sr"], "search");
+}
+
+#[test]
+fn interactive_tracker_skips_unmodified_rollouts() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    let cfg = Config::default();
+    let base = temp_test_dir("tracker-skip");
+    let sessions = base.join("sessions/2026/05/23");
+    fs::create_dir_all(&sessions).expect("sessions");
+    fs::create_dir_all(base.join("project")).expect("project");
+    fs::write(
+        sessions.join("rollout-test.jsonl"),
+        "{\"type\":\"message\",\"payload\":{\"text\":\"hello\"}}\n",
+    )
+    .expect("write rollout");
+
+    let original_cwd = std::env::current_dir().expect("cwd");
+    std::env::set_current_dir(base.join("project")).expect("chdir");
+    let tracker = InteractiveTracker {
+        sessions_dir: base.join("sessions"),
+        started_at_ms: 0,
+    };
+    tracker.finish(&cfg).expect("finish");
+    std::env::set_current_dir(original_cwd).expect("restore cwd");
+
+    assert!(
+        !base
+            .join("project/.tke/interactive/rollout-test.jsonl")
+            .exists()
+    );
+}

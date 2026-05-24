@@ -1,8 +1,9 @@
 use std::env;
 use std::process;
 use tke::{
-    AppError, Config, Dispatch, benchmark_commands, capture_interactive, compare_rollout,
-    package_release, parse_dispatch, print_activate, print_deactivate, run_shim, usage,
+    AppError, Config, Dispatch, benchmark_commands, capture_interactive, compare_e2e_command,
+    compare_rollout, install_self, package_release, parse_dispatch, print_activate,
+    print_deactivate, run_shim, run_wrapped, usage,
 };
 
 fn main() {
@@ -23,11 +24,20 @@ fn run() -> Result<(), AppError> {
             println!("{}", usage());
             Ok(())
         }
+        Dispatch::Install { bin_dir } => install_self(bin_dir),
         Dispatch::Activate {
             agents,
             shim_dir,
             shell,
         } => print_activate(&agents, shim_dir, shell, &config),
+        Dispatch::Run {
+            name,
+            args,
+            shim_dir,
+        } => {
+            let code = run_wrapped(&name, &args, shim_dir, &config)?;
+            process::exit(code);
+        }
         Dispatch::Deactivate => {
             print_deactivate();
             Ok(())
@@ -36,6 +46,7 @@ fn run() -> Result<(), AppError> {
             capture_interactive(source, output, &config)
         }
         Dispatch::CompareRollout { source } => compare_rollout(source, &config),
+        Dispatch::CompareE2e { sources, agent } => compare_e2e_command(sources, agent, &config),
         Dispatch::BenchmarkCommands { check } => benchmark_commands(&config, check),
         Dispatch::PackageRelease => package_release(&config),
         Dispatch::Shim { name, args } | Dispatch::ShimExec { name, args } => {
