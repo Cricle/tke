@@ -433,6 +433,7 @@ if comparison_totals_rows:
                 "`Claude synthetic`",
                 "`tke`",
                 str(count_rows(comparison_task_rows)),
+                "`n/a`",
                 tke_summary[4],
                 tke_synth_fragments,
                 str(tke_synth_saved),
@@ -441,6 +442,7 @@ if comparison_totals_rows:
                 "`Claude synthetic`",
                 "`rtk-hook`",
                 str(count_rows(comparison_task_rows)),
+                "`n/a`",
                 rtk_summary[4],
                 rtk_synth_fragments,
                 str(rtk_synth_saved),
@@ -467,6 +469,7 @@ for row in fair_compare_summary_rows:
             variant,
             cases,
             accuracy,
+            "`n/a`",
             fragments,
             total_delta,
         ]
@@ -585,7 +588,7 @@ if codex_rtk_rows or fair_compare_rows:
             "Accuracy and compression scorecard:",
             "",
             md_table(
-                ["Scope", "Path", "Cases", "Accuracy", "Semantic retention", "Token outcome"],
+                ["Scope", "Path", "Cases", "Accuracy", "Compression rate", "Semantic retention", "Token outcome"],
                 rtk_scorecard_rows or [["-", "-", "-", "-", "-", "-"]],
             ),
         ]

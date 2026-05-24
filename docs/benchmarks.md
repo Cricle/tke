@@ -135,12 +135,12 @@ RTK must be compared through each agent's real integration path:
 
 Accuracy and compression scorecard:
 
-| Scope | Path | Cases | Accuracy | Semantic retention | Token outcome |
-| --- | --- | --- | --- | --- | --- |
-| `Claude synthetic` | `tke` | 3 | 91.8% | `12/12` | 10761 |
-| `Claude synthetic` | `rtk-hook` | 3 | 92.9% | `15/15` | 10622 |
-| `codex` | `rtk-codex-rules` | 2 | 0.0% | `pass=0 fail=2 gateway=0 ungraded=0` | 11 |
-| `claude` | `rtk-hook` | 3 | 100.0% | `pass=3 fail=0 gateway=0 ungraded=0` | -1 |
+| Scope | Path | Cases | Accuracy | Compression rate | Semantic retention | Token outcome |
+| --- | --- | --- | --- | --- | --- | --- |
+| `Claude synthetic` | `tke` | 3 | `n/a` | 91.8% | `12/12` | 10761 |
+| `Claude synthetic` | `rtk-hook` | 3 | `n/a` | 92.9% | `15/15` | 10622 |
+| `codex` | `rtk-codex-rules` | 2 | 0.0% | `n/a` | `pass=0 fail=2 gateway=0 ungraded=0` | 11 |
+| `claude` | `rtk-hook` | 3 | 100.0% | `n/a` | `pass=3 fail=0 gateway=0 ungraded=0` | -1 |
 
 Fair-path aggregate by agent:
 
