@@ -6,7 +6,7 @@ The goal is not to imitate RTK more closely. The goal is to build a path that is
 
 - more stable than RTK
 - more measurable than RTK
-- better at reducing tool-output token cost than RTK
+- competitive with RTK on tool-output token cost without sacrificing correctness
 
 ## Strategy
 
@@ -52,9 +52,9 @@ A path is only "better than RTK" if it wins on all three of these dimensions:
 
 ### 3. Savings
 
-- higher total tool-token savings on real tasks
-- better per-profile savings on file/search/pathlist/log/diff outputs
-- better savings consistency across reruns
+- similar total tool-token savings on real tasks is sufficient if correctness and stability are better
+- keep per-profile savings strong on file/search/pathlist/log/diff outputs
+- prefer savings consistency across reruns over chasing marginal peak compression
 
 ## Design Principles
 

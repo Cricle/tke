@@ -7,7 +7,7 @@ This document compares `rtk` and `tke` using the current repo implementation and
 - `tke` is a deterministic tool-output compression layer.
 - `rtk` is an agent-specific integration layer.
 - For Codex, `tke` is currently the stronger and better-validated path.
-- For Claude, `rtk-hook` is currently the more stable fairness path; across six stable synthetic traces it is slightly better on compression ratio, while `tke` is slightly better on absolute token savings.
+- For Claude, `rtk-hook` is currently the more stable fairness path; across the current eleven stable synthetic traces it also leads slightly on measured savings, while `tke` remains competitive enough on token reduction and is now judged primarily on accuracy and stability.
 
 ## Product Shape
 
@@ -197,7 +197,7 @@ So the evidence-based comparison is:
 
 ## Horizontal Comparison Verdict
 
-If the comparison standard is "which path is more stable and more token-efficient as a local tool-output layer", the current answer is `tke`.
+If the comparison standard is "which path is the stronger repo-local tool-output layer with better observability and stronger current Codex evidence", the current answer is `tke`.
 
 - `tke` wins on repo-local observability.
 - `tke` wins on structured summaries across `pathlist`, `search`, `log`, and `diff`.
