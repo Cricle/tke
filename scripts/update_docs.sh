@@ -193,6 +193,8 @@ def normalize_case_name(name):
         return "findcase"
     if name.startswith("livebuild"):
         return "buildcase"
+    if name.startswith("livediff"):
+        return "diffcase"
     if name.startswith("liverg"):
         return "rgcase"
     return name

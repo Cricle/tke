@@ -126,7 +126,7 @@ These runs exercise the live `tke` Claude path directly and are tracked separate
 | Case | Run name | OK | Completed | Error statuses |
 | --- | --- | --- | --- | --- |
 | `buildcase` | `livebuild` | yes | yes | - |
-| `livediff` | `livediff` | yes | yes | - |
+| `diffcase` | `livediff` | yes | yes | - |
 | `findcase` | `livefind` | yes | yes | - |
 | `rgcase` | `liverg` | yes | yes | - |
 
