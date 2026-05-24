@@ -55,6 +55,8 @@ Built-in rollout/task benchmarks:
 | `claude_bash_trace_selected_search_stage` | api | 2416 | 526 | 1890 | 78.2% |
 | `claude_bash_trace_selected_find_stage` | api | 8164 | 176 | 7988 | 97.8% |
 | `claude_bash_trace_selected_build_stage` | api | 1141 | 239 | 902 | 79.1% |
+| `claude_rtk_hook_trace_selected_search_stage` | api | 2137 | 425 | 1712 | 80.1% |
+| `claude_rtk_hook_trace_selected_build_stage` | api | 1135 | 233 | 902 | 79.5% |
 
 ## Codex Real E2E
 

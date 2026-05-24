@@ -781,6 +781,8 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
     let pipeline_answer = "The selected stage is rg, so the normalized payload preserves sc=rg and sr=search instead of keeping the upstream cat or downstream head stage.";
     let find_pipeline_answer = "The selected stage is find, so the normalized payload preserves sc=find and sr=search and keeps the path list summary instead of the tail stage semantics.";
     let build_pipeline_answer = "The selected stage is cargo, so the normalized payload preserves sc=cargo and sr=build and keeps the log/error summary instead of the tail stage semantics.";
+    let rtk_hook_search_answer = "The RTK hook sample preserves the same rg search-stage metadata and semantic answer fragments for Claude-style hook integrations.";
+    let rtk_hook_build_answer = "The RTK hook sample preserves the same cargo build-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     vec![
         BenchmarkTaskSpec {
             name: "codex_api_trace_rollout_savings".to_owned(),
@@ -1028,6 +1030,57 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
                     ),
                 }],
                 build_pipeline_answer,
+            ),
+        },
+        BenchmarkTaskSpec {
+            name: "claude_rtk_hook_trace_selected_search_stage".to_owned(),
+            mode: "api".to_owned(),
+            objective: "Verify that the RTK hook path preserves rg search-stage semantics for Claude-style hook integrations.".to_owned(),
+            required_fragments: vec![
+                "\"sc\":\"rg\"".to_owned(),
+                "\"sr\":\"search\"".to_owned(),
+                "src/tests.rs".to_owned(),
+                rtk_hook_search_answer.to_owned(),
+            ],
+            rollout: build_claude_tool_rollout_steps(
+                &[BenchmarkTaskStep {
+                    call_id: "claude_rtk_hook_task_search_1".to_owned(),
+                    command: "rg -n \"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\" src".to_owned(),
+                    output: repeated_task_search_output(
+                        &[
+                            "src/tests.rs:2538:                \"result\": \"STAGE=rg -n \\\"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\\\" src\\nFILE=src/tests.rs\\nKIND=search\"",
+                            "src/e2e_report.rs:167:    let rewritten = rewrite_agent_transcript(&raw_text, config)?;",
+                            "src/app.rs:289:        Some(\"compare-e2e\") => parse_compare_e2e(args),",
+                        ],
+                        120,
+                        "src/tests.rs",
+                        "rtk_hook_search_trace",
+                    ),
+                }],
+                rtk_hook_search_answer,
+            ),
+        },
+        BenchmarkTaskSpec {
+            name: "claude_rtk_hook_trace_selected_build_stage".to_owned(),
+            mode: "api".to_owned(),
+            objective: "Verify that the RTK hook path preserves cargo build-stage semantics for Claude-style hook integrations.".to_owned(),
+            required_fragments: vec![
+                "\"sc\":\"cargo\"".to_owned(),
+                "\"sr\":\"build\"".to_owned(),
+                "\"p\":\"log\"".to_owned(),
+                "error: test failed, to rerun pass --lib".to_owned(),
+                rtk_hook_build_answer.to_owned(),
+            ],
+            rollout: build_claude_tool_rollout_steps(
+                &[BenchmarkTaskStep {
+                    call_id: "claude_rtk_hook_task_build_1".to_owned(),
+                    command: "cargo test -- --nocapture | tail -n 80".to_owned(),
+                    output: format!(
+                        "{}\nerror: test failed, to rerun pass --lib\nwarning: deprecated assertion helper\n",
+                        repeated_lines("test parser::case ... ok", 120)
+                    ),
+                }],
+                rtk_hook_build_answer,
             ),
         },
     ]
