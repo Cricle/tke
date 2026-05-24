@@ -20,7 +20,7 @@ This file is generated from the current local E2E artifacts.
 
 | Case | Raw | TKE | RTK Hook | Notes |
 | --- | --- | --- | --- | --- |
-| `findcase` | gateway_error | fail | gateway_error | experimental live tke path |
+| `findcase` | gateway_error | fail | gateway_error | experimental live tke path, gateway noise on RTK hook path |
 
 ## Fairness Rules
 

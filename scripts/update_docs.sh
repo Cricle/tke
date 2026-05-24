@@ -162,13 +162,14 @@ def collect_summary_rows(report, wanted_modes=None):
                     "cases": 0,
                     "pass": 0,
                     "fail": 0,
+                    "gateway_error": 0,
                     "ungraded": 0,
                     "tool_tokens_saved": 0,
                 },
             )
             entry["cases"] += 1
             status = variant["sample"]["correctness"]["status"]
-            if status in ("pass", "fail", "ungraded"):
+            if status in ("pass", "fail", "gateway_error", "ungraded"):
                 entry[status] += 1
             entry["tool_tokens_saved"] += variant["tool_tokens_saved"]
     rows = []
@@ -179,6 +180,7 @@ def collect_summary_rows(report, wanted_modes=None):
                 str(entry["cases"]),
                 str(entry["pass"]),
                 str(entry["fail"]),
+                str(entry["gateway_error"]),
                 str(entry["ungraded"]),
                 str(entry["tool_tokens_saved"]),
             ]
@@ -255,8 +257,8 @@ if codex:
             "Codex aggregate by mode:",
             "",
             md_table(
-                ["Variant", "Cases", "Pass", "Fail", "Ungraded", "Total tool tokens saved"],
-                codex_summary_rows or [["-", "-", "-", "-", "-", "-"]],
+                ["Variant", "Cases", "Pass", "Fail", "Gateway", "Ungraded", "Total tool tokens saved"],
+                codex_summary_rows or [["-", "-", "-", "-", "-", "-", "-"]],
             ),
         ]
     )
@@ -305,19 +307,30 @@ if claude:
             "Claude aggregate by mode:",
             "",
             md_table(
-                ["Variant", "Cases", "Pass", "Fail", "Ungraded", "Total tool tokens saved"],
-                claude_summary_rows or [["-", "-", "-", "-", "-", "-"]],
+                ["Variant", "Cases", "Pass", "Fail", "Gateway", "Ungraded", "Total tool tokens saved"],
+                claude_summary_rows or [["-", "-", "-", "-", "-", "-", "-"]],
             ),
         ]
     )
 
 if claude_attempts:
     attempt_rows = []
+    live_probe_rows = []
     ok_names = []
     not_ok_names = []
     for item in claude_attempts:
         statuses = ",".join(str(status) for status in item.get("error_statuses", [])) or "-"
         name = item.get("name", "-")
+        if name.startswith("live"):
+            live_probe_rows.append(
+                [
+                    f"`{normalize_case_name(name)}`",
+                    f"`{name}`",
+                    "yes" if item.get("ok") else "no",
+                    "yes" if item.get("completed") else "no",
+                    statuses,
+                ]
+            )
         if item.get("ok"):
             ok_names.append(name)
         else:
@@ -334,6 +347,15 @@ if claude_attempts:
         )
     benchmarks_md.extend(
         [
+            "",
+            "## Claude Live Probes",
+            "",
+            "These runs exercise the live `tke` Claude path directly and are tracked separately from the formal raw-vs-variant compare table so transient gateway failures do not overwrite the last known-good live result.",
+            "",
+            md_table(
+                ["Case", "Run name", "OK", "Completed", "Error statuses"],
+                live_probe_rows or [["-", "-", "-", "-", "-"]],
+            ),
             "",
             "Claude attempt summary:",
             "",
@@ -416,8 +438,12 @@ for name in sorted(claude_status):
         notes.append("live tke correct")
     elif item.get("tke") == "fail":
         notes.append("experimental live tke path")
+    elif item.get("tke") == "gateway_error":
+        notes.append("gateway noise on raw compare path")
     if item.get("rtk-hook") == "pass":
         notes.append("fair RTK hook path")
+    elif item.get("rtk-hook") == "gateway_error":
+        notes.append("gateway noise on RTK hook path")
     claude_rows_e2e.append(
         [
             f"`{name}`",

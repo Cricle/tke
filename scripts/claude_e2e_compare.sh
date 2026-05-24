@@ -127,6 +127,11 @@ RAW_TEXT_OUT="$OUT_DIR/${NAME}.${MODE}.txt"
 RAW_DEBUG_OUT="$OUT_DIR/${NAME}.${MODE}.debug.log"
 RAW_STATUS_OUT="$OUT_DIR/${NAME}.${MODE}.status"
 RAW_SESSION_OUT="$OUT_DIR/${NAME}.${MODE}.session"
+RAW_FAILURE_STREAM_OUT="$OUT_DIR/${NAME}.${MODE}.failed.stream.jsonl"
+RAW_FAILURE_TEXT_OUT="$OUT_DIR/${NAME}.${MODE}.failed.txt"
+RAW_FAILURE_DEBUG_OUT="$OUT_DIR/${NAME}.${MODE}.failed.debug.log"
+RAW_FAILURE_STATUS_OUT="$OUT_DIR/${NAME}.${MODE}.failed.status"
+RAW_FAILURE_SESSION_OUT="$OUT_DIR/${NAME}.${MODE}.failed.session"
 
 TMP_STREAM_OUT="$RUN_ROOT/out.stream.jsonl"
 TMP_TEXT_OUT="$RUN_ROOT/out.txt"
@@ -240,6 +245,14 @@ cp -f "$TMP_TEXT_OUT" "$RAW_TEXT_OUT" 2>/dev/null || :
 cp -f "$TMP_DEBUG_OUT" "$RAW_DEBUG_OUT" 2>/dev/null || :
 cp -f "$TMP_STATUS_OUT" "$RAW_STATUS_OUT" 2>/dev/null || :
 cp -f "$TMP_SESSION_OUT" "$RAW_SESSION_OUT" 2>/dev/null || :
+
+if [[ -f "$RAW_STREAM_OUT" ]] && grep -q 'API Error: 504\|origin_gateway_timeout' "$RAW_STREAM_OUT"; then
+  mv -f "$RAW_STREAM_OUT" "$RAW_FAILURE_STREAM_OUT"
+  mv -f "$RAW_TEXT_OUT" "$RAW_FAILURE_TEXT_OUT" 2>/dev/null || :
+  mv -f "$RAW_DEBUG_OUT" "$RAW_FAILURE_DEBUG_OUT" 2>/dev/null || :
+  mv -f "$RAW_STATUS_OUT" "$RAW_FAILURE_STATUS_OUT" 2>/dev/null || :
+  mv -f "$RAW_SESSION_OUT" "$RAW_FAILURE_SESSION_OUT" 2>/dev/null || :
+fi
 
 if [[ "$KEEP_RUN_ROOT" != "1" ]]; then
   rm -rf "$RUN_ROOT"

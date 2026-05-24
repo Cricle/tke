@@ -76,10 +76,10 @@ Generated from:
 
 Codex aggregate by mode:
 
-| Variant | Cases | Pass | Fail | Ungraded | Total tool tokens saved |
-| --- | --- | --- | --- | --- | --- |
-| `rtk-codex-rules` | 2 | 0 | 0 | 2 | 11 |
-| `tke` | 4 | 4 | 0 | 0 | 6257 |
+| Variant | Cases | Pass | Fail | Gateway | Ungraded | Total tool tokens saved |
+| --- | --- | --- | --- | --- | --- | --- |
+| `rtk-codex-rules` | 2 | 0 | 0 | 0 | 2 | 11 |
+| `tke` | 4 | 4 | 0 | 0 | 0 | 6257 |
 
 ## RTK Fair Comparison
 
@@ -114,10 +114,21 @@ Compatibility notes:
 
 Claude aggregate by mode:
 
-| Variant | Cases | Pass | Fail | Ungraded | Total tool tokens saved |
-| --- | --- | --- | --- | --- | --- |
-| `rtk-hook` | 1 | 0 | 0 | 0 | 0 |
-| `tke` | 1 | 0 | 1 | 0 | 0 |
+| Variant | Cases | Pass | Fail | Gateway | Ungraded | Total tool tokens saved |
+| --- | --- | --- | --- | --- | --- | --- |
+| `rtk-hook` | 1 | 0 | 0 | 1 | 0 | 0 |
+| `tke` | 1 | 0 | 1 | 0 | 0 | 0 |
+
+## Claude Live Probes
+
+These runs exercise the live `tke` Claude path directly and are tracked separately from the formal raw-vs-variant compare table so transient gateway failures do not overwrite the last known-good live result.
+
+| Case | Run name | OK | Completed | Error statuses |
+| --- | --- | --- | --- | --- |
+| `buildcase` | `livebuild` | yes | yes | - |
+| `livediff` | `livediff` | yes | yes | - |
+| `findcase` | `livefind` | yes | yes | - |
+| `rgcase` | `liverg` | yes | yes | - |
 
 Claude attempt summary:
 
@@ -125,7 +136,8 @@ Claude attempt summary:
 | --- | --- | --- | --- | --- | --- |
 | `compatfind` | `tke` | yes | yes | no | - |
 | `livebuild` | `tke` | yes | yes | no | - |
+| `livediff` | `tke` | yes | yes | no | - |
 | `livefind` | `tke` | yes | yes | no | - |
 | `liverg` | `tke` | yes | yes | no | - |
 
-Successful live compatibility probes: `compatfind`, `livebuild`, `livefind`, `liverg`.
+Successful live compatibility probes: `compatfind`, `livebuild`, `livediff`, `livefind`, `liverg`.
