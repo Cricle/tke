@@ -494,7 +494,11 @@ pub(crate) fn normalize_text_with_stage(
         (head, tail, matches, kept_ranges, emitted)
     };
     let omitted = if forced {
-        compute_omitted_ranges(total_lines, &kept_ranges)
+        if profile == TrimProfile::PathList {
+            Vec::new()
+        } else {
+            compute_omitted_ranges(total_lines, &kept_ranges)
+        }
     } else {
         Vec::new()
     };

@@ -1324,7 +1324,13 @@ pub(crate) struct PathListSummary {
     #[serde(skip_serializing)]
     pub(crate) rc: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) s: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) d: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) f: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) l: Option<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) e: Vec<String>,
     #[serde(skip_serializing_if = "Vec::is_empty")]

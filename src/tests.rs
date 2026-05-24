@@ -1331,6 +1331,101 @@ fn rewrites_claude_tool_result_output() {
 }
 
 #[test]
+fn pathlist_summary_keeps_first_last_and_skips_omitted_ranges() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "src/tests.rs",
+        "src/release.rs",
+        "src/path_profile.rs",
+        "src/main.rs",
+        "src/benchmark.rs",
+        "src/e2e_report.rs",
+        "src/rollout_io.rs",
+        "src/shim.rs",
+        "src/trim.rs",
+        "src/search_profile.rs",
+        "src/rewrite.rs",
+        "src/file_profile.rs",
+        "src/log_profile.rs",
+        "src/app.rs",
+        "src/lib.rs",
+        "src/adapter.rs",
+        "src/rollout_stats.rs",
+    ]
+    .join("\n");
+    let normalized = normalize_text(
+        "find",
+        &["src".to_owned()],
+        "stdout",
+        CommandKind::Search,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "pathlist");
+    assert_eq!(value["c"], 17);
+    assert_eq!(
+        value["pl"]["s"],
+        "COUNT=17, FIRST=src/tests.rs, LAST=src/rollout_stats.rs, DIR=src"
+    );
+    assert_eq!(value["pl"]["f"], "src/tests.rs");
+    assert_eq!(value["pl"]["l"], "src/rollout_stats.rs");
+    assert!(
+        value.get("o").is_none() || value["o"].as_array().is_some_and(|items| items.is_empty())
+    );
+}
+
+#[test]
+fn pathlist_rollout_haystack_exposes_first_last_and_count() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "src/tests.rs",
+        "src/release.rs",
+        "src/path_profile.rs",
+        "src/main.rs",
+        "src/benchmark.rs",
+        "src/e2e_report.rs",
+        "src/rollout_io.rs",
+        "src/shim.rs",
+        "src/trim.rs",
+        "src/search_profile.rs",
+        "src/rewrite.rs",
+        "src/file_profile.rs",
+        "src/log_profile.rs",
+        "src/app.rs",
+        "src/lib.rs",
+        "src/adapter.rs",
+        "src/rollout_stats.rs",
+    ]
+    .join("\n");
+    let normalized = normalize_text(
+        "find",
+        &["src".to_owned()],
+        "stdout",
+        CommandKind::Search,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let haystack = rollout_string_haystack(&normalized);
+    for fragment in [
+        "src/tests.rs",
+        "src/rollout_stats.rs",
+        "COUNT=17",
+        "FIRST=src/tests.rs",
+        "LAST=src/rollout_stats.rs",
+    ] {
+        assert!(
+            haystack.contains(fragment),
+            "pathlist haystack missing `{fragment}`"
+        );
+    }
+}
+
+#[test]
 fn rewrites_claude_tool_result_text_block_array() {
     let mut cfg = Config::default();
     cfg.min_trim_bytes = 1;

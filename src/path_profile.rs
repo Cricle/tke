@@ -11,6 +11,8 @@ pub(crate) fn looks_like_path_list(lines: &[&str]) -> bool {
 pub(crate) fn collect_path_list_summary(lines: &[&str]) -> Option<PathListSummary> {
     let entries = detect_path_entries(lines)?;
     let same_parent = dominant_parent(&entries);
+    let first_full = entries.first().map(|entry| entry.value.clone());
+    let last_full = entries.last().map(|entry| entry.value.clone());
     let mut dirs = HashMap::<String, Vec<&PathEntry>>::new();
     for entry in &entries {
         dirs.entry(entry.parent.clone()).or_default().push(entry);
@@ -63,10 +65,19 @@ pub(crate) fn collect_path_list_summary(lines: &[&str]) -> Option<PathListSummar
     }
 
     let compact_examples = rows.iter().map(|row| row.v.clone()).collect::<Vec<_>>();
+    let summary_text = build_summary_text(
+        entries.len(),
+        same_parent.as_deref(),
+        first_full.as_deref(),
+        last_full.as_deref(),
+    );
     if let Some(parent) = same_parent {
         return Some(PathListSummary {
             rc: entries.len(),
+            s: Some(summary_text),
             d: Some(parent),
+            f: first_full,
+            l: last_full,
             e: compact_examples,
             b: Vec::new(),
             r: Vec::new(),
@@ -75,7 +86,10 @@ pub(crate) fn collect_path_list_summary(lines: &[&str]) -> Option<PathListSummar
 
     Some(PathListSummary {
         rc: entries.len(),
+        s: Some(summary_text),
         d: None,
+        f: first_full,
+        l: last_full,
         e: compact_examples,
         b: buckets,
         r: rows,
@@ -206,4 +220,23 @@ fn path_parent(value: &str) -> String {
         .map(|parent| parent.to_string_lossy().to_string())
         .filter(|parent| !parent.is_empty())
         .unwrap_or_else(|| ".".to_owned())
+}
+
+fn build_summary_text(
+    count: usize,
+    dir: Option<&str>,
+    first: Option<&str>,
+    last: Option<&str>,
+) -> String {
+    let mut parts = vec![format!("COUNT={count}")];
+    if let Some(first) = first {
+        parts.push(format!("FIRST={first}"));
+    }
+    if let Some(last) = last {
+        parts.push(format!("LAST={last}"));
+    }
+    if let Some(dir) = dir {
+        parts.push(format!("DIR={dir}"));
+    }
+    parts.join(", ")
 }

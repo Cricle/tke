@@ -18,9 +18,9 @@ Generated from:
 | `nl_code` | file | 1058 | 189 | 869 | 82.1% |
 | `rg_code` | search | 2257 | 250 | 2007 | 88.9% |
 | `grep_code` | search | 2257 | 252 | 2005 | 88.8% |
-| `find_paths` | pathlist | 8151 | 55 | 8096 | 99.3% |
-| `fd_paths` | pathlist | 8151 | 55 | 8096 | 99.3% |
-| `tree_paths` | pathlist | 3926 | 55 | 3871 | 98.6% |
+| `find_paths` | pathlist | 8151 | 137 | 8014 | 98.3% |
+| `fd_paths` | pathlist | 8151 | 137 | 8014 | 98.3% |
+| `tree_paths` | pathlist | 3926 | 137 | 3789 | 96.5% |
 | `git_diff` | diff | 3691 | 222 | 3469 | 94.0% |
 | `cargo_build` | log | 796 | 170 | 626 | 78.6% |
 | `pytest_run` | log | 827 | 182 | 645 | 78.0% |
@@ -39,7 +39,7 @@ Profile averages:
 | file | 9 | 77.9% |
 | generic | 1 | 0.0% |
 | log | 12 | 78.3% |
-| pathlist | 6 | 97.9% |
+| pathlist | 6 | 96.1% |
 | search | 2 | 88.9% |
 | table | 3 | 70.8% |
 
@@ -50,10 +50,10 @@ Built-in rollout/task benchmarks:
 | `codex_api_trace_rollout_savings` | api | 5389 | 512 | 4877 | 90.5% |
 | `codex_api_trace_default_tool_coverage` | api | 4021 | 777 | 3244 | 80.7% |
 | `codex_interactive_trace_selected_search_stage` | interactive | 2913 | 570 | 2343 | 80.4% |
-| `codex_interactive_trace_selected_find_stage` | interactive | 8125 | 55 | 8070 | 99.3% |
+| `codex_interactive_trace_selected_find_stage` | interactive | 8125 | 137 | 7988 | 98.3% |
 | `codex_interactive_trace_selected_build_stage` | interactive | 1102 | 200 | 902 | 81.9% |
 | `claude_bash_trace_selected_search_stage` | api | 2416 | 526 | 1890 | 78.2% |
-| `claude_bash_trace_selected_find_stage` | api | 8164 | 94 | 8070 | 98.8% |
+| `claude_bash_trace_selected_find_stage` | api | 8164 | 176 | 7988 | 97.8% |
 | `claude_bash_trace_selected_build_stage` | api | 1141 | 239 | 902 | 79.1% |
 
 ## Codex Real E2E
@@ -109,3 +109,4 @@ Claude attempt summary:
 | Case | Mode | OK | Completed | Result error | Error statuses |
 | --- | --- | --- | --- | --- | --- |
 | `compatfind` | `tke` | yes | yes | no | - |
+| `livefind` | `tke` | yes | yes | no | - |
