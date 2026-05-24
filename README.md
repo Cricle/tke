@@ -76,6 +76,8 @@ tke compare-rollout [--source PATH]
 tke benchmark-commands [--check]
 ```
 
+There is no `tke release` subcommand. Release artifacts come from `cargo build --release` locally and the GitHub Actions release workflow for tagged builds.
+
 `tke <agent> ...` is the recommended low-friction entrypoint. It wraps a single agent launch without requiring `eval` or shell state changes.
 
 Examples:
@@ -146,14 +148,14 @@ Current real-task findings in this repo are:
 - Codex + `rtk-codex-rules`: the official `AGENTS.md + RTK.md` path was exercised fairly, but in the sampled real task Codex still executed the raw command path rather than an RTK-prefixed command, so no measured tool-output savings were observed there.
 - Claude + `raw`: verified correct on the real `findcase` Bash task.
 - Claude + `rtk-hook`: verified correct on the same real `findcase` Bash task after fixing the local comparison harness.
-- Claude + `tke`: not currently production-safe on the tested `claude-sonnet-4-6` gateway path. In the latest real run it did not execute Bash and instead hallucinated a file path and count, so tool-payload savings were not accepted as a valid win.
+- Claude + `tke`: default live usage now stays in compatibility mode on the tested `claude-sonnet-4-6` gateway path. Experimental live compression is only enabled with `TKE_CLAUDE_LIVE_TOOLS=1`, and should still be judged case by case in the benchmark docs.
 
 Practical interpretation:
 
 - `tke` is currently validated first for Codex.
 - RTK fairness for Codex should be judged via `rtk-codex-rules`, not `rtk-direct`.
 - RTK fairness for Claude should be judged via `rtk-hook`.
-- Claude-specific `tke` compression still needs a compatibility path that preserves tool-use behavior before it can be treated as correct in real E2E comparisons.
+- Claude-specific `tke` compression is intentionally split into a stable compatibility default and an experimental live-compression path.
 
 `benchmark-commands --check` validates the current benchmark report against built-in expectations:
 
@@ -166,7 +168,7 @@ Practical interpretation:
 
 GitHub Actions includes:
 
-- `CI`: runs on push to `main` and on pull requests, and checks `cargo fmt --check`, `cargo test --quiet`, release build, and `tke benchmark-commands --check`
+- `CI`: runs on push to `main` and on pull requests, and checks `cargo fmt --check`, `cargo test --quiet`, `cargo build --release`, and `tke benchmark-commands --check`
 - `Release`: runs when pushing a tag like `v0.1.0`, builds release binaries and uploads GitHub Release assets
 
 Release assets currently include:

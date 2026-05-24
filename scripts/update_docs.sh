@@ -146,9 +146,50 @@ def collect_variant_rows(report, wanted_modes=None):
     return rows
 
 
+def collect_summary_rows(report, wanted_modes=None):
+    if not report:
+        return []
+    totals = {}
+    for case in report["cases"]:
+        for variant in case["variants"]:
+            mode = variant["mode"]
+            if wanted_modes and mode not in wanted_modes:
+                continue
+            entry = totals.setdefault(
+                mode,
+                {
+                    "cases": 0,
+                    "pass": 0,
+                    "fail": 0,
+                    "ungraded": 0,
+                    "tool_tokens_saved": 0,
+                },
+            )
+            entry["cases"] += 1
+            status = variant["sample"]["correctness"]["status"]
+            if status in ("pass", "fail", "ungraded"):
+                entry[status] += 1
+            entry["tool_tokens_saved"] += variant["tool_tokens_saved"]
+    rows = []
+    for mode, entry in sorted(totals.items()):
+        rows.append(
+            [
+                f"`{mode}`",
+                str(entry["cases"]),
+                str(entry["pass"]),
+                str(entry["fail"]),
+                str(entry["ungraded"]),
+                str(entry["tool_tokens_saved"]),
+            ]
+        )
+    return rows
+
+
 codex_tke_rows = collect_variant_rows(codex, {"tke"})
 codex_rtk_rows = collect_variant_rows(codex, {"rtk-codex-rules"})
 claude_rows = collect_variant_rows(claude, {"tke", "rtk-hook"})
+codex_summary_rows = collect_summary_rows(codex, {"tke", "rtk-codex-rules", "rtk-direct"})
+claude_summary_rows = collect_summary_rows(claude, {"tke", "rtk-hook"})
 
 benchmarks_md = [
     "# Benchmarks",
@@ -199,6 +240,13 @@ if codex:
                 ["Case", "Variant", "Correct", "Tool token savings", "Verdict"],
                 codex_tke_rows or [["(no tke cases found)", "-", "-", "-", "-"]],
             ),
+            "",
+            "Codex aggregate by mode:",
+            "",
+            md_table(
+                ["Variant", "Cases", "Pass", "Fail", "Ungraded", "Total tool tokens saved"],
+                codex_summary_rows or [["-", "-", "-", "-", "-", "-"]],
+            ),
         ]
     )
 
@@ -241,16 +289,30 @@ if claude:
             "",
             "- `Claude + tke` currently defaults to compatibility mode in live CLI usage. This keeps agent and tool I/O transparent unless `TKE_CLAUDE_LIVE_TOOLS=1` is set.",
             "- The offline transcript rewriter and compare reports still measure potential savings on saved Claude stream JSONL output.",
+            "",
+            "Claude aggregate by mode:",
+            "",
+            md_table(
+                ["Variant", "Cases", "Pass", "Fail", "Ungraded", "Total tool tokens saved"],
+                claude_summary_rows or [["-", "-", "-", "-", "-", "-"]],
+            ),
         ]
     )
 
 if claude_attempts:
     attempt_rows = []
+    ok_names = []
+    not_ok_names = []
     for item in claude_attempts:
         statuses = ",".join(str(status) for status in item.get("error_statuses", [])) or "-"
+        name = item.get("name", "-")
+        if item.get("ok"):
+            ok_names.append(name)
+        else:
+            not_ok_names.append(name)
         attempt_rows.append(
             [
-                f"`{item.get('name', '-')}`",
+                f"`{name}`",
                 f"`{item.get('mode', '-')}`",
                 "yes" if item.get("ok") else "no",
                 "yes" if item.get("completed") else "no",
@@ -269,6 +331,21 @@ if claude_attempts:
             ),
         ]
     )
+    if ok_names or not_ok_names:
+        notes = []
+        if ok_names:
+            notes.append(
+                "Successful live compatibility probes: "
+                + ", ".join(f"`{name}`" for name in sorted(ok_names))
+                + "."
+            )
+        if not_ok_names:
+            notes.append(
+                "Still unstable or incomplete: "
+                + ", ".join(f"`{name}`" for name in sorted(not_ok_names))
+                + "."
+            )
+        benchmarks_md.extend(["", *notes])
 
 (root / "docs/benchmarks.md").write_text("\n".join(benchmarks_md) + "\n")
 

@@ -9,7 +9,7 @@ PROMPT_FILE="${4:-}"
 OUT_DIR="${OUT_DIR:-$ROOT/.tmp-claude-e2e}"
 CLAUDE_BASE_URL="${CLAUDE_BASE_URL:-https://ai.fixwikihub.com/}"
 CLAUDE_API_KEY="${CLAUDE_API_KEY:-}"
-CLAUDE_MODEL="${CLAUDE_MODEL:-claude-sonnet-4-5}"
+CLAUDE_MODEL="${CLAUDE_MODEL:-claude-sonnet-4-6}"
 
 mkdir -p "$OUT_DIR"
 

@@ -11,16 +11,26 @@ HOST_RTK_BIN="${RTK_BIN:-/tmp/rtk-bin/rtk}"
 HOST_CLAUDE_BIN="${CLAUDE_BIN:-$(command -v claude)}"
 HOST_CLAUDE_HOME="${HOST_CLAUDE_HOME:-/root/.claude}"
 HOST_CLAUDE_STATE="${HOST_CLAUDE_STATE:-/root/.claude.json}"
+HOST_RUST_TOOLCHAIN_BIN="${HOST_RUST_TOOLCHAIN_BIN:-$(dirname "$(rustup which cargo 2>/dev/null || command -v cargo)")}"
+HOST_TOOL_PATH="${HOST_TOOL_PATH:-$HOST_RUST_TOOLCHAIN_BIN:/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin}"
 
 OUT_DIR="${OUT_DIR:-$ROOT/.tmp-claude-e2e}"
 WORK_ROOT="${WORK_ROOT:-/tmp/tke-claude-e2e}"
-RUN_AS_USER="${RUN_AS_USER:-nobody}"
-RUN_AS_GROUP="${RUN_AS_GROUP:-nogroup}"
+RUN_AS_USER="${RUN_AS_USER:-root}"
+RUN_AS_GROUP="${RUN_AS_GROUP:-}"
 KEEP_RUN_ROOT="${KEEP_RUN_ROOT:-0}"
 CLAUDE_BASE_URL="${CLAUDE_BASE_URL:-https://ai.fixwikihub.com}"
 CLAUDE_API_KEY="${CLAUDE_API_KEY:-}"
-CLAUDE_MODEL="${CLAUDE_MODEL:-claude-sonnet-4-5}"
+CLAUDE_MODEL="${CLAUDE_MODEL:-claude-sonnet-4-6}"
 CLAUDE_TKE_LIVE_TOOLS="${CLAUDE_TKE_LIVE_TOOLS:-0}"
+
+if [[ -z "$RUN_AS_GROUP" ]]; then
+  if [[ "$RUN_AS_USER" == "root" ]]; then
+    RUN_AS_GROUP="root"
+  else
+    RUN_AS_GROUP="nogroup"
+  fi
+fi
 
 if [[ -z "$PROMPT_FILE" || ! -f "$PROMPT_FILE" ]]; then
   echo "usage: $0 [root] [raw|wrapped|tke|rtk|rtk-hook] [name] /abs/path/to/prompt.txt" >&2
@@ -130,9 +140,10 @@ CLAUDE_BASE_URL="${13}"
 CLAUDE_API_KEY="${14}"
 CLAUDE_MODEL="${15}"
 CLAUDE_TKE_LIVE_TOOLS="${16}"
+HOST_TOOL_PATH="${17}"
 
 export HOME="$HOME_ROOT"
-export PATH="$BIN_ROOT:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+export PATH="$BIN_ROOT:$HOST_TOOL_PATH"
 export ANTHROPIC_BASE_URL="$CLAUDE_BASE_URL"
 export ANTHROPIC_API_KEY="$CLAUDE_API_KEY"
 export ANTHROPIC_AUTH_TOKEN="$CLAUDE_API_KEY"
@@ -199,7 +210,8 @@ runuser -u "$RUN_AS_USER" -- "$RUN_SCRIPT" \
   "$CLAUDE_BASE_URL" \
   "$CLAUDE_API_KEY" \
   "$CLAUDE_MODEL" \
-  "$CLAUDE_TKE_LIVE_TOOLS"
+  "$CLAUDE_TKE_LIVE_TOOLS" \
+  "$HOST_TOOL_PATH"
 
 cp -f "$TMP_STREAM_OUT" "$RAW_STREAM_OUT" 2>/dev/null || : 
 cp -f "$TMP_TEXT_OUT" "$RAW_TEXT_OUT" 2>/dev/null || :

@@ -74,6 +74,13 @@ Generated from:
 | `realtask` | `tke` | pass | 0 | `correct_but_not_saved` |
 | `rgcase` | `tke` | pass | 5337 | `saved_and_correct` |
 
+Codex aggregate by mode:
+
+| Variant | Cases | Pass | Fail | Ungraded | Total tool tokens saved |
+| --- | --- | --- | --- | --- | --- |
+| `rtk-codex-rules` | 2 | 0 | 0 | 2 | 11 |
+| `tke` | 4 | 4 | 0 | 0 | 6257 |
+
 ## RTK Fair Comparison
 
 RTK must be compared through each agent's real integration path:
@@ -104,9 +111,21 @@ Compatibility notes:
 - `Claude + tke` currently defaults to compatibility mode in live CLI usage. This keeps agent and tool I/O transparent unless `TKE_CLAUDE_LIVE_TOOLS=1` is set.
 - The offline transcript rewriter and compare reports still measure potential savings on saved Claude stream JSONL output.
 
+Claude aggregate by mode:
+
+| Variant | Cases | Pass | Fail | Ungraded | Total tool tokens saved |
+| --- | --- | --- | --- | --- | --- |
+| `rtk-hook` | 1 | 1 | 0 | 0 | 0 |
+| `tke` | 1 | 0 | 1 | 0 | 67 |
+
 Claude attempt summary:
 
 | Case | Mode | OK | Completed | Result error | Error statuses |
 | --- | --- | --- | --- | --- | --- |
 | `compatfind` | `tke` | yes | yes | no | - |
+| `livebuild` | `tke` | no | yes | no | - |
 | `livefind` | `tke` | yes | yes | no | - |
+| `liverg` | `tke` | yes | yes | no | - |
+
+Successful live compatibility probes: `compatfind`, `livefind`, `liverg`.
+Still unstable or incomplete: `livebuild`.
