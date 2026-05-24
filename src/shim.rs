@@ -505,6 +505,7 @@ pub(crate) fn normalize_text_with_stage(
         sc: selected_stage.map(|(name, _)| name.to_owned()),
         sr: selected_stage.map(|(_, role)| role.to_owned()),
         p: profile.as_str().to_owned(),
+        c: pathlist.as_ref().map(|summary| summary.rc),
         s: if profile == TrimProfile::PathList {
             String::new()
         } else {

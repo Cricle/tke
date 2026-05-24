@@ -892,7 +892,8 @@ fn pathlist_profile_detected_for_find_output() {
     .expect("normalize");
     let value = value_from_json(&normalized);
     assert_eq!(value["p"], "pathlist");
-    assert_eq!(value["pl"]["rc"], 40);
+    assert_eq!(value["c"], 40);
+    assert!(value["pl"]["rc"].is_null());
 }
 
 #[test]
@@ -916,7 +917,8 @@ fn pathlist_profile_detected_for_medium_find_output() {
     assert!(normalized.is_some());
     let value = value_from_json(&normalized.expect("payload"));
     assert_eq!(value["p"], "pathlist");
-    assert_eq!(value["pl"]["rc"], 16);
+    assert_eq!(value["c"], 16);
+    assert!(value["pl"]["rc"].is_null());
 }
 
 #[test]
@@ -955,7 +957,8 @@ fn pathlist_profile_compacts_real_findcase_under_default_config() {
     assert!(normalized.is_some(), "expected real findcase to compress");
     let value = value_from_json(&normalized.expect("payload"));
     assert_eq!(value["p"], "pathlist");
-    assert_eq!(value["pl"]["rc"], 17);
+    assert_eq!(value["c"], 17);
+    assert!(value["pl"]["rc"].is_null());
     assert_eq!(value["pl"]["d"], "src");
 }
 
@@ -986,7 +989,8 @@ fn pathlist_profile_detected_for_ls_name_output() {
     assert!(normalized.is_some());
     let value = value_from_json(&normalized.expect("payload"));
     assert_eq!(value["p"], "pathlist");
-    assert_eq!(value["pl"]["rc"], 40);
+    assert_eq!(value["c"], 40);
+    assert!(value["pl"]["rc"].is_null());
 }
 
 #[test]
@@ -1120,7 +1124,8 @@ fn normalize_search_pipeline_tail_uses_selected_search_profile() {
     assert_eq!(value["sc"], "find");
     assert_eq!(value["sr"], "search");
     assert_eq!(value["p"], "pathlist");
-    assert_eq!(value["pl"]["rc"], 120);
+    assert_eq!(value["c"], 120);
+    assert!(value["pl"]["rc"].is_null());
 }
 
 #[test]
@@ -1931,7 +1936,7 @@ fn compare_e2e_report_grades_findcase_and_buildcase_expectations() {
                 "type": "item.completed",
                 "item": {
                     "type": "command_execution",
-                    "aggregated_output": "__TKE__{\"v\":1,\"cmd\":\"head\",\"sc\":\"find\",\"sr\":\"search\",\"p\":\"pathlist\",\"pl\":{\"rc\":17}}"
+                    "aggregated_output": "__TKE__{\"v\":1,\"cmd\":\"head\",\"sc\":\"find\",\"sr\":\"search\",\"p\":\"pathlist\",\"c\":17,\"pl\":{}}"
                 }
             }).to_string(),
             serde_json::json!({

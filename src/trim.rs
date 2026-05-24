@@ -1267,6 +1267,8 @@ pub(crate) struct TrimEnvelope {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) sr: Option<String>,
     pub(crate) p: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) c: Option<usize>,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub(crate) s: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1319,6 +1321,7 @@ pub(crate) struct TableRow {
 
 #[derive(Serialize)]
 pub(crate) struct PathListSummary {
+    #[serde(skip_serializing)]
     pub(crate) rc: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) d: Option<String>,

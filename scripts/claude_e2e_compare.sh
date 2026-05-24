@@ -16,6 +16,7 @@ OUT_DIR="${OUT_DIR:-$ROOT/.tmp-claude-e2e}"
 WORK_ROOT="${WORK_ROOT:-/tmp/tke-claude-e2e}"
 RUN_AS_USER="${RUN_AS_USER:-nobody}"
 RUN_AS_GROUP="${RUN_AS_GROUP:-nogroup}"
+KEEP_RUN_ROOT="${KEEP_RUN_ROOT:-0}"
 CLAUDE_BASE_URL="${CLAUDE_BASE_URL:-https://ai.fixwikihub.com}"
 CLAUDE_API_KEY="${CLAUDE_API_KEY:-}"
 CLAUDE_MODEL="${CLAUDE_MODEL:-claude-sonnet-4-5}"
@@ -41,13 +42,16 @@ SHIM_DIR="$RUN_ROOT/shims"
 rm -rf "$RUN_ROOT"
 mkdir -p "$REPO_ROOT" "$HOME_ROOT/.claude" "$BIN_ROOT"
 
-cp "$HOST_TKE_BIN" "$BIN_ROOT/tke"
+ln -sf "$HOST_TKE_BIN" "$BIN_ROOT/tke"
 if [[ -x "$HOST_RTK_BIN" ]]; then
-  cp "$HOST_RTK_BIN" "$BIN_ROOT/rtk"
-  chmod +x "$BIN_ROOT/rtk"
+  ln -sf "$HOST_RTK_BIN" "$BIN_ROOT/rtk"
 fi
-cp "$HOST_CLAUDE_BIN" "$BIN_ROOT/claude"
-chmod +x "$BIN_ROOT/tke" "$BIN_ROOT/claude"
+cp "$(readlink -f "$HOST_CLAUDE_BIN")" "$BIN_ROOT/claude"
+chmod +x "$HOST_TKE_BIN" "$HOST_CLAUDE_BIN" 2>/dev/null || :
+if [[ -x "$HOST_RTK_BIN" ]]; then
+  chmod +x "$HOST_RTK_BIN" 2>/dev/null || :
+fi
+chmod +x "$BIN_ROOT/claude"
 
 mkdir -p "$REPO_ROOT/src" "$REPO_ROOT/scripts" "$REPO_ROOT/.github/workflows"
 cp -a "$ROOT/src/." "$REPO_ROOT/src/"
@@ -66,8 +70,11 @@ fi
 if [[ -f "$HOST_CLAUDE_STATE" ]]; then
   cp "$HOST_CLAUDE_STATE" "$HOME_ROOT/.claude.json"
 fi
-if [[ -d "$HOST_CLAUDE_HOME" ]]; then
-  cp -a "$HOST_CLAUDE_HOME/." "$HOME_ROOT/.claude/"
+if [[ -f "$HOST_CLAUDE_HOME/settings.json" ]]; then
+  cp "$HOST_CLAUDE_HOME/settings.json" "$HOME_ROOT/.claude/settings.json"
+fi
+if [[ -f "$HOST_CLAUDE_HOME/known_marketplaces.json" ]]; then
+  cp "$HOST_CLAUDE_HOME/known_marketplaces.json" "$HOME_ROOT/.claude/known_marketplaces.json"
 fi
 
 PROMPT_COPY="$RUN_ROOT/prompt.txt"
@@ -126,18 +133,20 @@ export ANTHROPIC_AUTH_TOKEN="$CLAUDE_API_KEY"
 export ANTHROPIC_MODEL="$CLAUDE_MODEL"
 export CLAUDE_CODE_SIMPLE=1
 
+CLAUDE_LAUNCH="$BIN_ROOT/claude"
 if [[ "$MODE" == "wrapped" || "$MODE" == "tke" ]]; then
   eval "$("$BIN_ROOT/tke" activate --shim-dir "$SHIM_DIR" claude)"
+  if command -v claude >/dev/null 2>&1; then
+    CLAUDE_LAUNCH="$(command -v claude)"
+  fi
 fi
 
 if [[ "$MODE" == "rtk" || "$MODE" == "rtk-hook" ]]; then
   mkdir -p "$HOME_ROOT/.claude" "$HOME_ROOT/.config"
   HOME="$HOME_ROOT" XDG_CONFIG_HOME="$HOME_ROOT/.config" "$BIN_ROOT/rtk" init -g --auto-patch --agent claude >/dev/null
-fi
-
-CLAUDE_LAUNCH="$BIN_ROOT/claude"
-if [[ "$MODE" == "wrapped" || "$MODE" == "tke" || "$MODE" == "rtk" || "$MODE" == "rtk-hook" ]]; then
-  CLAUDE_LAUNCH="claude"
+  if command -v claude >/dev/null 2>&1; then
+    CLAUDE_LAUNCH="$(command -v claude)"
+  fi
 fi
 
 cd "$REPO_ROOT"
@@ -189,3 +198,7 @@ cp -f "$TMP_TEXT_OUT" "$RAW_TEXT_OUT" 2>/dev/null || :
 cp -f "$TMP_DEBUG_OUT" "$RAW_DEBUG_OUT" 2>/dev/null || :
 cp -f "$TMP_STATUS_OUT" "$RAW_STATUS_OUT" 2>/dev/null || :
 cp -f "$TMP_SESSION_OUT" "$RAW_SESSION_OUT" 2>/dev/null || :
+
+if [[ "$KEEP_RUN_ROOT" != "1" ]]; then
+  rm -rf "$RUN_ROOT"
+fi

@@ -136,6 +136,23 @@ CLAUDE_API_KEY=... CLAUDE_BASE_URL=... scripts/claude_smoke_try.sh /root/github/
 
 `claude_smoke_try.sh` always writes an `*.attempt.json` status record so transient gateway failures can be tracked instead of silently blocking the workflow.
 
+## Real E2E Findings
+
+Current real-task findings in this repo are:
+
+- Codex + `tke`: verified correct on real `findcase` and `buildcase`, while reducing tool payload size materially.
+- Codex + `rtk-codex-rules`: the official `AGENTS.md + RTK.md` path was exercised fairly, but in the sampled real task Codex still executed the raw command path rather than an RTK-prefixed command, so no measured tool-output savings were observed there.
+- Claude + `raw`: verified correct on the real `findcase` Bash task.
+- Claude + `rtk-hook`: verified correct on the same real `findcase` Bash task after fixing the local comparison harness.
+- Claude + `tke`: not currently production-safe on the tested `claude-sonnet-4-6` gateway path. In the latest real run it did not execute Bash and instead hallucinated a file path and count, so tool-payload savings were not accepted as a valid win.
+
+Practical interpretation:
+
+- `tke` is currently validated first for Codex.
+- RTK fairness for Codex should be judged via `rtk-codex-rules`, not `rtk-direct`.
+- RTK fairness for Claude should be judged via `rtk-hook`.
+- Claude-specific `tke` compression still needs a compatibility path that preserves tool-use behavior before it can be treated as correct in real E2E comparisons.
+
 `benchmark-commands --check` validates the current benchmark report against built-in expectations:
 
 - `compress` cases must clear a minimum savings bar
