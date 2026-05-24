@@ -18,9 +18,9 @@ Generated from:
 | `nl_code` | file | 1058 | 189 | 869 | 82.1% |
 | `rg_code` | search | 2257 | 226 | 2031 | 90.0% |
 | `grep_code` | search | 2257 | 228 | 2029 | 89.9% |
-| `find_paths` | pathlist | 8151 | 96 | 8055 | 98.8% |
-| `fd_paths` | pathlist | 8151 | 96 | 8055 | 98.8% |
-| `tree_paths` | pathlist | 3926 | 96 | 3830 | 97.6% |
+| `find_paths` | pathlist | 8151 | 93 | 8058 | 98.9% |
+| `fd_paths` | pathlist | 8151 | 93 | 8058 | 98.9% |
+| `tree_paths` | pathlist | 3926 | 93 | 3833 | 97.6% |
 | `git_diff` | diff | 3691 | 232 | 3459 | 93.7% |
 | `cargo_build` | log | 796 | 197 | 599 | 75.3% |
 | `pytest_run` | log | 827 | 210 | 617 | 74.6% |
@@ -39,7 +39,7 @@ Profile averages:
 | file | 9 | 77.9% |
 | generic | 1 | 0.0% |
 | log | 12 | 74.9% |
-| pathlist | 6 | 96.6% |
+| pathlist | 6 | 96.7% |
 | search | 2 | 89.9% |
 | table | 3 | 70.6% |
 
@@ -50,19 +50,19 @@ Built-in rollout/task benchmarks:
 | `codex_api_trace_rollout_savings` | api | 5389 | 505 | 4884 | 90.6% |
 | `codex_api_trace_default_tool_coverage` | api | 4021 | 769 | 3252 | 80.9% |
 | `codex_interactive_trace_selected_search_stage` | interactive | 2913 | 570 | 2343 | 80.4% |
-| `codex_interactive_trace_selected_find_stage` | interactive | 8125 | 96 | 8029 | 98.8% |
+| `codex_interactive_trace_selected_find_stage` | interactive | 8125 | 93 | 8032 | 98.9% |
 | `codex_interactive_trace_selected_build_stage` | interactive | 1102 | 226 | 876 | 79.5% |
 | `claude_bash_trace_selected_search_stage` | api | 2416 | 552 | 1864 | 77.2% |
-| `claude_bash_trace_selected_find_stage` | api | 8164 | 135 | 8029 | 98.3% |
+| `claude_bash_trace_selected_find_stage` | api | 8164 | 132 | 8032 | 98.4% |
 | `claude_bash_trace_selected_diff_stage` | api | 3700 | 267 | 3433 | 92.8% |
 | `claude_bash_trace_selected_build_stage` | api | 1141 | 265 | 876 | 76.8% |
-| `claude_bash_trace_complex_triage_task` | api | 14972 | 964 | 14008 | 93.6% |
+| `claude_bash_trace_complex_triage_task` | api | 14972 | 961 | 14011 | 93.6% |
 | `claude_bash_trace_complex_code_trace_task` | api | 7682 | 1045 | 6637 | 86.4% |
-| `claude_rtk_hook_trace_selected_find_stage` | api | 8159 | 130 | 8029 | 98.4% |
+| `claude_rtk_hook_trace_selected_find_stage` | api | 8159 | 127 | 8032 | 98.4% |
 | `claude_rtk_hook_trace_selected_search_stage` | api | 2137 | 416 | 1721 | 80.5% |
 | `claude_rtk_hook_trace_selected_diff_stage` | api | 3697 | 264 | 3433 | 92.9% |
 | `claude_rtk_hook_trace_selected_build_stage` | api | 1135 | 259 | 876 | 77.2% |
-| `claude_rtk_hook_trace_complex_triage_task` | api | 14972 | 964 | 14008 | 93.6% |
+| `claude_rtk_hook_trace_complex_triage_task` | api | 14972 | 961 | 14011 | 93.6% |
 | `claude_rtk_hook_trace_complex_code_trace_task` | api | 7682 | 1045 | 6637 | 86.4% |
 
 ## Why TKE Is Better Today
@@ -71,18 +71,18 @@ This section is generated from the current benchmark and E2E artifacts. The clai
 
 | Evidence area | `tke` result | `rtk` result in this repo | Why this matters |
 | --- | --- | --- | --- |
-| Built-in local compression benchmarks | `33/34` cases, `57775` tokens saved, `91.1%` | No equivalent repo-local tool-output benchmark runner in this repo | `tke` can be measured locally and repeatedly without depending on agent compliance |
-| Built-in rollout/task traces | `17` traces, `88935` tokens saved, `91.3%` | RTK participates only through the fairness/synthetic harness subset wired here | `tke` has broader measured coverage inside the repo |
+| Built-in local compression benchmarks | `33/34` cases, `57793` tokens saved, `91.1%` | No equivalent repo-local tool-output benchmark runner in this repo | `tke` can be measured locally and repeatedly without depending on agent compliance |
+| Built-in rollout/task traces | `17` traces, `88950` tokens saved, `91.3%` | RTK participates only through the fairness/synthetic harness subset wired here | `tke` has broader measured coverage inside the repo |
 | Codex real E2E | `4/4` pass, `6257` tool tokens saved | `0/2` pass, `11` token delta | Current real Codex evidence favors `tke` clearly |
 | Structured output surface | `pathlist`, `search`, `diff`, `log`, `table`, and `file` profiles emit inspectable `__TKE__{...}` summaries | No equivalent repo-local structured envelope | `tke` gives a concrete artifact that tooling can compare and audit |
-| Claude stable synthetic traces | `34847` tokens saved at `91.5%` | `34704` tokens saved at `91.9%` | `tke` is slightly ahead on absolute token savings even where `rtk-hook` is slightly ahead on ratio |
+| Claude stable synthetic traces | `34853` tokens saved at `91.5%` | `34710` tokens saved at `91.9%` | `tke` is slightly ahead on absolute token savings even where `rtk-hook` is slightly ahead on ratio |
 
 Current built-in totals:
 
 | Scope | Cases | Tokens saved | Savings ratio |
 | --- | --- | --- | --- |
-| Default compress benchmarks | 33 | 57775 | 91.1% |
-| Built-in rollout/task traces | 17 | 88935 | 91.3% |
+| Default compress benchmarks | 33 | 57793 | 91.1% |
+| Built-in rollout/task traces | 17 | 88950 | 91.3% |
 
 Per-profile compression totals:
 
@@ -91,7 +91,7 @@ Per-profile compression totals:
 | `diff` | 1 | 3459 | 93.7% |
 | `file` | 9 | 5468 | 78.1% |
 | `log` | 12 | 6998 | 74.9% |
-| `pathlist` | 6 | 36421 | 98.5% |
+| `pathlist` | 6 | 36439 | 98.6% |
 | `search` | 2 | 4060 | 89.9% |
 | `table` | 3 | 1369 | 71.5% |
 
@@ -99,18 +99,18 @@ Claude-oriented stable synthetic summary:
 
 | Path | Raw tokens | Rewritten tokens | Tokens saved | Savings | Fragments kept |
 | --- | --- | --- | --- | --- | --- |
-| `tke` | 38075 | 3228 | 34847 | 91.5% | `40/40` |
-| `rtk-hook` | 37782 | 3078 | 34704 | 91.9% | `43/43` |
+| `tke` | 38075 | 3222 | 34853 | 91.5% | `40/40` |
+| `rtk-hook` | 37782 | 3072 | 34710 | 91.9% | `43/43` |
 
 Task-mode comparison for Claude-oriented stable synthetic traces:
 
 | Scenario | TKE task savings | RTK hook task savings | TKE fragments kept | RTK hook fragments kept |
 | --- | --- | --- | --- | --- |
-| find/pathlist | `8029` (98.3%) | `8029` (98.4%) | `4/4` | `6/6` |
+| find/pathlist | `8032` (98.4%) | `8032` (98.4%) | `4/4` | `6/6` |
 | search | `1864` (77.2%) | `1721` (80.5%) | `3/3` | `4/4` |
 | diff | `3433` (92.8%) | `3433` (92.9%) | `6/6` | `6/6` |
 | build/log | `876` (76.8%) | `876` (77.2%) | `5/5` | `5/5` |
-| complex/triage | `14008` (93.6%) | `14008` (93.6%) | `11/11` | `11/11` |
+| complex/triage | `14011` (93.6%) | `14011` (93.6%) | `11/11` | `11/11` |
 | complex/code-trace | `6637` (86.4%) | `6637` (86.4%) | `11/11` | `11/11` |
 
 Scenario verdicts:
@@ -179,8 +179,8 @@ Accuracy and compression scorecard:
 
 | Scope | Path | Cases | Accuracy | Compression rate | Semantic retention | Token outcome |
 | --- | --- | --- | --- | --- | --- | --- |
-| `Claude synthetic` | `tke` | 6 | `n/a` | 91.5% | `40/40` | 34847 |
-| `Claude synthetic` | `rtk-hook` | 6 | `n/a` | 91.9% | `43/43` | 34704 |
+| `Claude synthetic` | `tke` | 6 | `n/a` | 91.5% | `40/40` | 34853 |
+| `Claude synthetic` | `rtk-hook` | 6 | `n/a` | 91.9% | `43/43` | 34710 |
 | `codex` | `rtk-codex-rules` | 2 | 0.0% | `n/a` | `pass=0 fail=2 gateway=0 ungraded=0` | 11 |
 | `claude` | `rtk-hook` | 3 | 100.0% | `n/a` | `pass=3 fail=0 gateway=0 ungraded=0` | -1 |
 
