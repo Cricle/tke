@@ -2,3 +2,7 @@ target/
 dist/
 .tke/
 .tmp-*.jsonl
+.tmp-claude-e2e/
+.tmp-codex-e2e/
+.tmp-codex-e2e-real/
+.tmp-codex-e2e-fair/

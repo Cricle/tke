@@ -1,0 +1,329 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="${1:-/root/github/tke}"
+TKE_BIN="${TKE_BIN:-$ROOT/target/release/tke}"
+
+python3 - "$ROOT" "$TKE_BIN" <<'PY'
+import json
+import pathlib
+import subprocess
+import sys
+
+root = pathlib.Path(sys.argv[1])
+tke_bin = pathlib.Path(sys.argv[2])
+
+
+def run_json(args):
+    data = subprocess.check_output(args, cwd=root, text=True)
+    return json.loads(data)
+
+
+def try_compare(agent, sources):
+    present = [src for src in sources if (root / src).exists()]
+    if not present:
+        return None
+    args = [str(tke_bin), "compare-e2e", "--agent", agent]
+    for src in present:
+        args.extend(["--source", src])
+    return run_json(args)
+
+
+benchmark = run_json([str(tke_bin), "benchmark-commands"])
+codex = try_compare(
+    "codex",
+    [".tmp-codex-e2e", ".tmp-codex-e2e-real", ".tmp-codex-e2e-fair"],
+)
+claude = try_compare("claude", [".tmp-claude-e2e"])
+
+
+def pct(value):
+    return f"{value * 100:.1f}%"
+
+
+def md_table(headers, rows):
+    out = []
+    out.append("| " + " | ".join(headers) + " |")
+    out.append("| " + " | ".join(["---"] * len(headers)) + " |")
+    for row in rows:
+        out.append("| " + " | ".join(row) + " |")
+    return "\n".join(out)
+
+
+selected_cases = [
+    "cat_code",
+    "sed_code",
+    "bat_code",
+    "nl_code",
+    "rg_code",
+    "grep_code",
+    "find_paths",
+    "fd_paths",
+    "tree_paths",
+    "git_diff",
+    "cargo_build",
+    "pytest_run",
+    "npm_test",
+    "dotnet_test",
+    "go_test",
+    "ninja_build",
+    "ps_table",
+    "systemctl_table",
+]
+bench_cases = {case["name"]: case for case in benchmark["cases"]}
+bench_rows = []
+for name in selected_cases:
+    case = bench_cases.get(name)
+    if not case:
+        continue
+    bench_rows.append(
+        [
+            f"`{case['name']}`",
+            case["profile"],
+            str(case["raw_tokens"]),
+            str(case["rewritten_tokens"]),
+            str(case["tokens_saved"]),
+            pct(case["tokens_saved_ratio"]),
+        ]
+    )
+
+profile_buckets = {}
+for case in benchmark["cases"]:
+    bucket = profile_buckets.setdefault(case["profile"], [])
+    bucket.append(case["tokens_saved_ratio"])
+profile_rows = [
+    [profile, str(len(values)), pct(sum(values) / len(values))]
+    for profile, values in sorted(profile_buckets.items())
+]
+
+task_rows = []
+for task in benchmark["tasks"]:
+    task_rows.append(
+        [
+            f"`{task['name']}`",
+            task["mode"],
+            str(task["raw_tokens"]),
+            str(task["rewritten_tokens"]),
+            str(task["tokens_saved"]),
+            pct(task["tokens_saved_ratio"]),
+        ]
+    )
+
+
+def collect_variant_rows(report, wanted_modes=None):
+    rows = []
+    if not report:
+        return rows
+    for case in report["cases"]:
+        for variant in case["variants"]:
+            mode = variant["mode"]
+            if wanted_modes and mode not in wanted_modes:
+                continue
+            correctness = variant["sample"]["correctness"]["status"]
+            rows.append(
+                [
+                    f"`{case['name']}`",
+                    f"`{mode}`",
+                    correctness,
+                    str(variant["tool_tokens_saved"]),
+                    f"`{variant['verdict']}`",
+                ]
+            )
+    return rows
+
+
+codex_tke_rows = collect_variant_rows(codex, {"tke"})
+codex_rtk_rows = collect_variant_rows(codex, {"rtk-codex-rules"})
+claude_rows = collect_variant_rows(claude, {"tke", "rtk-hook"})
+
+benchmarks_md = [
+    "# Benchmarks",
+    "",
+    "This file is generated from the current local benchmark and E2E artifacts.",
+    "",
+    "## Synthetic Command Benchmarks",
+    "",
+    "Generated from:",
+    "",
+    "```bash",
+    "./target/release/tke benchmark-commands --check",
+    "```",
+    "",
+    md_table(
+        ["Command case", "Profile", "Raw tokens", "Rewritten tokens", "Tokens saved", "Savings"],
+        bench_rows,
+    ),
+    "",
+    "Profile averages:",
+    "",
+    md_table(["Profile", "Cases", "Average token savings"], profile_rows),
+    "",
+    "Built-in rollout/task benchmarks:",
+    "",
+    md_table(
+        ["Task", "Mode", "Raw tokens", "Rewritten tokens", "Tokens saved", "Savings"],
+        task_rows,
+    ),
+]
+
+if codex:
+    benchmarks_md.extend(
+        [
+            "",
+            "## Codex Real E2E",
+            "",
+            "Generated from:",
+            "",
+            "```bash",
+            "./target/release/tke compare-e2e --agent codex \\",
+            "  --source .tmp-codex-e2e \\",
+            "  --source .tmp-codex-e2e-real \\",
+            "  --source .tmp-codex-e2e-fair",
+            "```",
+            "",
+            md_table(
+                ["Case", "Variant", "Correct", "Tool token savings", "Verdict"],
+                codex_tke_rows or [["(no tke cases found)", "-", "-", "-", "-"]],
+            ),
+        ]
+    )
+
+if codex_rtk_rows:
+    benchmarks_md.extend(
+        [
+            "",
+            "## RTK Fair Comparison",
+            "",
+            "RTK must be compared through each agent's real integration path:",
+            "",
+            "- Codex: `rtk-codex-rules`",
+            "- Claude: `rtk-hook`",
+            "",
+            md_table(
+                ["Case", "Variant", "Correct", "Tool token savings", "Verdict"],
+                codex_rtk_rows,
+            ),
+        ]
+    )
+
+if claude:
+    benchmarks_md.extend(
+        [
+            "",
+            "## Claude Real E2E",
+            "",
+            "Generated from:",
+            "",
+            "```bash",
+            "./target/release/tke compare-e2e --agent claude --source .tmp-claude-e2e",
+            "```",
+            "",
+            md_table(
+                ["Case", "Variant", "Correct", "Tool token savings", "Verdict"],
+                claude_rows or [["(no claude cases found)", "-", "-", "-", "-"]],
+            ),
+            "",
+            "Compatibility notes:",
+            "",
+            "- `Claude + tke` currently defaults to compatibility mode in live CLI usage. This keeps agent and tool I/O transparent unless `TKE_CLAUDE_LIVE_TOOLS=1` is set.",
+            "- The offline transcript rewriter and compare reports still measure potential savings on saved Claude stream JSONL output.",
+        ]
+    )
+
+(root / "docs/benchmarks.md").write_text("\n".join(benchmarks_md) + "\n")
+
+
+def build_status_map(report):
+    status = {}
+    if not report:
+        return status
+    for case in report["cases"]:
+        entry = status.setdefault(case["name"], {"raw": "missing"})
+        entry["raw"] = case["baseline"]["correctness"]["status"]
+        for variant in case["variants"]:
+            entry[variant["mode"]] = variant["sample"]["correctness"]["status"]
+    return status
+
+
+codex_status = build_status_map(codex)
+claude_status = build_status_map(claude)
+
+
+def pass_label(status):
+    if status == "pass":
+        return "pass"
+    if status == "fail":
+        return "fail"
+    if status == "ungraded":
+        return "ungraded"
+    return "missing"
+
+
+codex_rows = []
+for name in sorted(codex_status):
+    item = codex_status[name]
+    notes = []
+    if item.get("tke") == "pass":
+        notes.append("stable tke case")
+    if item.get("rtk-codex-rules") == "ungraded":
+        notes.append("fair RTK sample")
+    codex_rows.append(
+        [
+            f"`{name}`",
+            pass_label(item.get("raw")),
+            pass_label(item.get("tke")),
+            pass_label(item.get("rtk-codex-rules")),
+            ", ".join(notes) or "-",
+        ]
+    )
+
+claude_rows_e2e = []
+for name in sorted(claude_status):
+    item = claude_status[name]
+    notes = []
+    if item.get("tke") == "pass":
+        notes.append("live tke correct")
+    elif item.get("tke") == "fail":
+        notes.append("experimental live tke path")
+    if item.get("rtk-hook") == "pass":
+        notes.append("fair RTK hook path")
+    claude_rows_e2e.append(
+        [
+            f"`{name}`",
+            pass_label(item.get("raw")),
+            pass_label(item.get("tke")),
+            pass_label(item.get("rtk-hook")),
+            ", ".join(notes) or "-",
+        ]
+    )
+
+e2e_md = [
+    "# Real E2E Matrix",
+    "",
+    "This file is generated from the current local E2E artifacts.",
+    "",
+    "## Stable Cases",
+    "",
+    "### Codex",
+    "",
+    md_table(["Case", "Raw", "TKE", "RTK Rules", "Notes"], codex_rows or [["(no codex cases found)", "-", "-", "-", "-"]]),
+    "",
+    "### Claude",
+    "",
+    md_table(["Case", "Raw", "TKE", "RTK Hook", "Notes"], claude_rows_e2e or [["(no claude cases found)", "-", "-", "-", "-"]]),
+    "",
+    "## Fairness Rules",
+    "",
+    "- Codex vs RTK must use `rtk-codex-rules`.",
+    "- Claude vs RTK must use `rtk-hook`.",
+    "- `rtk-direct` is not the official fairness path for Codex.",
+    "",
+    "## Current Repo Verdict",
+    "",
+    "- Codex remains the primary validated live-compression path.",
+    "- Claude currently prioritizes stable compatibility over live compression by default.",
+    "- RTK results must be reported per agent integration mode, not as one universal number.",
+]
+
+(root / "docs/e2e.md").write_text("\n".join(e2e_md) + "\n")
+PY

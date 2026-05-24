@@ -20,6 +20,7 @@ KEEP_RUN_ROOT="${KEEP_RUN_ROOT:-0}"
 CLAUDE_BASE_URL="${CLAUDE_BASE_URL:-https://ai.fixwikihub.com}"
 CLAUDE_API_KEY="${CLAUDE_API_KEY:-}"
 CLAUDE_MODEL="${CLAUDE_MODEL:-claude-sonnet-4-5}"
+CLAUDE_TKE_LIVE_TOOLS="${CLAUDE_TKE_LIVE_TOOLS:-0}"
 
 if [[ -z "$PROMPT_FILE" || ! -f "$PROMPT_FILE" ]]; then
   echo "usage: $0 [root] [raw|wrapped|tke|rtk|rtk-hook] [name] /abs/path/to/prompt.txt" >&2
@@ -42,14 +43,18 @@ SHIM_DIR="$RUN_ROOT/shims"
 rm -rf "$RUN_ROOT"
 mkdir -p "$REPO_ROOT" "$HOME_ROOT/.claude" "$BIN_ROOT"
 
-ln -sf "$HOST_TKE_BIN" "$BIN_ROOT/tke"
+cp "$(readlink -f "$HOST_TKE_BIN")" "$BIN_ROOT/tke"
 if [[ -x "$HOST_RTK_BIN" ]]; then
-  ln -sf "$HOST_RTK_BIN" "$BIN_ROOT/rtk"
+  cp "$(readlink -f "$HOST_RTK_BIN")" "$BIN_ROOT/rtk"
 fi
 cp "$(readlink -f "$HOST_CLAUDE_BIN")" "$BIN_ROOT/claude"
 chmod +x "$HOST_TKE_BIN" "$HOST_CLAUDE_BIN" 2>/dev/null || :
 if [[ -x "$HOST_RTK_BIN" ]]; then
   chmod +x "$HOST_RTK_BIN" 2>/dev/null || :
+fi
+chmod +x "$BIN_ROOT/tke"
+if [[ -f "$BIN_ROOT/rtk" ]]; then
+  chmod +x "$BIN_ROOT/rtk"
 fi
 chmod +x "$BIN_ROOT/claude"
 
@@ -124,6 +129,7 @@ RAW_SESSION_OUT="${12}"
 CLAUDE_BASE_URL="${13}"
 CLAUDE_API_KEY="${14}"
 CLAUDE_MODEL="${15}"
+CLAUDE_TKE_LIVE_TOOLS="${16}"
 
 export HOME="$HOME_ROOT"
 export PATH="$BIN_ROOT:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -139,6 +145,7 @@ if [[ "$MODE" == "wrapped" || "$MODE" == "tke" ]]; then
   if command -v claude >/dev/null 2>&1; then
     CLAUDE_LAUNCH="$(command -v claude)"
   fi
+  export TKE_CLAUDE_LIVE_TOOLS="$CLAUDE_TKE_LIVE_TOOLS"
 fi
 
 if [[ "$MODE" == "rtk" || "$MODE" == "rtk-hook" ]]; then
@@ -191,7 +198,8 @@ runuser -u "$RUN_AS_USER" -- "$RUN_SCRIPT" \
   "$TMP_SESSION_OUT" \
   "$CLAUDE_BASE_URL" \
   "$CLAUDE_API_KEY" \
-  "$CLAUDE_MODEL"
+  "$CLAUDE_MODEL" \
+  "$CLAUDE_TKE_LIVE_TOOLS"
 
 cp -f "$TMP_STREAM_OUT" "$RAW_STREAM_OUT" 2>/dev/null || : 
 cp -f "$TMP_TEXT_OUT" "$RAW_TEXT_OUT" 2>/dev/null || :

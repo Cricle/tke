@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+exec </dev/null
 
 ROOT="${1:-/root/github/tke}"
 TKE_BIN="${TKE_BIN:-$ROOT/target/release/tke}"

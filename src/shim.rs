@@ -81,6 +81,7 @@ pub(crate) fn run_agent_command(
             Some(OsString::from(real_path_string())),
         ),
     ];
+    let force_passthrough = should_passthrough_agent_output(name);
 
     if stdout_is_tty && stderr_is_tty {
         let tracker = if name == "codex" {
@@ -93,6 +94,10 @@ pub(crate) fn run_agent_command(
             tracker.finish(config)?;
         }
         return Ok(code);
+    }
+
+    if force_passthrough {
+        return passthrough(real_cmd, args, Some(envs), stdin_payload, true);
     }
 
     let output = capture_process(real_cmd, args, Some(envs.split_off(0)), stdin_payload, true)?;
@@ -119,6 +124,16 @@ pub(crate) fn run_agent_command(
         config,
     )?;
     Ok(exit_code(output.status))
+}
+
+fn should_passthrough_agent_output(name: &str) -> bool {
+    if name != "claude" {
+        return false;
+    }
+    !matches!(
+        env::var("TKE_CLAUDE_LIVE_TOOLS").ok().as_deref(),
+        Some("1" | "true" | "TRUE" | "yes" | "YES")
+    )
 }
 
 pub(crate) fn run_tool_command(

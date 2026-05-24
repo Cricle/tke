@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+exec </dev/null
 
 ROOT="${1:-/root/github/tke}"
 MODE="${2:-raw}"

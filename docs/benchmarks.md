@@ -1,42 +1,64 @@
 # Benchmarks
 
-This file records the current benchmark and real-task comparison results available in the repository as of `2026-05-24`.
+This file is generated from the current local benchmark and E2E artifacts.
 
 ## Synthetic Command Benchmarks
 
-Current synthetic benchmark report was generated from:
+Generated from:
 
 ```bash
 ./target/release/tke benchmark-commands --check
 ```
 
-Selected command results:
+| Command case | Profile | Raw tokens | Rewritten tokens | Tokens saved | Savings |
+| --- | --- | --- | --- | --- | --- |
+| `cat_code` | file | 743 | 161 | 582 | 78.3% |
+| `sed_code` | file | 743 | 164 | 579 | 77.9% |
+| `bat_code` | file | 743 | 165 | 578 | 77.8% |
+| `nl_code` | file | 1058 | 189 | 869 | 82.1% |
+| `rg_code` | search | 2257 | 250 | 2007 | 88.9% |
+| `grep_code` | search | 2257 | 252 | 2005 | 88.8% |
+| `find_paths` | pathlist | 8151 | 55 | 8096 | 99.3% |
+| `fd_paths` | pathlist | 8151 | 55 | 8096 | 99.3% |
+| `tree_paths` | pathlist | 3926 | 55 | 3871 | 98.6% |
+| `git_diff` | diff | 3691 | 222 | 3469 | 94.0% |
+| `cargo_build` | log | 796 | 170 | 626 | 78.6% |
+| `pytest_run` | log | 827 | 182 | 645 | 78.0% |
+| `npm_test` | log | 735 | 166 | 569 | 77.4% |
+| `dotnet_test` | log | 827 | 182 | 645 | 78.0% |
+| `go_test` | log | 705 | 139 | 566 | 80.3% |
+| `ninja_build` | log | 796 | 172 | 624 | 78.4% |
+| `ps_table` | table | 655 | 153 | 502 | 76.6% |
+| `systemctl_table` | table | 682 | 126 | 556 | 81.5% |
 
-| Command case | Raw tokens | Rewritten tokens | Tokens saved | Savings |
-| --- | ---: | ---: | ---: | ---: |
-| `cat_code` | 743 | 161 | 582 | 78.3% |
-| `sed_code` | 743 | 164 | 579 | 77.9% |
-| `rg_code` | 2257 | 250 | 2007 | 88.9% |
-| `find_paths` | 8151 | 55 | 8096 | 99.3% |
-| `fd_paths` | 8151 | 55 | 8096 | 99.3% |
-| `tree_paths` | 3926 | 55 | 3871 | 98.6% |
-| `ls_names` | 428 | 36 | 392 | 91.6% |
-| `cargo_build` | 796 | 170 | 626 | 78.6% |
-| `pytest_run` | 827 | 182 | 645 | 78.0% |
-| `dotnet_test` | 827 | 182 | 645 | 78.0% |
-| `go_test` | 705 | 139 | 566 | 80.3% |
-| `ninja_build` | 796 | 172 | 624 | 78.4% |
+Profile averages:
 
-Notable behavior:
+| Profile | Cases | Average token savings |
+| --- | --- | --- |
+| diff | 1 | 94.0% |
+| file | 9 | 77.9% |
+| generic | 1 | 0.0% |
+| log | 12 | 78.3% |
+| pathlist | 6 | 97.9% |
+| search | 2 | 88.9% |
+| table | 3 | 70.8% |
 
-- Code-reading commands such as `cat`, `sed`, `head`, `tail`, `bat`, and `nl` consistently save around `72%` to `82%` of estimated tokens.
-- Search output such as `rg` and `grep` is usually reduced by around `88%`.
-- Path discovery output such as `find`, `fd`, and `tree` is the strongest case, often exceeding `98%` savings.
-- Build and test logs across Rust, Python, Node, .NET, Go, CMake, Make, and Ninja usually land around `77%` to `80%` savings.
+Built-in rollout/task benchmarks:
+
+| Task | Mode | Raw tokens | Rewritten tokens | Tokens saved | Savings |
+| --- | --- | --- | --- | --- | --- |
+| `codex_api_trace_rollout_savings` | api | 5389 | 512 | 4877 | 90.5% |
+| `codex_api_trace_default_tool_coverage` | api | 4021 | 777 | 3244 | 80.7% |
+| `codex_interactive_trace_selected_search_stage` | interactive | 2913 | 570 | 2343 | 80.4% |
+| `codex_interactive_trace_selected_find_stage` | interactive | 8125 | 55 | 8070 | 99.3% |
+| `codex_interactive_trace_selected_build_stage` | interactive | 1102 | 200 | 902 | 81.9% |
+| `claude_bash_trace_selected_search_stage` | api | 2416 | 526 | 1890 | 78.2% |
+| `claude_bash_trace_selected_find_stage` | api | 8164 | 94 | 8070 | 98.8% |
+| `claude_bash_trace_selected_build_stage` | api | 1141 | 239 | 902 | 79.1% |
 
 ## Codex Real E2E
 
-Current real Codex comparison was generated from:
+Generated from:
 
 ```bash
 ./target/release/tke compare-e2e --agent codex \
@@ -45,61 +67,39 @@ Current real Codex comparison was generated from:
   --source .tmp-codex-e2e-fair
 ```
 
-Stable real-task results:
-
 | Case | Variant | Correct | Tool token savings | Verdict |
-| --- | --- | --- | ---: | --- |
-| `findcase` | `tke` | yes | 27 | `saved_and_correct` |
-| `buildcase` | `tke` | yes | 893 | `saved_and_correct` |
-| `rgcase` | `tke` | yes | 5337 | `saved_and_correct` |
-| `realtask` | `tke` | yes | 0 | `correct_but_not_saved` |
+| --- | --- | --- | --- | --- |
+| `buildcase` | `tke` | pass | 893 | `saved_and_correct` |
+| `findcase` | `tke` | pass | 27 | `saved_and_correct` |
+| `realtask` | `tke` | pass | 0 | `correct_but_not_saved` |
+| `rgcase` | `tke` | pass | 5337 | `saved_and_correct` |
 
-Notes:
+## RTK Fair Comparison
 
-- `rgcase` is currently the strongest stable real code-reading win in this repo.
-- `realtask` is correct but not large enough to trigger meaningful compression in the current output.
+RTK must be compared through each agent's real integration path:
 
-## RTK Comparison
-
-RTK must be compared through the integration path each agent actually uses:
-
-- Claude Code: `rtk-hook`
 - Codex: `rtk-codex-rules`
-
-Current fair Codex RTK result:
+- Claude: `rtk-hook`
 
 | Case | Variant | Correct | Tool token savings | Verdict |
-| --- | --- | --- | ---: | --- |
-| `fairfind` | `rtk-codex-rules` | ungraded correctness, same final answer shape | 0 | `wrong_and_not_saved` against raw-output savings baseline |
-
-Interpretation:
-
-- The official Codex fairness path was exercised.
-- In the sampled real task, Codex still effectively executed the raw command path rather than yielding an RTK-compressed tool payload.
-- As a result, the measured tool-output savings for the RTK Codex fairness path were `0` in that sample.
-
-This does not claim RTK is generally ineffective. It only records what happened in the tested Codex real task and harness.
+| --- | --- | --- | --- | --- |
+| `fairfind` | `rtk-codex-rules` | ungraded | 0 | `wrong_and_not_saved` |
+| `fairrg` | `rtk-codex-rules` | ungraded | 11 | `saved_but_wrong` |
 
 ## Claude Real E2E
 
-Current fair Claude comparison was generated from:
+Generated from:
 
 ```bash
 ./target/release/tke compare-e2e --agent claude --source .tmp-claude-e2e
 ```
 
 | Case | Variant | Correct | Tool token savings | Verdict |
-| --- | --- | --- | ---: | --- |
-| `findcase` | `rtk-hook` | yes | 0 | `correct_but_not_saved` |
-| `findcase` | `tke` | no | 67 | `saved_but_wrong` |
+| --- | --- | --- | --- | --- |
+| `findcase` | `rtk-hook` | pass | 0 | `correct_but_not_saved` |
+| `findcase` | `tke` | fail | 67 | `saved_but_wrong` |
 
-Interpretation:
+Compatibility notes:
 
-- `raw` and `rtk-hook` are currently the stable Claude paths in this repo.
-- The tested `Claude + tke` path is not yet considered production-safe because the model failed correctness in real execution.
-
-## Recommended Reading Order
-
-- Start with `README.md` for usage.
-- Read `docs/e2e.md` for correctness and fairness.
-- Use this file when you need measured savings numbers.
+- `Claude + tke` currently defaults to compatibility mode in live CLI usage. This keeps agent and tool I/O transparent unless `TKE_CLAUDE_LIVE_TOOLS=1` is set.
+- The offline transcript rewriter and compare reports still measure potential savings on saved Claude stream JSONL output.
