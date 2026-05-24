@@ -50,6 +50,8 @@ result = {
     "model": model,
     "exit_code": rc,
     "ok": False,
+    "completed": False,
+    "result_is_error": False,
     "api_retry_count": 0,
     "error_statuses": [],
     "notes": [],
@@ -68,12 +70,27 @@ if stream_path.exists():
             status = obj.get("error_status")
             if status is not None:
                 result["error_statuses"].append(status)
+        if obj.get("type") == "result":
+            result["completed"] = True
+            if obj.get("is_error") is True:
+                result["result_is_error"] = True
+                status = obj.get("api_error_status")
+                if status is not None:
+                    result["error_statuses"].append(status)
 
 if debug_path.exists():
     text = debug_path.read_text(errors="ignore")
     for match in re.finditer(r"No available accounts: ([^\n]+)", text):
         result["notes"].append(match.group(1).strip())
         break
+
+result["error_statuses"] = sorted(set(result["error_statuses"]))
+result["ok"] = (
+    rc == 0
+    and result["completed"]
+    and not result["result_is_error"]
+    and not result["error_statuses"]
+)
 
 status_path.write_text(json.dumps(result, ensure_ascii=True))
 print(json.dumps(result, ensure_ascii=True))

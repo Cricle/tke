@@ -29,12 +29,26 @@ def try_compare(agent, sources):
     return run_json(args)
 
 
+def load_attempts(agent_dir):
+    root_dir = root / agent_dir
+    if not root_dir.exists():
+        return []
+    out = []
+    for path in sorted(root_dir.glob("*.attempt.json")):
+        try:
+            out.append(json.loads(path.read_text()))
+        except Exception:
+            continue
+    return out
+
+
 benchmark = run_json([str(tke_bin), "benchmark-commands"])
 codex = try_compare(
     "codex",
     [".tmp-codex-e2e", ".tmp-codex-e2e-real", ".tmp-codex-e2e-fair"],
 )
 claude = try_compare("claude", [".tmp-claude-e2e"])
+claude_attempts = load_attempts(".tmp-claude-e2e")
 
 
 def pct(value):
@@ -227,6 +241,32 @@ if claude:
             "",
             "- `Claude + tke` currently defaults to compatibility mode in live CLI usage. This keeps agent and tool I/O transparent unless `TKE_CLAUDE_LIVE_TOOLS=1` is set.",
             "- The offline transcript rewriter and compare reports still measure potential savings on saved Claude stream JSONL output.",
+        ]
+    )
+
+if claude_attempts:
+    attempt_rows = []
+    for item in claude_attempts:
+        statuses = ",".join(str(status) for status in item.get("error_statuses", [])) or "-"
+        attempt_rows.append(
+            [
+                f"`{item.get('name', '-')}`",
+                f"`{item.get('mode', '-')}`",
+                "yes" if item.get("ok") else "no",
+                "yes" if item.get("completed") else "no",
+                "yes" if item.get("result_is_error") else "no",
+                statuses,
+            ]
+        )
+    benchmarks_md.extend(
+        [
+            "",
+            "Claude attempt summary:",
+            "",
+            md_table(
+                ["Case", "Mode", "OK", "Completed", "Result error", "Error statuses"],
+                attempt_rows,
+            ),
         ]
     )
 

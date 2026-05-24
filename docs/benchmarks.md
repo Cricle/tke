@@ -103,3 +103,9 @@ Compatibility notes:
 
 - `Claude + tke` currently defaults to compatibility mode in live CLI usage. This keeps agent and tool I/O transparent unless `TKE_CLAUDE_LIVE_TOOLS=1` is set.
 - The offline transcript rewriter and compare reports still measure potential savings on saved Claude stream JSONL output.
+
+Claude attempt summary:
+
+| Case | Mode | OK | Completed | Result error | Error statuses |
+| --- | --- | --- | --- | --- | --- |
+| `compatfind` | `tke` | yes | yes | no | - |
