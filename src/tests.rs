@@ -3079,6 +3079,7 @@ fn benchmark_report_contains_expected_cases() {
         "claude_bash_trace_negative_evidence_task",
         "claude_bash_trace_temporal_causality_task",
         "claude_bash_trace_symbol_collision_task",
+        "claude_bash_trace_reversal_task",
         "claude_rtk_hook_trace_selected_find_stage",
         "claude_rtk_hook_trace_selected_search_stage",
         "claude_rtk_hook_trace_selected_diff_stage",
@@ -3095,6 +3096,7 @@ fn benchmark_report_contains_expected_cases() {
         "claude_rtk_hook_trace_negative_evidence_task",
         "claude_rtk_hook_trace_temporal_causality_task",
         "claude_rtk_hook_trace_symbol_collision_task",
+        "claude_rtk_hook_trace_reversal_task",
     ] {
         assert!(report.tasks.iter().any(|task| task.name == name), "{name}");
     }
@@ -4672,6 +4674,78 @@ fn claude_rtk_hook_symbol_collision_task_rollout_is_rewritten() {
         "\"p\":\"log\"",
         "\"lg\":",
         "FAILED src/tests.rs::build_variant_verdict_prefers_saved_and_correct",
+        "rather than src/e2e_report.rs",
+    ] {
+        assert!(haystack.contains(fragment), "missing {fragment}");
+    }
+}
+
+#[test]
+fn claude_reversal_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "claude_bash_trace_reversal_task")
+        .expect("claude reversal task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    for fragment in [
+        "\"sc\":\"find\"",
+        "\"p\":\"pathlist\"",
+        "tests.rs",
+        "e2e_report.rs",
+        "\"sc\":\"rg\"",
+        "\"sr\":\"search\"",
+        "\"sc\":\"sed\"",
+        "\"p\":\"file\"",
+        "fn build_variant_verdict(",
+        "\"sc\":\"git\"",
+        "\"p\":\"diff\"",
+        "\"p\":\"src/tests.rs\"",
+        "\"sc\":\"cargo\"",
+        "\"p\":\"log\"",
+        "\"lg\":",
+        "FAILED src/tests.rs::claude_answer_consistency_task_rollout_is_rewritten",
+        "initial suspicion around src/e2e_report.rs is overturned",
+        "not src/e2e_report.rs",
+    ] {
+        assert!(haystack.contains(fragment), "missing {fragment}");
+    }
+}
+
+#[test]
+fn claude_rtk_hook_reversal_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "claude_rtk_hook_trace_reversal_task")
+        .expect("claude rtk hook reversal task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    for fragment in [
+        "\"sc\":\"find\"",
+        "\"p\":\"pathlist\"",
+        "tests.rs",
+        "e2e_report.rs",
+        "\"sc\":\"rg\"",
+        "\"sr\":\"search\"",
+        "\"sc\":\"sed\"",
+        "\"p\":\"file\"",
+        "fn build_variant_verdict(",
+        "\"sc\":\"git\"",
+        "\"p\":\"diff\"",
+        "\"p\":\"src/tests.rs\"",
+        "\"sc\":\"cargo\"",
+        "\"p\":\"log\"",
+        "\"lg\":",
+        "FAILED src/tests.rs::claude_answer_consistency_task_rollout_is_rewritten",
+        "revise the first impression",
         "rather than src/e2e_report.rs",
     ] {
         assert!(haystack.contains(fragment), "missing {fragment}");
