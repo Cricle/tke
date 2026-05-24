@@ -42,21 +42,29 @@ pub(crate) fn collect_log_chunks(
 pub(crate) fn collect_log_summary(lines: &[&str]) -> LogSummary {
     let mut fail = 0usize;
     let mut warn = 0usize;
+    let mut first_fail = None;
+    let mut first_warn = None;
     for line in lines {
         let lower = line.to_ascii_lowercase();
         if lower.contains("warning") {
             warn += 1;
+            if first_warn.is_none() {
+                first_warn = Some(truncate_for_sample(line));
+            }
         }
-        if lower.contains("error")
-            || lower.contains("failed")
-            || lower.contains("panic")
-            || lower.contains("exception")
-            || lower.contains("not ok")
-        {
+        if is_failure_signal(&lower) {
             fail += 1;
+            if first_fail.is_none() {
+                first_fail = Some(truncate_for_sample(line));
+            }
         }
     }
-    LogSummary { fail, warn }
+    LogSummary {
+        fail,
+        warn,
+        first_fail,
+        first_warn,
+    }
 }
 
 fn push_fold_chunk(
@@ -129,4 +137,18 @@ fn truncate_for_sample(line: &str) -> String {
     } else {
         format!("{}...", &line[..MAX])
     }
+}
+
+fn is_failure_signal(lower: &str) -> bool {
+    if lower.contains("error")
+        || lower.contains("panic")
+        || lower.contains("exception")
+        || lower.contains("not ok")
+    {
+        return true;
+    }
+    if lower.contains("0 failed") || lower.contains("0 tests failed") {
+        return false;
+    }
+    lower.contains("failed")
 }

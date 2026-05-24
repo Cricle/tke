@@ -1359,6 +1359,10 @@ pub(crate) struct LogSummary {
     pub(crate) fail: usize,
     #[serde(skip_serializing_if = "is_zero")]
     pub(crate) warn: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) first_fail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) first_warn: Option<String>,
 }
 
 fn is_zero(value: &usize) -> bool {
