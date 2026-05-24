@@ -234,15 +234,15 @@ fn build_summary_text(
     first: Option<&str>,
     last: Option<&str>,
 ) -> String {
-    let mut parts = vec![format!("COUNT={count}")];
+    let mut parts = vec![format!("C={count}")];
     if let Some(first) = first {
-        parts.push(format!("FIRST={first}"));
+        parts.push(format!("F={first}"));
     }
     if let Some(last) = last {
-        parts.push(format!("LAST={last}"));
+        parts.push(format!("L={last}"));
     }
     if let Some(dir) = dir {
-        parts.push(format!("DIR={dir}"));
+        parts.push(format!("D={dir}"));
     }
     parts.join(", ")
 }

@@ -7,9 +7,9 @@ use crate::benchmark::{
 };
 use crate::e2e_report::build_e2e_compare_report;
 use crate::rewrite::{
-    LivePipelineDecision, classify_stage_role, live_pipeline_decision,
-    live_pipeline_should_passthrough, parse_command_execution, parse_live_shell_pipeline,
-    rewrite_command_item_fields,
+    LivePipelineDecision, classify_stage_role, extract_exec_command_output, live_pipeline_decision,
+    live_pipeline_should_passthrough, looks_like_stderr_only_exec_output, parse_command_execution,
+    parse_live_shell_pipeline, rewrite_command_item_fields,
 };
 use crate::rollout_io::{InteractiveTracker, capture_interactive};
 use crate::rollout_stats::{collect_rollout_output_stats, rollout_string_haystack};
@@ -1426,6 +1426,20 @@ fn rewrites_exec_command_error_output() {
 }
 
 #[test]
+fn parses_exec_command_envelope_output() {
+    let raw = "Chunk ID: 13b6ef\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 500\nOutput:\nhello\nworld\n";
+    assert_eq!(extract_exec_command_output(raw), Some("hello\nworld\n"));
+    assert!(!looks_like_stderr_only_exec_output(raw));
+}
+
+#[test]
+fn ignores_non_envelope_output_for_exec_command_helpers() {
+    let raw = "Process exited with code 1\nerror: build failed\nOutput: missing delimiter line\n";
+    assert_eq!(extract_exec_command_output(raw), None);
+    assert!(!looks_like_stderr_only_exec_output(raw));
+}
+
+#[test]
 fn rewrites_claude_tool_result_output() {
     let mut cfg = Config::default();
     cfg.min_trim_bytes = 1;
@@ -1514,7 +1528,7 @@ fn pathlist_summary_keeps_first_last_and_skips_omitted_ranges() {
     assert_eq!(value["c"], 17);
     assert_eq!(
         value["pl"]["s"],
-        "COUNT=17, FIRST=tests.rs, LAST=rollout_stats.rs, DIR=src"
+        "C=17, F=tests.rs, L=rollout_stats.rs, D=src"
     );
     assert_eq!(value["pl"]["d"], "src");
     assert_eq!(value["pl"]["f"], "tests.rs");
@@ -1561,9 +1575,9 @@ fn pathlist_rollout_haystack_exposes_first_last_and_count() {
     for fragment in [
         "src/tests.rs",
         "src/rollout_stats.rs",
-        "COUNT=17",
-        "FIRST=tests.rs",
-        "LAST=rollout_stats.rs",
+        "C=17",
+        "F=tests.rs",
+        "L=rollout_stats.rs",
     ] {
         assert!(
             haystack.contains(fragment),

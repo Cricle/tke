@@ -8,17 +8,90 @@ pub(crate) fn parse_exec_command_args(arguments: &str) -> Option<String> {
     value.get("cmd")?.as_str().map(ToOwned::to_owned)
 }
 
+struct ExecCommandEnvelope<'a> {
+    exit_code: Option<i32>,
+    output: &'a str,
+}
+
+fn parse_exec_command_envelope(raw: &str) -> Option<ExecCommandEnvelope<'_>> {
+    let mut exit_code = None;
+    let mut offset = 0;
+    let mut saw_header = false;
+
+    for chunk in raw.split_inclusive('\n') {
+        let line = chunk.strip_suffix('\n').unwrap_or(chunk);
+        if line == "Output:" {
+            return saw_header.then_some(ExecCommandEnvelope {
+                exit_code,
+                output: &raw[(offset + chunk.len())..],
+            });
+        }
+
+        if let Some(code) = line
+            .strip_prefix("Process exited with code ")
+            .and_then(|value| value.parse::<i32>().ok())
+        {
+            exit_code = Some(code);
+            saw_header = true;
+        } else if matches_header_line(line) {
+            saw_header = true;
+        } else {
+            return None;
+        }
+
+        offset += chunk.len();
+    }
+
+    if let Some(line) = raw[offset..].strip_suffix('\n') {
+        if line == "Output:" {
+            return saw_header.then_some(ExecCommandEnvelope {
+                exit_code,
+                output: "",
+            });
+        }
+    }
+
+    None
+}
+
+fn matches_header_line(line: &str) -> bool {
+    line.starts_with("Chunk ID: ")
+        || line.starts_with("Wall time: ")
+        || line.starts_with("Original token count: ")
+}
+
 pub(crate) fn extract_exec_command_output(raw: &str) -> Option<&str> {
-    raw.split_once("\nOutput:\n").map(|(_, tail)| tail)
+    parse_exec_command_envelope(raw).map(|envelope| envelope.output)
 }
 
 pub(crate) fn looks_like_stderr_only_exec_output(raw: &str) -> bool {
-    raw.contains("\nProcess exited with code ")
-        && raw.contains("\nOutput:\n")
-        && (raw.contains("\nerror:")
-            || raw.contains("\nwarning:")
-            || raw.contains("Traceback ")
-            || raw.contains("Is a directory"))
+    let Some(envelope) = parse_exec_command_envelope(raw) else {
+        return false;
+    };
+    if envelope.exit_code.unwrap_or_default() == 0 {
+        return false;
+    }
+
+    envelope
+        .output
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .take(12)
+        .all(looks_like_diagnostic_line)
+}
+
+fn looks_like_diagnostic_line(line: &str) -> bool {
+    line.starts_with("error:")
+        || line.starts_with("warning:")
+        || line.starts_with("Traceback ")
+        || line.starts_with("Traceback (")
+        || line.contains(": error:")
+        || line.contains(": warning:")
+        || line.contains(" error reading ")
+        || line.ends_with("Is a directory")
+        || line.ends_with("No such file or directory")
+        || line.ends_with("Permission denied")
 }
 
 pub(crate) fn rewrite_command_like_values(
