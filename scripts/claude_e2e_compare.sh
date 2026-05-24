@@ -13,6 +13,8 @@ HOST_CLAUDE_HOME="${HOST_CLAUDE_HOME:-/root/.claude}"
 HOST_CLAUDE_STATE="${HOST_CLAUDE_STATE:-/root/.claude.json}"
 HOST_RUST_TOOLCHAIN_BIN="${HOST_RUST_TOOLCHAIN_BIN:-$(dirname "$(rustup which cargo 2>/dev/null || command -v cargo)")}"
 HOST_TOOL_PATH="${HOST_TOOL_PATH:-$HOST_RUST_TOOLCHAIN_BIN:/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin}"
+HOST_CARGO_HOME="${HOST_CARGO_HOME:-/root/.cargo}"
+HOST_RUSTUP_HOME="${HOST_RUSTUP_HOME:-/root/.rustup}"
 
 OUT_DIR="${OUT_DIR:-$ROOT/.tmp-claude-e2e}"
 WORK_ROOT="${WORK_ROOT:-/tmp/tke-claude-e2e}"
@@ -95,6 +97,19 @@ fi
 PROMPT_COPY="$RUN_ROOT/prompt.txt"
 cp "$PROMPT_FILE" "$PROMPT_COPY"
 
+BASHRC_FILE="$HOME_ROOT/.bashrc"
+ACTIVATE_SCRIPT="$(
+  PATH="$BIN_ROOT:$HOST_TOOL_PATH" "$BIN_ROOT/tke" activate --shim-dir "$SHIM_DIR" claude
+)"
+cat >"$BASHRC_FILE" <<EOF
+export PATH="$BIN_ROOT:$HOST_TOOL_PATH"
+export CARGO_HOME="$HOST_CARGO_HOME"
+export RUSTUP_HOME="$HOST_RUSTUP_HOME"
+export TKE_CLAUDE_LIVE_TOOLS="$CLAUDE_TKE_LIVE_TOOLS"
+export CLAUDE_CODE_SIMPLE=1
+$ACTIVATE_SCRIPT
+EOF
+
 SETTINGS_FILE="$RUN_ROOT/settings.json"
 cat >"$SETTINGS_FILE" <<JSON
 {
@@ -141,9 +156,14 @@ CLAUDE_API_KEY="${14}"
 CLAUDE_MODEL="${15}"
 CLAUDE_TKE_LIVE_TOOLS="${16}"
 HOST_TOOL_PATH="${17}"
+HOST_CARGO_HOME="${18}"
+HOST_RUSTUP_HOME="${19}"
 
 export HOME="$HOME_ROOT"
 export PATH="$BIN_ROOT:$HOST_TOOL_PATH"
+export BASH_ENV="$HOME_ROOT/.bashrc"
+export CARGO_HOME="$HOST_CARGO_HOME"
+export RUSTUP_HOME="$HOST_RUSTUP_HOME"
 export ANTHROPIC_BASE_URL="$CLAUDE_BASE_URL"
 export ANTHROPIC_API_KEY="$CLAUDE_API_KEY"
 export ANTHROPIC_AUTH_TOKEN="$CLAUDE_API_KEY"
@@ -211,7 +231,9 @@ runuser -u "$RUN_AS_USER" -- "$RUN_SCRIPT" \
   "$CLAUDE_API_KEY" \
   "$CLAUDE_MODEL" \
   "$CLAUDE_TKE_LIVE_TOOLS" \
-  "$HOST_TOOL_PATH"
+  "$HOST_TOOL_PATH" \
+  "$HOST_CARGO_HOME" \
+  "$HOST_RUSTUP_HOME"
 
 cp -f "$TMP_STREAM_OUT" "$RAW_STREAM_OUT" 2>/dev/null || : 
 cp -f "$TMP_TEXT_OUT" "$RAW_TEXT_OUT" 2>/dev/null || :

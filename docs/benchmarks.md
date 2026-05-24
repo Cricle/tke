@@ -123,9 +123,8 @@ Claude attempt summary:
 | Case | Mode | OK | Completed | Result error | Error statuses |
 | --- | --- | --- | --- | --- | --- |
 | `compatfind` | `tke` | yes | yes | no | - |
-| `livebuild` | `tke` | no | yes | no | - |
+| `livebuild` | `tke` | yes | yes | no | - |
 | `livefind` | `tke` | yes | yes | no | - |
 | `liverg` | `tke` | yes | yes | no | - |
 
-Successful live compatibility probes: `compatfind`, `livefind`, `liverg`.
-Still unstable or incomplete: `livebuild`.
+Successful live compatibility probes: `compatfind`, `livebuild`, `livefind`, `liverg`.
