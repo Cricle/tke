@@ -3075,6 +3075,8 @@ fn benchmark_report_contains_expected_cases() {
         "claude_bash_trace_answer_consistency_task",
         "claude_bash_trace_candidate_root_cause_task",
         "claude_bash_trace_misleading_signal_task",
+        "claude_bash_trace_cross_file_causality_task",
+        "claude_bash_trace_negative_evidence_task",
         "claude_rtk_hook_trace_selected_find_stage",
         "claude_rtk_hook_trace_selected_search_stage",
         "claude_rtk_hook_trace_selected_diff_stage",
@@ -3087,6 +3089,8 @@ fn benchmark_report_contains_expected_cases() {
         "claude_rtk_hook_trace_answer_consistency_task",
         "claude_rtk_hook_trace_candidate_root_cause_task",
         "claude_rtk_hook_trace_misleading_signal_task",
+        "claude_rtk_hook_trace_cross_file_causality_task",
+        "claude_rtk_hook_trace_negative_evidence_task",
     ] {
         assert!(report.tasks.iter().any(|task| task.name == name), "{name}");
     }
@@ -4393,6 +4397,142 @@ fn claude_rtk_hook_misleading_signal_task_rollout_is_rewritten() {
         "\"p\":\"log\"",
         "\"lg\":",
         "warning: verdict helper fell back to semantic_result_match",
+        "FAILED src/tests.rs::claude_answer_consistency_task_rollout_is_rewritten",
+        "rather than src/e2e_report.rs",
+    ] {
+        assert!(haystack.contains(fragment), "missing {fragment}");
+    }
+}
+
+#[test]
+fn claude_cross_file_causality_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "claude_bash_trace_cross_file_causality_task")
+        .expect("claude cross file causality task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    for fragment in [
+        "\"sc\":\"find\"",
+        "\"p\":\"pathlist\"",
+        "tests.rs",
+        "e2e_report.rs",
+        "\"sc\":\"rg\"",
+        "\"sr\":\"search\"",
+        "\"sc\":\"sed\"",
+        "\"p\":\"file\"",
+        "\"sc\":\"git\"",
+        "\"p\":\"diff\"",
+        "\"p\":\"src/tests.rs\"",
+        "\"p\":\"src/e2e_report.rs\"",
+        "\"sc\":\"cargo\"",
+        "\"p\":\"log\"",
+        "\"lg\":",
+        "FAILED src/tests.rs::claude_answer_consistency_task_rollout_is_rewritten",
+        "not src/e2e_report.rs",
+    ] {
+        assert!(haystack.contains(fragment), "missing {fragment}");
+    }
+}
+
+#[test]
+fn claude_negative_evidence_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "claude_bash_trace_negative_evidence_task")
+        .expect("claude negative evidence task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    for fragment in [
+        "\"sc\":\"find\"",
+        "\"p\":\"pathlist\"",
+        "tests.rs",
+        "e2e_report.rs",
+        "\"sc\":\"rg\"",
+        "\"sr\":\"search\"",
+        "\"sc\":\"sed\"",
+        "\"p\":\"file\"",
+        "fn claude_answer_consistency_task_rollout_is_rewritten()",
+        "fn semantic_result_match(",
+        "\"sc\":\"cargo\"",
+        "\"p\":\"log\"",
+        "\"lg\":",
+        "FAILED src/tests.rs::claude_answer_consistency_task_rollout_is_rewritten",
+        "not src/e2e_report.rs",
+    ] {
+        assert!(haystack.contains(fragment), "missing {fragment}");
+    }
+}
+
+#[test]
+fn claude_rtk_hook_cross_file_causality_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "claude_rtk_hook_trace_cross_file_causality_task")
+        .expect("claude rtk hook cross file causality task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    for fragment in [
+        "\"sc\":\"find\"",
+        "\"p\":\"pathlist\"",
+        "tests.rs",
+        "e2e_report.rs",
+        "\"sc\":\"rg\"",
+        "\"sr\":\"search\"",
+        "\"sc\":\"sed\"",
+        "\"p\":\"file\"",
+        "\"sc\":\"git\"",
+        "\"p\":\"diff\"",
+        "\"p\":\"src/tests.rs\"",
+        "\"p\":\"src/e2e_report.rs\"",
+        "\"sc\":\"cargo\"",
+        "\"p\":\"log\"",
+        "\"lg\":",
+        "FAILED src/tests.rs::claude_answer_consistency_task_rollout_is_rewritten",
+        "rather than src/e2e_report.rs",
+    ] {
+        assert!(haystack.contains(fragment), "missing {fragment}");
+    }
+}
+
+#[test]
+fn claude_rtk_hook_negative_evidence_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "claude_rtk_hook_trace_negative_evidence_task")
+        .expect("claude rtk hook negative evidence task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    for fragment in [
+        "\"sc\":\"find\"",
+        "\"p\":\"pathlist\"",
+        "tests.rs",
+        "e2e_report.rs",
+        "\"sc\":\"rg\"",
+        "\"sr\":\"search\"",
+        "\"sc\":\"sed\"",
+        "\"p\":\"file\"",
+        "fn claude_answer_consistency_task_rollout_is_rewritten()",
+        "fn semantic_result_match(",
+        "\"sc\":\"cargo\"",
+        "\"p\":\"log\"",
+        "\"lg\":",
         "FAILED src/tests.rs::claude_answer_consistency_task_rollout_is_rewritten",
         "rather than src/e2e_report.rs",
     ] {
