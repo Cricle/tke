@@ -2,11 +2,10 @@ use crate::benchmark::build_benchmark_report;
 use crate::e2e_report::compare_e2e;
 use crate::shim::{create_shims, passthrough, run_agent_command, run_tool_command};
 use crate::trim::{
-    ShellKind, base_name, candidate_config_path, csv_list, default_head_lines,
-    default_json_prefix, default_match_context, default_max_body_lines, default_max_matches,
-    default_min_trim_bytes, default_output_trim, default_show_stats, default_tail_lines,
-    detect_shell_kind, parse_usize, read_stdin_if_piped, render_activate_script,
-    render_deactivate_script, resolve_real_command,
+    ShellKind, base_name, candidate_config_path, csv_list, default_head_lines, default_json_prefix,
+    default_match_context, default_max_body_lines, default_max_matches, default_min_trim_bytes,
+    default_output_trim, default_show_stats, default_tail_lines, detect_shell_kind, parse_usize,
+    read_stdin_if_piped, render_activate_script, render_deactivate_script, resolve_real_command,
 };
 use serde::Deserialize;
 use std::env;

@@ -1,15 +1,14 @@
+use crate::adapter::rewrite_agent_transcript;
 use crate::app::{AppError, Config};
 use crate::benchmark::estimate_text_tokens;
-use crate::adapter::rewrite_agent_transcript;
 use crate::rewrite::{LivePipelineDecision, detect_linux_parent_pipeline, live_pipeline_decision};
 use crate::rollout_io::InteractiveTracker;
 use crate::trim::{
     CommandKind, TrimEnvelope, TrimProfile, TrimStats, classify_command, collect_kept_ranges,
     collect_path_list_kept_ranges, collect_path_list_summary, collect_profile_chunks,
     collect_table_kept_ranges, collect_table_summary, compact_args, compute_omitted_ranges,
-    create_single_shim, exit_code, match_terms, merge_ranges, profile_limits,
-    read_stdin_if_piped, real_path_string, select_profile, should_force_trim, take_head,
-    take_tail,
+    create_single_shim, exit_code, match_terms, merge_ranges, profile_limits, read_stdin_if_piped,
+    real_path_string, select_profile, should_force_trim, take_head, take_tail,
 };
 use std::collections::BTreeSet;
 use std::env;
@@ -223,7 +222,7 @@ pub(crate) struct NormalizeView<'a> {
 fn detect_live_pipeline_stage(name: &str) -> LivePipelineStage {
     let Some(parsed) = detect_linux_parent_pipeline() else {
         return LivePipelineStage::None;
-    };    
+    };
     match live_pipeline_decision(&parsed, name) {
         LivePipelineDecision::NotPipeline => LivePipelineStage::None,
         LivePipelineDecision::PassThrough => LivePipelineStage::PassThrough,

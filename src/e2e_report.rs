@@ -117,16 +117,21 @@ pub(crate) fn build_e2e_compare_report(
                 tool_bytes_saved_ratio: ratio(tool_bytes_saved, baseline.tool_bytes),
                 tool_tokens_saved,
                 tool_tokens_saved_ratio: ratio(tool_tokens_saved, baseline.tool_tokens),
-                exact_result_match: baseline.result == variants_last_result(&variants).unwrap_or(""),
+                exact_result_match: baseline.result
+                    == variants_last_result(&variants).unwrap_or(""),
                 semantic_result_match: false,
                 expected_result_match,
                 verdict: String::new(),
             });
             if let Some(last) = variants.last_mut() {
                 last.exact_result_match = baseline.result == last.sample.result;
-                last.semantic_result_match =
-                    semantic_result_match(&baseline, &last.sample, case_expectation_for_name(&name).is_some());
-                last.verdict = build_variant_verdict(last.expected_result_match, last.tool_tokens_saved);
+                last.semantic_result_match = semantic_result_match(
+                    &baseline,
+                    &last.sample,
+                    case_expectation_for_name(&name).is_some(),
+                );
+                last.verdict =
+                    build_variant_verdict(last.expected_result_match, last.tool_tokens_saved);
             }
         }
         variants.sort_by(|a, b| a.mode.cmp(&b.mode));
@@ -147,7 +152,9 @@ pub(crate) fn build_e2e_compare_report(
 }
 
 fn variants_last_result(variants: &[E2eVariantReport]) -> Option<&str> {
-    variants.last().map(|variant| variant.sample.result.as_str())
+    variants
+        .last()
+        .map(|variant| variant.sample.result.as_str())
 }
 
 fn build_sample_report(
@@ -159,7 +166,8 @@ fn build_sample_report(
     let raw_text = fs::read_to_string(path)?;
     let rewritten = rewrite_agent_transcript(&raw_text, config)?;
     let rewritten_text = rewritten.as_deref().unwrap_or(&raw_text);
-    let rollout = compare_rollout_pair(path, rewritten.is_some(), &raw_text, rewritten_text, config);
+    let rollout =
+        compare_rollout_pair(path, rewritten.is_some(), &raw_text, rewritten_text, config);
     let result_fields = parse_result_fields(&facts.result_text);
     let correctness = evaluate_result(path, &result_fields);
     Ok(E2eSampleReport {
@@ -329,7 +337,9 @@ fn parse_stream_facts(path: &Path) -> Result<StreamFacts, AppError> {
             }
         }
         if let Some(tool_use_result) = value.get("tool_use_result")
-            && let Some(stdout) = tool_use_result.get("stdout").and_then(|value| value.as_str())
+            && let Some(stdout) = tool_use_result
+                .get("stdout")
+                .and_then(|value| value.as_str())
             && !stdout.is_empty()
         {
             facts.tool_has_tke = is_tke_payload(stdout);
@@ -463,8 +473,7 @@ fn semantic_result_match(
     if normalize_cmp(&baseline.result) == normalize_cmp(&sample.result) {
         return true;
     }
-    !baseline.result_fields.is_empty()
-        && baseline.result_fields == sample.result_fields
+    !baseline.result_fields.is_empty() && baseline.result_fields == sample.result_fields
 }
 
 fn build_variant_verdict(expected_result_match: bool, tool_tokens_saved: isize) -> String {

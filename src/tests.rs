@@ -1,7 +1,7 @@
-use crate::app::{AppError, Config, Dispatch, default_tool_commands, parse_dispatch};
 use crate::adapter::{
     rewrite_agent_transcript, rewrite_claude_jsonl, rewrite_codex_jsonl, rewrite_generic_jsonl,
 };
+use crate::app::{AppError, Config, Dispatch, default_tool_commands, parse_dispatch};
 use crate::benchmark::{
     RolloutCompareReport, benchmark_specs, benchmark_task_specs, build_benchmark_report,
 };
@@ -11,13 +11,12 @@ use crate::rewrite::{
     live_pipeline_should_passthrough, parse_command_execution, parse_live_shell_pipeline,
     rewrite_command_item_fields,
 };
-use crate::rollout_stats::{collect_rollout_output_stats, rollout_string_haystack};
 use crate::rollout_io::{InteractiveTracker, capture_interactive};
+use crate::rollout_stats::{collect_rollout_output_stats, rollout_string_haystack};
 use crate::shim::{maybe_normalize_text, normalize_text, normalize_text_with_stage};
 use crate::trim::{
-    CommandKind, ShellKind, candidate_command_names, classify_command,
-    create_windows_cmd_shim, match_terms, now_millis, read_stream_payload,
-    render_activate_script, render_deactivate_script,
+    CommandKind, ShellKind, candidate_command_names, classify_command, create_windows_cmd_shim,
+    match_terms, now_millis, read_stream_payload, render_activate_script, render_deactivate_script,
 };
 use std::fs;
 use std::io::{self, Cursor, Read};
@@ -709,8 +708,8 @@ fn default_tool_commands_cover_core_agent_workflows() {
     let cfg = Config::default();
     for name in [
         "cat", "sed", "rg", "grep", "git", "cargo", "pytest", "npm", "pnpm", "yarn", "dotnet",
-        "go", "cmake", "ctest", "make", "ninja", "node", "tail", "head", "ls", "find", "fd",
-        "bat", "nl", "awk", "cut", "sort", "uniq", "wc", "tree", "xargs",
+        "go", "cmake", "ctest", "make", "ninja", "node", "tail", "head", "ls", "find", "fd", "bat",
+        "nl", "awk", "cut", "sort", "uniq", "wc", "tree", "xargs",
     ] {
         assert!(cfg.is_tool_command(name), "missing tool command {name}");
     }
@@ -814,10 +813,16 @@ fn classify_common_build_and_test_commands_as_log() {
         ("cmake", vec!["--build".to_owned(), "build".to_owned()]),
         ("ctest", vec!["--output-on-failure".to_owned()]),
         ("make", vec!["test".to_owned()]),
-        ("ninja", vec!["-C".to_owned(), "build".to_owned(), "test".to_owned()]),
+        (
+            "ninja",
+            vec!["-C".to_owned(), "build".to_owned(), "test".to_owned()],
+        ),
         ("node", vec!["--test".to_owned()]),
     ] {
-        assert!(matches!(classify_command(name, &args), CommandKind::Log), "{name}");
+        assert!(
+            matches!(classify_command(name, &args), CommandKind::Log),
+            "{name}"
+        );
     }
 }
 
@@ -1852,16 +1857,20 @@ fn compare_e2e_report_marks_wrong_variant_when_expected_fields_fail() {
                     "type": "command_execution",
                     "aggregated_output": repeated_lines("10: long raw line", 40)
                 }
-            }).to_string(),
+            })
+            .to_string(),
             serde_json::json!({
                 "type": "item.completed",
                 "item": {
                     "type": "agent_message",
                     "text": "STAGE=normalize_text, FILE=src/tests.rs, KIND=test-focus"
                 }
-            }).to_string(),
-        ].join("\n"),
-    ).expect("write raw");
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write raw");
     fs::write(
         &wrong,
         [
@@ -1871,22 +1880,27 @@ fn compare_e2e_report_marks_wrong_variant_when_expected_fields_fail() {
                     "type": "command_execution",
                     "aggregated_output": "1 result in src/shim.rs"
                 }
-            }).to_string(),
+            })
+            .to_string(),
             serde_json::json!({
                 "type": "item.completed",
                 "item": {
                     "type": "agent_message",
                     "text": "STAGE=normalize_text_with_stage, FILE=src/shim.rs, KIND=function"
                 }
-            }).to_string(),
-        ].join("\n"),
-    ).expect("write wrong");
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write wrong");
 
     let report = build_e2e_compare_report(
         vec![base.join(".tmp-codex-e2e")],
         Some("codex"),
         &Config::default(),
-    ).expect("report");
+    )
+    .expect("report");
     let case = &report.cases[0];
     let variant = &case.variants[0];
     assert_eq!(variant.mode, "rtk-direct");
@@ -1919,16 +1933,20 @@ fn compare_e2e_report_grades_findcase_and_buildcase_expectations() {
                     "type": "command_execution",
                     "aggregated_output": repeated_lines("src/tests.rs", 17)
                 }
-            }).to_string(),
+            })
+            .to_string(),
             serde_json::json!({
                 "type": "item.completed",
                 "item": {
                     "type": "agent_message",
                     "text": "STAGE=find, FILE=src/tests.rs, COUNT=17"
                 }
-            }).to_string(),
-        ].join("\n"),
-    ).expect("write find raw");
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write find raw");
     fs::write(
         &find_tke,
         [
@@ -1960,16 +1978,20 @@ fn compare_e2e_report_grades_findcase_and_buildcase_expectations() {
                     "type": "command_execution",
                     "aggregated_output": "test result: ok. 100 passed; 0 failed; 0 ignored"
                 }
-            }).to_string(),
+            })
+            .to_string(),
             serde_json::json!({
                 "type": "item.completed",
                 "item": {
                     "type": "agent_message",
                     "text": "STAGE=cargo, FILE=src/lib.rs, COUNT=0"
                 }
-            }).to_string(),
-        ].join("\n"),
-    ).expect("write build raw");
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write build raw");
     fs::write(
         &build_tke,
         [
@@ -1994,7 +2016,8 @@ fn compare_e2e_report_grades_findcase_and_buildcase_expectations() {
         vec![base.join(".tmp-codex-e2e")],
         Some("codex"),
         &Config::default(),
-    ).expect("report");
+    )
+    .expect("report");
 
     let find_case = report
         .cases
@@ -2020,8 +2043,7 @@ fn compare_e2e_report_shows_positive_tool_savings_for_large_tke_payload() {
     let raw = base.join(".tmp-claude-e2e/large.raw.stream.jsonl");
     let wrapped = base.join(".tmp-claude-e2e/large.tke.stream.jsonl");
     let raw_tool = repeated_lines("123: very long benchmark match line", 120);
-    let wrapped_tool =
-        "__TKE__{\"v\":1,\"cmd\":\"rg\",\"p\":\"search\",\"h\":[\"123: very long benchmark match line\"],\"o\":[[1,120]],\"st\":{\"tb\":4096}}";
+    let wrapped_tool = "__TKE__{\"v\":1,\"cmd\":\"rg\",\"p\":\"search\",\"h\":[\"123: very long benchmark match line\"],\"o\":[[1,120]],\"st\":{\"tb\":4096}}";
     fs::write(
         &raw,
         [
@@ -2106,16 +2128,20 @@ fn compare_e2e_report_supports_multiple_variants_including_rtk() {
                     "type": "command_execution",
                     "aggregated_output": repeated_lines("10: long raw line", 80)
                 }
-            }).to_string(),
+            })
+            .to_string(),
             serde_json::json!({
                 "type": "item.completed",
                 "item": {
                     "type": "agent_message",
                     "text": "STAGE=normalize_text, FILE=src/tests.rs, KIND=test-focus"
                 }
-            }).to_string(),
-        ].join("\n"),
-    ).expect("write raw");
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write raw");
     fs::write(
         &tke,
         [
@@ -2144,16 +2170,20 @@ fn compare_e2e_report_supports_multiple_variants_including_rtk() {
                     "type": "command_execution",
                     "aggregated_output": "1 result in src/tests.rs"
                 }
-            }).to_string(),
+            })
+            .to_string(),
             serde_json::json!({
                 "type": "item.completed",
                 "item": {
                     "type": "agent_message",
                     "text": "STAGE=normalize_text_with_stage, FILE=src/shim.rs, KIND=function"
                 }
-            }).to_string(),
-        ].join("\n"),
-    ).expect("write rtk");
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write rtk");
     let rtk_rules = base.join(".tmp-codex-e2e/rgcase.rtk-codex-rules.jsonl");
     fs::write(
         &rtk_rules,
@@ -2164,22 +2194,27 @@ fn compare_e2e_report_supports_multiple_variants_including_rtk() {
                     "type": "command_execution",
                     "aggregated_output": "1 result in src/tests.rs"
                 }
-            }).to_string(),
+            })
+            .to_string(),
             serde_json::json!({
                 "type": "item.completed",
                 "item": {
                     "type": "agent_message",
                     "text": "STAGE=normalize_text, FILE=src/tests.rs, KIND=test-focus"
                 }
-            }).to_string(),
-        ].join("\n"),
-    ).expect("write rtk rules");
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write rtk rules");
 
     let report = build_e2e_compare_report(
         vec![base.join(".tmp-codex-e2e")],
         Some("codex"),
         &Config::default(),
-    ).expect("report");
+    )
+    .expect("report");
     assert_eq!(report.cases.len(), 1);
     assert_eq!(report.summary.len(), 1);
     let summary = report
@@ -2197,11 +2232,16 @@ fn compare_e2e_report_supports_multiple_variants_including_rtk() {
     let case = &report.cases[0];
     assert_eq!(case.variants.len(), 3);
     assert!(case.variants.iter().any(|variant| variant.mode == "tke"));
-    assert!(case.variants.iter().any(|variant| variant.mode == "rtk-direct"));
-    assert!(case
-        .variants
-        .iter()
-        .any(|variant| variant.mode == "rtk-codex-rules"));
+    assert!(
+        case.variants
+            .iter()
+            .any(|variant| variant.mode == "rtk-direct")
+    );
+    assert!(
+        case.variants
+            .iter()
+            .any(|variant| variant.mode == "rtk-codex-rules")
+    );
     assert!(
         case.variants
             .iter()
@@ -2210,7 +2250,8 @@ fn compare_e2e_report_supports_multiple_variants_including_rtk() {
             .expected_result_match
     );
     assert!(
-        !case.variants
+        !case
+            .variants
             .iter()
             .find(|variant| variant.mode == "rtk-direct")
             .expect("rtk")
@@ -2337,7 +2378,10 @@ fn log_profiles_preserve_failure_and_warning_semantics() {
                 "{}\nFAILED tests/test_parser.py::test_invalid_input - AssertionError: expected boom\nwarning: deprecated fixture used\n",
                 repeated_lines(".", 120)
             ),
-            vec!["FAILED tests/test_parser.py::test_invalid_input", "warning: deprecated fixture used"],
+            vec![
+                "FAILED tests/test_parser.py::test_invalid_input",
+                "warning: deprecated fixture used",
+            ],
         ),
         (
             "npm",
@@ -2347,7 +2391,10 @@ fn log_profiles_preserve_failure_and_warning_semantics() {
                 "{}\nnpm ERR! Test failed.  See above for more details.\nerror: Expected status 200 but got 500\n",
                 repeated_lines("PASS src/parser.test.ts", 120)
             ),
-            vec!["npm ERR! Test failed.", "error: Expected status 200 but got 500"],
+            vec![
+                "npm ERR! Test failed.",
+                "error: Expected status 200 but got 500",
+            ],
         ),
         (
             "pnpm",
@@ -2357,7 +2404,10 @@ fn log_profiles_preserve_failure_and_warning_semantics() {
                 "{}\nFAIL src/parser.test.ts\nwarning: obsolete lockfile entry\n",
                 repeated_lines("✓ parser handles literals", 120)
             ),
-            vec!["FAIL src/parser.test.ts", "warning: obsolete lockfile entry"],
+            vec![
+                "FAIL src/parser.test.ts",
+                "warning: obsolete lockfile entry",
+            ],
         ),
         (
             "yarn",
@@ -2367,7 +2417,10 @@ fn log_profiles_preserve_failure_and_warning_semantics() {
                 "{}\nerror Command failed with exit code 1.\nFAIL src/parser.test.ts\n",
                 repeated_lines("PASS src/lexer.test.ts", 120)
             ),
-            vec!["error Command failed with exit code 1.", "FAIL src/parser.test.ts"],
+            vec![
+                "error Command failed with exit code 1.",
+                "FAIL src/parser.test.ts",
+            ],
         ),
         (
             "cmake",
@@ -2397,7 +2450,10 @@ fn log_profiles_preserve_failure_and_warning_semantics() {
                 "{}\nmake: *** [Makefile:42: test] Error 2\nwarning: stale generated file\n",
                 repeated_lines("[ 84%] Built target parser", 120)
             ),
-            vec!["make: *** [Makefile:42: test] Error 2", "warning: stale generated file"],
+            vec![
+                "make: *** [Makefile:42: test] Error 2",
+                "warning: stale generated file",
+            ],
         ),
         (
             "ninja",
@@ -2407,7 +2463,10 @@ fn log_profiles_preserve_failure_and_warning_semantics() {
                 "{}\nninja: build stopped: subcommand failed.\nFAILED: build/tests/parser_test\n",
                 repeated_lines("[10/120] Building CXX object core.o", 120)
             ),
-            vec!["ninja: build stopped: subcommand failed.", "FAILED: build/tests/parser_test"],
+            vec![
+                "ninja: build stopped: subcommand failed.",
+                "FAILED: build/tests/parser_test",
+            ],
         ),
         (
             "node",
@@ -2417,23 +2476,22 @@ fn log_profiles_preserve_failure_and_warning_semantics() {
                 "{}\nnot ok 12 - parser handles invalid input\nerror: Expected value to be truthy\n",
                 repeated_lines("ok 1 - should parse simple expression", 120)
             ),
-            vec!["not ok 12 - parser handles invalid input", "error: Expected value to be truthy"],
+            vec![
+                "not ok 12 - parser handles invalid input",
+                "error: Expected value to be truthy",
+            ],
         ),
     ] {
-        let normalized = normalize_text(
-            name,
-            &args,
-            "stdout",
-            CommandKind::Log,
-            &output,
-            &cfg,
-        )
-        .expect("normalize");
+        let normalized = normalize_text(name, &args, "stdout", CommandKind::Log, &output, &cfg)
+            .expect("normalize");
         let value = value_from_json(&normalized);
         assert_eq!(value["p"], "log", "{command}");
         let haystack = rollout_string_haystack(&normalized);
         for fragment in required {
-            assert!(haystack.contains(fragment), "{command} missing `{fragment}`");
+            assert!(
+                haystack.contains(fragment),
+                "{command} missing `{fragment}`"
+            );
         }
     }
 }
@@ -2459,7 +2517,10 @@ fn compressed_search_and_file_outputs_preserve_semantic_answer_fragments() {
     .expect("normalize");
     let search_haystack = rollout_string_haystack(&search);
     for fragment in ["src/lib.rs", "pub fn beta_0() {}", "struct Gamma0;"] {
-        assert!(search_haystack.contains(fragment), "search missing `{fragment}`");
+        assert!(
+            search_haystack.contains(fragment),
+            "search missing `{fragment}`"
+        );
     }
 
     let file_output = [
@@ -2491,7 +2552,10 @@ fn compressed_search_and_file_outputs_preserve_semantic_answer_fragments() {
     .expect("normalize");
     let file_haystack = rollout_string_haystack(&file);
     for fragment in ["pub struct Config", "pub fn load()", "pub fn helper()"] {
-        assert!(file_haystack.contains(fragment), "file missing `{fragment}`");
+        assert!(
+            file_haystack.contains(fragment),
+            "file missing `{fragment}`"
+        );
     }
 }
 
@@ -2545,10 +2609,16 @@ fn benchmark_report_covers_default_tool_families() {
 #[test]
 fn benchmark_specs_cover_default_tool_commands() {
     let specs = benchmark_specs();
-    let commands = specs.iter().map(|spec| spec.command.as_str()).collect::<Vec<_>>();
+    let commands = specs
+        .iter()
+        .map(|spec| spec.command.as_str())
+        .collect::<Vec<_>>();
     for tool in default_tool_commands() {
         match *tool {
-            "cat" => assert!(commands.iter().any(|cmd| cmd == &"cat src/lib.rs"), "{tool}"),
+            "cat" => assert!(
+                commands.iter().any(|cmd| cmd == &"cat src/lib.rs"),
+                "{tool}"
+            ),
             "sed" => assert!(
                 commands
                     .iter()
@@ -2556,24 +2626,69 @@ fn benchmark_specs_cover_default_tool_commands() {
                 "{tool}"
             ),
             "rg" => assert!(commands.iter().any(|cmd| cmd.starts_with("rg ")), "{tool}"),
-            "grep" => assert!(commands.iter().any(|cmd| cmd.starts_with("grep ")), "{tool}"),
-            "git" => assert!(commands.iter().any(|cmd| cmd.starts_with("git diff")), "{tool}"),
-            "cargo" => assert!(commands.iter().any(|cmd| cmd.starts_with("cargo ")), "{tool}"),
-            "pytest" => assert!(commands.iter().any(|cmd| cmd.starts_with("pytest ")), "{tool}"),
+            "grep" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("grep ")),
+                "{tool}"
+            ),
+            "git" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("git diff")),
+                "{tool}"
+            ),
+            "cargo" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("cargo ")),
+                "{tool}"
+            ),
+            "pytest" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("pytest ")),
+                "{tool}"
+            ),
             "npm" => assert!(commands.iter().any(|cmd| cmd.starts_with("npm ")), "{tool}"),
-            "pnpm" => assert!(commands.iter().any(|cmd| cmd.starts_with("pnpm ")), "{tool}"),
-            "yarn" => assert!(commands.iter().any(|cmd| cmd.starts_with("yarn ")), "{tool}"),
-            "tail" => assert!(commands.iter().any(|cmd| cmd.starts_with("tail ")), "{tool}"),
-            "head" => assert!(commands.iter().any(|cmd| cmd.starts_with("head ")), "{tool}"),
-            "dotnet" => assert!(commands.iter().any(|cmd| cmd.starts_with("dotnet ")), "{tool}"),
+            "pnpm" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("pnpm ")),
+                "{tool}"
+            ),
+            "yarn" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("yarn ")),
+                "{tool}"
+            ),
+            "tail" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("tail ")),
+                "{tool}"
+            ),
+            "head" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("head ")),
+                "{tool}"
+            ),
+            "dotnet" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("dotnet ")),
+                "{tool}"
+            ),
             "go" => assert!(commands.iter().any(|cmd| cmd.starts_with("go ")), "{tool}"),
-            "cmake" => assert!(commands.iter().any(|cmd| cmd.starts_with("cmake ")), "{tool}"),
-            "ctest" => assert!(commands.iter().any(|cmd| cmd.starts_with("ctest ")), "{tool}"),
-            "make" => assert!(commands.iter().any(|cmd| cmd.starts_with("make ")), "{tool}"),
-            "ninja" => assert!(commands.iter().any(|cmd| cmd.starts_with("ninja ")), "{tool}"),
-            "node" => assert!(commands.iter().any(|cmd| cmd.starts_with("node ")), "{tool}"),
+            "cmake" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("cmake ")),
+                "{tool}"
+            ),
+            "ctest" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("ctest ")),
+                "{tool}"
+            ),
+            "make" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("make ")),
+                "{tool}"
+            ),
+            "ninja" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("ninja ")),
+                "{tool}"
+            ),
+            "node" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("node ")),
+                "{tool}"
+            ),
             "ls" => assert!(commands.iter().any(|cmd| cmd.starts_with("ls ")), "{tool}"),
-            "find" => assert!(commands.iter().any(|cmd| cmd.starts_with("find ")), "{tool}"),
+            "find" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("find ")),
+                "{tool}"
+            ),
             "fd" => assert!(commands.iter().any(|cmd| cmd.starts_with("fd ")), "{tool}"),
             "bat" => assert!(commands.iter().any(|cmd| cmd.starts_with("bat ")), "{tool}"),
             "nl" => assert!(commands.iter().any(|cmd| cmd.starts_with("nl ")), "{tool}"),
@@ -2582,8 +2697,14 @@ fn benchmark_specs_cover_default_tool_commands() {
             "sort" => assert!(commands.iter().any(|cmd| cmd.contains("| sort")), "{tool}"),
             "uniq" => assert!(commands.iter().any(|cmd| cmd.contains("| uniq")), "{tool}"),
             "wc" => assert!(commands.iter().any(|cmd| cmd.starts_with("wc ")), "{tool}"),
-            "tree" => assert!(commands.iter().any(|cmd| cmd.starts_with("tree ")), "{tool}"),
-            "xargs" => assert!(commands.iter().any(|cmd| cmd.contains("xargs cat")), "{tool}"),
+            "tree" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("tree ")),
+                "{tool}"
+            ),
+            "xargs" => assert!(
+                commands.iter().any(|cmd| cmd.contains("xargs cat")),
+                "{tool}"
+            ),
             other => panic!("unexpected default tool command {other}"),
         }
     }
@@ -2607,7 +2728,12 @@ fn default_tool_commands_have_expected_command_kinds() {
             "ls" => vec!["src".to_owned()],
             "find" => vec!["src".to_owned()],
             "fd" => vec![".".to_owned(), "src".to_owned()],
-            "tree" => vec!["-a".to_owned(), "-L".to_owned(), "3".to_owned(), "src".to_owned()],
+            "tree" => vec![
+                "-a".to_owned(),
+                "-L".to_owned(),
+                "3".to_owned(),
+                "src".to_owned(),
+            ],
             "head" | "tail" => vec!["-n".to_owned(), "20".to_owned(), "src/lib.rs".to_owned()],
             "sed" => vec!["-n".to_owned(), "1,20p".to_owned(), "src/lib.rs".to_owned()],
             "bat" => vec!["--style=plain".to_owned(), "src/lib.rs".to_owned()],
@@ -2627,8 +2753,8 @@ fn default_tool_commands_have_expected_command_kinds() {
                 assert!(matches!(kind, CommandKind::Search), "{tool}");
             }
             "git" => assert!(matches!(kind, CommandKind::Diff), "{tool}"),
-            "cargo" | "pytest" | "npm" | "pnpm" | "yarn" | "dotnet" | "go" | "cmake"
-            | "ctest" | "make" | "ninja" | "node" => {
+            "cargo" | "pytest" | "npm" | "pnpm" | "yarn" | "dotnet" | "go" | "cmake" | "ctest"
+            | "make" | "ninja" | "node" => {
                 assert!(matches!(kind, CommandKind::Log), "{tool}");
             }
             "sort" | "uniq" | "wc" | "xargs" => {
@@ -2661,7 +2787,11 @@ fn frequent_command_families_preserve_semantic_fragments() {
     for (name, args, kind, text, fragments) in [
         (
             "sed",
-            vec!["-n".to_owned(), "1,120p".to_owned(), "src/lib.rs".to_owned()],
+            vec![
+                "-n".to_owned(),
+                "1,120p".to_owned(),
+                "src/lib.rs".to_owned(),
+            ],
             CommandKind::File,
             code_sample.clone(),
             vec!["pub struct Config0 {", "pub fn load_0() -> usize {"],
@@ -2689,7 +2819,11 @@ fn frequent_command_families_preserve_semantic_fragments() {
         ),
         (
             "grep",
-            vec!["-n".to_owned(), "Config".to_owned(), "src/lib.rs".to_owned()],
+            vec![
+                "-n".to_owned(),
+                "Config".to_owned(),
+                "src/lib.rs".to_owned(),
+            ],
             CommandKind::Search,
             (0..80)
                 .map(|idx| format!("src/lib.rs:{}:pub struct Config{};", idx + 1, idx))
@@ -2719,7 +2853,12 @@ fn frequent_command_families_preserve_semantic_fragments() {
         ),
         (
             "tree",
-            vec!["-a".to_owned(), "-L".to_owned(), "4".to_owned(), "src".to_owned()],
+            vec![
+                "-a".to_owned(),
+                "-L".to_owned(),
+                "4".to_owned(),
+                "src".to_owned(),
+            ],
             CommandKind::Search,
             (0..120)
                 .map(|idx| format!("src/module_{idx:03}/file_{idx:03}.rs"))
@@ -2922,10 +3061,7 @@ fn codex_benchmark_task_report_shows_positive_savings() {
         assert!(
             task.changed,
             "name={} changed={} tokens_saved={} bytes_saved={}",
-            task.name,
-            task.changed,
-            task.tokens_saved,
-            task.bytes_saved
+            task.name, task.changed, task.tokens_saved, task.bytes_saved
         );
         assert!(
             task.tokens_saved > 0,
@@ -2964,10 +3100,7 @@ fn claude_benchmark_task_report_shows_positive_savings() {
         assert!(
             task.changed,
             "name={} changed={} tokens_saved={} bytes_saved={}",
-            task.name,
-            task.changed,
-            task.tokens_saved,
-            task.bytes_saved
+            task.name, task.changed, task.tokens_saved, task.bytes_saved
         );
         assert!(
             task.tokens_saved > 0,

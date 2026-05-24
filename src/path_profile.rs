@@ -130,11 +130,15 @@ fn dominant_parent(entries: &[PathEntry]) -> Option<String> {
 fn summarize_entry(entry: &PathEntry, shared_parent: Option<&str>) -> String {
     if let Some(parent) = shared_parent
         && entry.parent == parent
-        && let Some(name) = Path::new(&entry.value).file_name().and_then(|name| name.to_str())
+        && let Some(name) = Path::new(&entry.value)
+            .file_name()
+            .and_then(|name| name.to_str())
     {
         return name.to_owned();
     }
-    if let Some(name) = Path::new(&entry.value).file_name().and_then(|name| name.to_str())
+    if let Some(name) = Path::new(&entry.value)
+        .file_name()
+        .and_then(|name| name.to_str())
         && name.len() + 8 < entry.value.len()
     {
         return format!(".../{name}");

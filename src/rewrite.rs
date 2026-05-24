@@ -144,10 +144,7 @@ pub(crate) fn live_pipeline_decision(
 }
 
 #[cfg(test)]
-pub(crate) fn live_pipeline_should_passthrough(
-    parsed: &ParsedCommand,
-    current_name: &str,
-) -> bool {
+pub(crate) fn live_pipeline_should_passthrough(parsed: &ParsedCommand, current_name: &str) -> bool {
     matches!(
         live_pipeline_decision(parsed, current_name),
         LivePipelineDecision::PassThrough
@@ -305,7 +302,11 @@ impl ParsedCommand {
     }
 
     fn has_unique_stage_name(&self, name: &str) -> bool {
-        self.stages.iter().filter(|stage| stage.name == name).count() == 1
+        self.stages
+            .iter()
+            .filter(|stage| stage.name == name)
+            .count()
+            == 1
     }
 }
 

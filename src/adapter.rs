@@ -162,7 +162,10 @@ fn rewrite_claude_event(
     tool_calls: &mut HashMap<String, ParsedCommand>,
     config: &Config,
 ) -> Result<bool, AppError> {
-    let line_type = value.get("type").and_then(|v| v.as_str()).unwrap_or_default();
+    let line_type = value
+        .get("type")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default();
     match line_type {
         "assistant" => {
             record_claude_tool_uses(value, tool_calls);
@@ -186,11 +189,17 @@ fn record_claude_tool_uses(
     };
 
     for block in content {
-        let kind = block.get("type").and_then(|v| v.as_str()).unwrap_or_default();
+        let kind = block
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
         if kind != "tool_use" {
             continue;
         }
-        let name = block.get("name").and_then(|v| v.as_str()).unwrap_or_default();
+        let name = block
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
         if !matches!(name, "Bash" | "bash" | "Shell" | "shell") {
             continue;
         }
@@ -224,7 +233,10 @@ fn rewrite_claude_tool_results(
 
     let mut changed = false;
     for block in content {
-        let kind = block.get("type").and_then(|v| v.as_str()).unwrap_or_default();
+        let kind = block
+            .get("type")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
         if kind != "tool_result" {
             continue;
         }

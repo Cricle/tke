@@ -1,5 +1,5 @@
-use crate::app::{AppError, Config};
 use crate::adapter::rewrite_agent_transcript;
+use crate::app::{AppError, Config};
 use crate::rollout_stats::RolloutOutputStats;
 use crate::trim::{BenchmarkExpectation, BenchmarkSpec, BenchmarkTaskSpec, BenchmarkTaskStep};
 use serde::Serialize;

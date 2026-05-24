@@ -1,6 +1,6 @@
+use crate::adapter::rewrite_agent_transcript;
 use crate::benchmark::RolloutCompareReport;
 use crate::rollout_stats::collect_rollout_output_stats;
-use crate::adapter::rewrite_agent_transcript;
 use crate::trim::now_millis;
 use crate::{AppError, Config};
 use std::env;
