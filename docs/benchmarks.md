@@ -63,6 +63,7 @@ Built-in rollout/task benchmarks:
 | `claude_bash_trace_complex_root_cause_task` | api | 10934 | 1141 | 9793 | 89.6% |
 | `claude_bash_trace_answer_consistency_task` | api | 10463 | 1012 | 9451 | 90.3% |
 | `claude_bash_trace_candidate_root_cause_task` | api | 11320 | 1269 | 10051 | 88.8% |
+| `claude_bash_trace_misleading_signal_task` | api | 10527 | 1077 | 9450 | 89.8% |
 | `claude_rtk_hook_trace_selected_find_stage` | api | 8159 | 127 | 8032 | 98.4% |
 | `claude_rtk_hook_trace_selected_search_stage` | api | 2137 | 416 | 1721 | 80.5% |
 | `claude_rtk_hook_trace_selected_diff_stage` | api | 3697 | 264 | 3433 | 92.9% |
@@ -74,6 +75,7 @@ Built-in rollout/task benchmarks:
 | `claude_rtk_hook_trace_complex_root_cause_task` | api | 11051 | 1153 | 9898 | 89.6% |
 | `claude_rtk_hook_trace_answer_consistency_task` | api | 10572 | 1016 | 9556 | 90.4% |
 | `claude_rtk_hook_trace_candidate_root_cause_task` | api | 11428 | 1250 | 10178 | 89.1% |
+| `claude_rtk_hook_trace_misleading_signal_task` | api | 10655 | 1073 | 9582 | 89.9% |
 
 ## Why TKE Is Better Today
 
@@ -82,17 +84,17 @@ This section is generated from the current benchmark and E2E artifacts. The clai
 | Evidence area | `tke` result | `rtk` result in this repo | Why this matters |
 | --- | --- | --- | --- |
 | Built-in local compression benchmarks | `33/34` cases, `57793` tokens saved, `91.1%` | No equivalent repo-local tool-output benchmark runner in this repo | `tke` can be measured locally and repeatedly without depending on agent compliance |
-| Built-in rollout/task traces | `27` traces, `162905` tokens saved, `89.5%` | RTK participates only through the fairness/synthetic harness subset wired here | `tke` has broader measured coverage inside the repo |
+| Built-in rollout/task traces | `29` traces, `181937` tokens saved, `89.6%` | RTK participates only through the fairness/synthetic harness subset wired here | `tke` has broader measured coverage inside the repo |
 | Codex real E2E | `4/4` pass, `6257` tool tokens saved | `0/2` pass, `11` token delta | Current real Codex evidence favors `tke` clearly |
 | Structured output surface | `pathlist`, `search`, `diff`, `log`, `table`, and `file` profiles emit inspectable `__TKE__{...}` summaries | No equivalent repo-local structured envelope | `tke` gives a concrete artifact that tooling can compare and audit |
-| Claude stable synthetic traces | `71591` tokens saved at `89.4%` | `71927` tokens saved at `89.6%` | `rtk-hook` currently leads on both absolute token savings and ratio in the stable synthetic Claude traces, while `tke` remains competitive on fragment retention |
+| Claude stable synthetic traces | `81041` tokens saved at `89.4%` | `81509` tokens saved at `89.6%` | `rtk-hook` currently leads on both absolute token savings and ratio in the stable synthetic Claude traces, while `tke` remains competitive on fragment retention |
 
 Current built-in totals:
 
 | Scope | Cases | Tokens saved | Savings ratio |
 | --- | --- | --- | --- |
 | Default compress benchmarks | 33 | 57793 | 91.1% |
-| Built-in rollout/task traces | 27 | 162905 | 89.5% |
+| Built-in rollout/task traces | 29 | 181937 | 89.6% |
 
 Per-profile compression totals:
 
@@ -109,8 +111,8 @@ Claude-oriented stable synthetic summary:
 
 | Path | Raw tokens | Rewritten tokens | Tokens saved | Savings | Fragments kept |
 | --- | --- | --- | --- | --- | --- |
-| `tke` | 80104 | 8513 | 71591 | 89.4% | `109/109` |
-| `rtk-hook` | 80319 | 8392 | 71927 | 89.6% | `112/112` |
+| `tke` | 90631 | 9590 | 81041 | 89.4% | `129/129` |
+| `rtk-hook` | 90974 | 9465 | 81509 | 89.6% | `132/132` |
 
 Task-mode comparison for Claude-oriented stable synthetic traces:
 
@@ -127,6 +129,7 @@ Task-mode comparison for Claude-oriented stable synthetic traces:
 | complex/root-cause | `9793` (89.6%) | `9898` (89.6%) | `13/13` | `13/13` |
 | answer-consistency | `9451` (90.3%) | `9556` (90.4%) | `15/15` | `15/15` |
 | candidate-root-cause | `10051` (88.8%) | `10178` (89.1%) | `20/20` | `20/20` |
+| misleading-signal | `9450` (89.8%) | `9582` (89.9%) | `20/20` | `20/20` |
 
 Scenario verdicts:
 
@@ -143,6 +146,7 @@ Scenario verdicts:
 | complex/root-cause | `rtk-hook` | `rtk-hook` | `tie` |
 | answer-consistency | `rtk-hook` | `rtk-hook` | `tie` |
 | candidate-root-cause | `rtk-hook` | `rtk-hook` | `tie` |
+| misleading-signal | `rtk-hook` | `rtk-hook` | `tie` |
 
 ## Structured Summary Coverage
 
@@ -199,8 +203,8 @@ Accuracy and compression scorecard:
 
 | Scope | Path | Cases | Accuracy | Compression rate | Semantic retention | Token outcome |
 | --- | --- | --- | --- | --- | --- | --- |
-| `Claude synthetic` | `tke` | 11 | `n/a` | 89.4% | `109/109` | 71591 |
-| `Claude synthetic` | `rtk-hook` | 11 | `n/a` | 89.6% | `112/112` | 71927 |
+| `Claude synthetic` | `tke` | 12 | `n/a` | 89.4% | `129/129` | 81041 |
+| `Claude synthetic` | `rtk-hook` | 12 | `n/a` | 89.6% | `132/132` | 81509 |
 | `codex` | `rtk-codex-rules` | 2 | 0.0% | `n/a` | `pass=0 fail=2 gateway=0 ungraded=0` | 11 |
 | `claude` | `rtk-hook` | 3 | 100.0% | `n/a` | `pass=3 fail=0 gateway=0 ungraded=0` | -1 |
 

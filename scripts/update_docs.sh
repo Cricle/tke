@@ -177,6 +177,7 @@ comparison_task_specs = [
     ("complex/root-cause", "claude_bash_trace_complex_root_cause_task", "claude_rtk_hook_trace_complex_root_cause_task"),
     ("answer-consistency", "claude_bash_trace_answer_consistency_task", "claude_rtk_hook_trace_answer_consistency_task"),
     ("candidate-root-cause", "claude_bash_trace_candidate_root_cause_task", "claude_rtk_hook_trace_candidate_root_cause_task"),
+    ("misleading-signal", "claude_bash_trace_misleading_signal_task", "claude_rtk_hook_trace_misleading_signal_task"),
 ]
 
 comparison_task_rows = []
