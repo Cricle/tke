@@ -4,14 +4,25 @@ exec </dev/null
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${1:-$(cd -- "$SCRIPT_DIR/.." && pwd)}"
+HOST_TKE_BIN="${TKE_BIN:-$ROOT/target/release/tke}"
 HOST_RUST_TOOLCHAIN_BIN="${HOST_RUST_TOOLCHAIN_BIN:-$(dirname "$(rustup which cargo 2>/dev/null || command -v cargo)")}"
 HOST_TOOL_PATH="${HOST_TOOL_PATH:-$HOST_RUST_TOOLCHAIN_BIN:/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin}"
 RUN_ROOT="${RUN_ROOT:-/tmp/tke-claude-harness-check}"
 
+if ! TKE_BIN_REAL="$(readlink -f "$HOST_TKE_BIN" 2>/dev/null)"; then
+  TKE_BIN_REAL="$HOST_TKE_BIN"
+fi
+if [[ ! -f "$TKE_BIN_REAL" ]]; then
+  echo "tke binary not found at $HOST_TKE_BIN; run cargo build --release or set TKE_BIN" >&2
+  exit 2
+fi
+chmod +x "$TKE_BIN_REAL" 2>/dev/null || :
+
 rm -rf "$RUN_ROOT"
 mkdir -p "$RUN_ROOT/repo" "$RUN_ROOT/home/.claude" "$RUN_ROOT/bin" "$RUN_ROOT/shims"
 
-cp "$ROOT/target/release/tke" "$RUN_ROOT/bin/tke"
+cp "$TKE_BIN_REAL" "$RUN_ROOT/bin/tke"
+chmod +x "$RUN_ROOT/bin/tke"
 cp -a "$ROOT/src/." "$RUN_ROOT/repo/src/"
 for f in Cargo.toml Cargo.lock README.md .gitignore; do
   cp "$ROOT/$f" "$RUN_ROOT/repo/$f"
