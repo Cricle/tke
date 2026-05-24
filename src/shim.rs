@@ -471,6 +471,11 @@ pub(crate) fn normalize_text_with_stage(
     } else {
         None
     };
+    let log_summary = if forced && profile == TrimProfile::Log {
+        Some(crate::log_profile::collect_log_summary(&lines))
+    } else {
+        None
+    };
     let (head, tail, matches, kept_ranges, emitted_lines) = if let Some(table) = &table {
         let kept = merge_ranges(collect_table_kept_ranges(table));
         let emitted = kept.iter().map(|(start, end)| end - start).sum();
@@ -545,6 +550,7 @@ pub(crate) fn normalize_text_with_stage(
         },
         tb: table,
         pl: pathlist,
+        lg: log_summary,
         b: body,
     };
     Ok(serde_json::to_string(&envelope)?)

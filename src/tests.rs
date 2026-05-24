@@ -309,6 +309,7 @@ fn log_profile_folds_repeated_lines() {
     .expect("normalize");
     let value: serde_json::Value = serde_json::from_str(&json).expect("json");
     assert_eq!(value["p"], "log");
+    assert_eq!(value["lg"]["fail"], 1);
     assert!(
         value["m"]
             .as_array()
@@ -316,6 +317,32 @@ fn log_profile_folds_repeated_lines() {
             .iter()
             .any(|chunk| chunk["k"] == "fold")
     );
+}
+
+#[test]
+fn log_profile_emits_failure_and_warning_counts() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "warning: deprecated item used",
+        "error: build failed",
+        "FAILED tests/test_parser.py::test_invalid_input",
+        "ok 1 - should parse simple expression",
+    ]
+    .join("\n");
+    let json = normalize_text(
+        "cargo",
+        &["test".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&json);
+    assert_eq!(value["p"], "log");
+    assert_eq!(value["lg"]["fail"], 2);
+    assert_eq!(value["lg"]["warn"], 1);
 }
 
 #[test]

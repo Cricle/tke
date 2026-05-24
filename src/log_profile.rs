@@ -1,4 +1,4 @@
-use crate::trim::{MatchChunk, ProfileLimits, RepeatedRun, is_log_signal, push_chunk};
+use crate::trim::{LogSummary, MatchChunk, ProfileLimits, RepeatedRun, is_log_signal, push_chunk};
 
 pub(crate) fn collect_log_chunks(
     lines: &[&str],
@@ -37,6 +37,26 @@ pub(crate) fn collect_log_chunks(
         }
     }
     out
+}
+
+pub(crate) fn collect_log_summary(lines: &[&str]) -> LogSummary {
+    let mut fail = 0usize;
+    let mut warn = 0usize;
+    for line in lines {
+        let lower = line.to_ascii_lowercase();
+        if lower.contains("warning") {
+            warn += 1;
+        }
+        if lower.contains("error")
+            || lower.contains("failed")
+            || lower.contains("panic")
+            || lower.contains("exception")
+            || lower.contains("not ok")
+        {
+            fail += 1;
+        }
+    }
+    LogSummary { fail, warn }
 }
 
 fn push_fold_chunk(

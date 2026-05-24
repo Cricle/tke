@@ -1288,6 +1288,8 @@ pub(crate) struct TrimEnvelope {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) pl: Option<PathListSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) lg: Option<LogSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) b: Option<Vec<String>>,
 }
 
@@ -1350,6 +1352,17 @@ pub(crate) struct PathBucket {
 pub(crate) struct PathRow {
     pub(crate) i: usize,
     pub(crate) v: String,
+}
+
+#[derive(Serialize)]
+pub(crate) struct LogSummary {
+    pub(crate) fail: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub(crate) warn: usize,
+}
+
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 
 pub(crate) struct RepeatedRun {
