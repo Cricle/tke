@@ -1205,13 +1205,13 @@ fn select_table_rows(
 fn collect_table_signal_rows(layout: &TableLayout, terms: &[String]) -> Vec<usize> {
     let mut out = Vec::new();
     for (idx, row) in layout.rows.iter().enumerate() {
-        let joined = row.fields.join(" ").to_ascii_lowercase();
+        let joined = row.fields.join(" ");
+        let tokens = ascii_word_tokens(&joined);
         if is_log_signal(&joined, terms)
-            || joined.contains("codex")
-            || joined.contains("listen")
-            || joined.contains("estab")
-            || joined.contains("failed")
-            || joined.contains("exited")
+            || has_ascii_token(&tokens, "codex")
+            || has_ascii_token(&tokens, "listen")
+            || has_ascii_token(&tokens, "estab")
+            || has_ascii_token(&tokens, "exited")
         {
             out.push(idx);
             if out.len() >= 3 {

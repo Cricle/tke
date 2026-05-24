@@ -236,7 +236,7 @@ fn discover_e2e_cases(
                 continue;
             };
             let modes = cases.entry((agent_name.clone(), name)).or_default();
-            let prefer_new = !file_name.contains(".failed.");
+            let prefer_new = !file_name_is_failed_variant(file_name);
             match modes.by_mode.get(&mode) {
                 None => {
                     modes.by_mode.insert(mode, path);
@@ -246,7 +246,7 @@ fn discover_e2e_cases(
                         .file_name()
                         .and_then(|name| name.to_str())
                         .unwrap_or_default();
-                    let existing_is_failed = existing_name.contains(".failed.");
+                    let existing_is_failed = file_name_is_failed_variant(existing_name);
                     if prefer_new && existing_is_failed {
                         modes.by_mode.insert(mode, path);
                     }
@@ -282,6 +282,10 @@ fn normalize_mode(mode: &str) -> String {
     }
 }
 
+fn file_name_is_failed_variant(file_name: &str) -> bool {
+    file_name.split('.').any(|part| part == "failed")
+}
+
 fn default_roots() -> Vec<PathBuf> {
     vec![
         PathBuf::from(".tmp-claude-e2e"),
@@ -290,14 +294,58 @@ fn default_roots() -> Vec<PathBuf> {
 }
 
 fn detect_agent_name(path: &Path) -> String {
-    let joined = path.display().to_string().to_ascii_lowercase();
-    if joined.contains("claude") {
+    let tokens = path_component_tokens(path);
+    if tokens.iter().any(|token| token == "claude") {
         "claude".to_owned()
-    } else if joined.contains("codex") {
+    } else if tokens.iter().any(|token| token == "codex") {
         "codex".to_owned()
     } else {
         "unknown".to_owned()
     }
+}
+
+fn path_component_tokens(path: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    for component in path.components() {
+        let text = component.as_os_str().to_string_lossy();
+        let mut current = String::new();
+        for ch in text.chars() {
+            if ch.is_ascii_alphanumeric() {
+                current.push(ch.to_ascii_lowercase());
+            } else if !current.is_empty() {
+                out.push(std::mem::take(&mut current));
+            }
+        }
+        if !current.is_empty() {
+            out.push(current);
+        }
+    }
+    out
+}
+
+fn json_value_contains_gateway_timeout(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::String(text) => {
+            text.contains("API Error: 504") || text.contains("origin_gateway_timeout")
+        }
+        serde_json::Value::Array(items) => items.iter().any(json_value_contains_gateway_timeout),
+        serde_json::Value::Object(map) => map.values().any(json_value_contains_gateway_timeout),
+        _ => false,
+    }
+}
+
+fn file_has_gateway_timeout(path: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(path) else {
+        return false;
+    };
+    for line in text.lines() {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(line)
+            && json_value_contains_gateway_timeout(&value)
+        {
+            return true;
+        }
+    }
+    false
 }
 
 fn parse_stream_facts(path: &Path) -> Result<StreamFacts, AppError> {
@@ -439,9 +487,7 @@ fn evaluate_result(path: &Path, fields: &BTreeMap<String, String>) -> E2eCorrect
         .file_name()
         .and_then(|value| value.to_str())
         .unwrap_or_default();
-    if let Ok(text) = fs::read_to_string(path)
-        && (text.contains("API Error: 504") || text.contains("origin_gateway_timeout"))
-    {
+    if file_has_gateway_timeout(path) {
         return E2eCorrectnessReport {
             status: "gateway_error".to_owned(),
             checked_fields: Vec::new(),

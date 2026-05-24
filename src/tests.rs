@@ -2191,6 +2191,73 @@ fn compare_e2e_report_marks_wrong_variant_when_expected_fields_fail() {
 }
 
 #[test]
+fn compare_e2e_report_marks_gateway_timeout_from_json_value() {
+    let base = temp_test_dir("e2e-report-gateway");
+    fs::create_dir_all(base.join(".tmp-codex-e2e")).expect("mkdir");
+    let raw = base.join(".tmp-codex-e2e/buildcase.raw.jsonl");
+    let wrapped = base.join(".tmp-codex-e2e/buildcase.tke.jsonl");
+    fs::write(
+        &raw,
+        [
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "aggregated_output": repeated_lines("Compiling crate", 40)
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": "STAGE=build, FILE=src/tests.rs, KIND=test-focus"
+                }
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write raw");
+    fs::write(
+        &wrapped,
+        [
+            serde_json::json!({
+                "type": "response.failed",
+                "error": {
+                    "message": "API Error: 504 origin_gateway_timeout"
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": "STAGE=build, FILE=src/tests.rs, KIND=test-focus"
+                }
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write wrapped");
+
+    let report = build_e2e_compare_report(
+        vec![base.join(".tmp-codex-e2e")],
+        Some("codex"),
+        &Config::default(),
+    )
+    .expect("report");
+    let case = &report.cases[0];
+    let variant = case
+        .variants
+        .iter()
+        .find(|variant| variant.mode == "tke")
+        .expect("tke variant");
+    assert_eq!(variant.sample.correctness.status, "gateway_error");
+}
+
+#[test]
 fn compare_e2e_report_grades_findcase_and_buildcase_expectations() {
     let base = temp_test_dir("e2e-report-extra-cases");
     fs::create_dir_all(base.join(".tmp-codex-e2e")).expect("mkdir");
