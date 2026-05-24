@@ -114,7 +114,7 @@ fn detect_path_entries(lines: &[&str]) -> Option<Vec<PathEntry>> {
         if trimmed.is_empty() {
             continue;
         }
-        if trimmed.contains('\t') || trimmed.contains("  ") {
+        if has_pathlist_spacing_noise(trimmed) {
             return None;
         }
         if has_non_path_colon(trimmed) || !looks_like_path(trimmed) {
@@ -136,6 +136,24 @@ fn detect_path_entries(lines: &[&str]) -> Option<Vec<PathEntry>> {
     } else {
         None
     }
+}
+
+fn has_pathlist_spacing_noise(line: &str) -> bool {
+    let mut prev_space = false;
+    for ch in line.chars() {
+        if ch == '\t' {
+            return true;
+        }
+        if ch == ' ' {
+            if prev_space {
+                return true;
+            }
+            prev_space = true;
+        } else {
+            prev_space = false;
+        }
+    }
+    false
 }
 
 fn dominant_parent(entries: &[PathEntry]) -> Option<String> {
@@ -195,29 +213,34 @@ fn looks_like_path(line: &str) -> bool {
         && bytes[1] == b':'
         && bytes[0].is_ascii_alphabetic()
         && (bytes[2] == b'/' || bytes[2] == b'\\');
+    let has_separator = line.chars().any(|ch| ch == '/' || ch == '\\');
     (line.starts_with('/')
         || line.starts_with("./")
         || line.starts_with("../")
         || line.starts_with(".\\")
         || line.starts_with("..\\")
-        || line.contains('/')
-        || line.contains('\\')
+        || has_separator
         || is_bare_name(line)
         || windows_drive)
         && !line.ends_with(':')
-        && !line.contains(" -> ")
+        && !contains_arrow_mapping(line)
 }
 
 fn is_bare_name(line: &str) -> bool {
     !line.is_empty()
-        && !line.contains(':')
-        && !line.contains('/')
-        && !line.contains('\\')
-        && !line.contains(' ')
-        && !line.contains('\t')
+        && !line
+            .chars()
+            .any(|ch| matches!(ch, ':' | '/' | '\\' | ' ' | '\t'))
         && line
             .chars()
             .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-' | '@'))
+}
+
+fn contains_arrow_mapping(line: &str) -> bool {
+    let chars = line.chars().collect::<Vec<_>>();
+    chars
+        .windows(4)
+        .any(|window| window == [' ', '-', '>', ' '])
 }
 
 fn path_parent(value: &str) -> String {

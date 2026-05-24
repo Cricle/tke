@@ -1261,11 +1261,7 @@ fn push_unique_index(out: &mut Vec<usize>, idx: usize, cap: usize) {
 
 fn is_stack_frame(line: &str) -> bool {
     let trimmed = line.trim_start();
-    trimmed.starts_with("at ")
-        || trimmed.starts_with('#')
-        || trimmed.contains(".rs:")
-        || trimmed.contains(".py\", line ")
-        || trimmed.contains(".js:")
+    trimmed.starts_with("at ") || trimmed.starts_with('#') || has_source_location(trimmed)
 }
 
 fn is_stack_summary(line: &str) -> bool {
@@ -1303,6 +1299,29 @@ fn classify_log_line(line: &str) -> LogLineClass {
         failure,
         stack_summary,
     }
+}
+
+fn has_source_location(line: &str) -> bool {
+    has_source_extension_location(line, ".rs")
+        || has_source_extension_location(line, ".js")
+        || has_python_trace_location(line)
+}
+
+fn has_source_extension_location(line: &str, extension: &str) -> bool {
+    line.char_indices().any(|(idx, ch)| {
+        ch == ':'
+            && line
+                .get(..idx)
+                .is_some_and(|prefix| prefix.ends_with(extension))
+    })
+}
+
+fn has_python_trace_location(line: &str) -> bool {
+    let segments = line.split('"').collect::<Vec<_>>();
+    segments
+        .windows(2)
+        .any(|window| window[0].ends_with("File ") && window[1].ends_with(".py"))
+        && has_ascii_token(&ascii_word_tokens(line), "line")
 }
 
 fn ascii_word_tokens(line: &str) -> Vec<String> {

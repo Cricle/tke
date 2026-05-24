@@ -1604,6 +1604,30 @@ fn pathlist_rollout_haystack_exposes_first_last_and_count() {
 }
 
 #[test]
+fn pathlist_profile_rejects_arrow_mapping_output() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "src/lib.rs -> /tmp/build/lib.rs",
+        "src/main.rs -> /tmp/build/main.rs",
+        "src/tests.rs -> /tmp/build/tests.rs",
+        "src/trim.rs -> /tmp/build/trim.rs",
+    ]
+    .join("\n");
+    let normalized = normalize_text(
+        "find",
+        &["src".to_owned()],
+        "stdout",
+        CommandKind::Search,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_ne!(value["p"], "pathlist");
+}
+
+#[test]
 fn rewrites_claude_tool_result_text_block_array() {
     let mut cfg = Config::default();
     cfg.min_trim_bytes = 1;

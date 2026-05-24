@@ -325,13 +325,42 @@ fn path_component_tokens(path: &Path) -> Vec<String> {
 
 fn json_value_contains_gateway_timeout(value: &serde_json::Value) -> bool {
     match value {
-        serde_json::Value::String(text) => {
-            text.contains("API Error: 504") || text.contains("origin_gateway_timeout")
-        }
+        serde_json::Value::String(text) => gateway_timeout_tokens(text),
         serde_json::Value::Array(items) => items.iter().any(json_value_contains_gateway_timeout),
         serde_json::Value::Object(map) => map.values().any(json_value_contains_gateway_timeout),
         _ => false,
     }
+}
+
+fn gateway_timeout_tokens(text: &str) -> bool {
+    let tokens = text
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    token_sequence_present(&tokens, &["api", "error", "504"])
+        || token_sequence_present(&tokens, &["origin", "gateway", "timeout"])
+        || token_sequence_present(&tokens, &["gateway", "timeout"])
+}
+
+fn token_sequence_present(tokens: &[String], expected: &[&str]) -> bool {
+    if expected.is_empty() || tokens.len() < expected.len() {
+        return false;
+    }
+    tokens.windows(expected.len()).any(|window| {
+        window
+            .iter()
+            .zip(expected)
+            .all(|(token, want)| token == want)
+    })
 }
 
 fn file_has_gateway_timeout(path: &Path) -> bool {
