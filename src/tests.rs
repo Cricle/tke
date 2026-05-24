@@ -3070,6 +3070,7 @@ fn benchmark_report_contains_expected_cases() {
         "claude_bash_trace_complex_triage_task",
         "claude_bash_trace_complex_code_trace_task",
         "claude_bash_trace_complex_stacktrace_task",
+        "claude_bash_trace_complex_stacktrace_diff_task",
         "claude_rtk_hook_trace_selected_find_stage",
         "claude_rtk_hook_trace_selected_search_stage",
         "claude_rtk_hook_trace_selected_diff_stage",
@@ -3077,6 +3078,7 @@ fn benchmark_report_contains_expected_cases() {
         "claude_rtk_hook_trace_complex_triage_task",
         "claude_rtk_hook_trace_complex_code_trace_task",
         "claude_rtk_hook_trace_complex_stacktrace_task",
+        "claude_rtk_hook_trace_complex_stacktrace_diff_task",
     ] {
         assert!(report.tasks.iter().any(|task| task.name == name), "{name}");
     }
@@ -4056,6 +4058,64 @@ fn claude_rtk_hook_complex_stacktrace_task_rollout_is_rewritten() {
         "\"p\":\"stacktrace\"",
         "\"k\":\"summary\"",
         "\"k\":\"frame\"",
+        "\"sc\":\"rg\"",
+        "\"sr\":\"search\"",
+        "\"sc\":\"cargo\"",
+        "\"p\":\"log\"",
+        "\"lg\":",
+    ] {
+        assert!(haystack.contains(fragment), "missing {fragment}");
+    }
+}
+
+#[test]
+fn claude_complex_stacktrace_diff_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "claude_bash_trace_complex_stacktrace_diff_task")
+        .expect("claude complex stacktrace diff task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    for fragment in [
+        "\"p\":\"stacktrace\"",
+        "\"k\":\"summary\"",
+        "\"k\":\"frame\"",
+        "\"sc\":\"git\"",
+        "\"p\":\"diff\"",
+        "\"df\":",
+        "\"sc\":\"rg\"",
+        "\"sr\":\"search\"",
+        "\"sc\":\"cargo\"",
+        "\"p\":\"log\"",
+        "\"lg\":",
+    ] {
+        assert!(haystack.contains(fragment), "missing {fragment}");
+    }
+}
+
+#[test]
+fn claude_rtk_hook_complex_stacktrace_diff_task_rollout_is_rewritten() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let task = benchmark_task_specs()
+        .into_iter()
+        .find(|task| task.name == "claude_rtk_hook_trace_complex_stacktrace_diff_task")
+        .expect("claude rtk hook complex stacktrace diff task");
+    let rewritten = rewrite_agent_transcript(&task.rollout, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let haystack = rollout_string_haystack(&rewritten);
+    for fragment in [
+        "\"p\":\"stacktrace\"",
+        "\"k\":\"summary\"",
+        "\"k\":\"frame\"",
+        "\"sc\":\"git\"",
+        "\"p\":\"diff\"",
+        "\"df\":",
         "\"sc\":\"rg\"",
         "\"sr\":\"search\"",
         "\"sc\":\"cargo\"",

@@ -173,6 +173,7 @@ comparison_task_specs = [
     ("complex/triage", "claude_bash_trace_complex_triage_task", "claude_rtk_hook_trace_complex_triage_task"),
     ("complex/code-trace", "claude_bash_trace_complex_code_trace_task", "claude_rtk_hook_trace_complex_code_trace_task"),
     ("complex/stacktrace", "claude_bash_trace_complex_stacktrace_task", "claude_rtk_hook_trace_complex_stacktrace_task"),
+    ("complex/stacktrace-diff", "claude_bash_trace_complex_stacktrace_diff_task", "claude_rtk_hook_trace_complex_stacktrace_diff_task"),
 ]
 
 comparison_task_rows = []
