@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${1:-/root/github/tke}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${1:-$(cd -- "$SCRIPT_DIR/.." && pwd)}"
 MODE="${2:-raw}"
 NAME="${3:-smoke}"
 PROMPT_FILE="${4:-}"
@@ -23,7 +24,7 @@ RUN_AS_GROUP="${RUN_AS_GROUP:-}"
 KEEP_RUN_ROOT="${KEEP_RUN_ROOT:-0}"
 CLAUDE_BASE_URL="${CLAUDE_BASE_URL:-https://ai.fixwikihub.com}"
 CLAUDE_API_KEY="${CLAUDE_API_KEY:-}"
-CLAUDE_MODEL="${CLAUDE_MODEL:-claude-sonnet-4-6}"
+CLAUDE_MODEL="${CLAUDE_MODEL:-claude-opus-4-6}"
 CLAUDE_TKE_LIVE_TOOLS="${CLAUDE_TKE_LIVE_TOOLS:-0}"
 
 if [[ -z "$RUN_AS_GROUP" ]]; then
@@ -46,20 +47,17 @@ fi
 
 mkdir -p "$OUT_DIR" "$WORK_ROOT"
 
-RUN_ROOT="$WORK_ROOT/$MODE"
+RUN_ROOT="$(mktemp -d "$WORK_ROOT/${MODE}.XXXXXX")"
 REPO_ROOT="$RUN_ROOT/repo"
 HOME_ROOT="$RUN_ROOT/home"
 BIN_ROOT="$RUN_ROOT/bin"
 SHIM_DIR="$RUN_ROOT/shims"
-
-rm -rf "$RUN_ROOT"
 mkdir -p "$REPO_ROOT" "$HOME_ROOT/.claude" "$BIN_ROOT"
 
 cp "$(readlink -f "$HOST_TKE_BIN")" "$BIN_ROOT/tke"
 if [[ -x "$HOST_RTK_BIN" ]]; then
   cp "$(readlink -f "$HOST_RTK_BIN")" "$BIN_ROOT/rtk"
 fi
-cp "$(readlink -f "$HOST_CLAUDE_BIN")" "$BIN_ROOT/claude"
 chmod +x "$HOST_TKE_BIN" "$HOST_CLAUDE_BIN" 2>/dev/null || :
 if [[ -x "$HOST_RTK_BIN" ]]; then
   chmod +x "$HOST_RTK_BIN" 2>/dev/null || :
@@ -68,7 +66,6 @@ chmod +x "$BIN_ROOT/tke"
 if [[ -f "$BIN_ROOT/rtk" ]]; then
   chmod +x "$BIN_ROOT/rtk"
 fi
-chmod +x "$BIN_ROOT/claude"
 
 mkdir -p "$REPO_ROOT/src" "$REPO_ROOT/scripts" "$REPO_ROOT/.github/workflows"
 cp -a "$ROOT/src/." "$REPO_ROOT/src/"
@@ -175,7 +172,7 @@ export ANTHROPIC_AUTH_TOKEN="$CLAUDE_API_KEY"
 export ANTHROPIC_MODEL="$CLAUDE_MODEL"
 export CLAUDE_CODE_SIMPLE=1
 
-CLAUDE_LAUNCH="$BIN_ROOT/claude"
+CLAUDE_LAUNCH="${CLAUDE_BIN:-$(command -v claude)}"
 if [[ "$MODE" == "wrapped" || "$MODE" == "tke" ]]; then
   eval "$("$BIN_ROOT/tke" activate --shim-dir "$SHIM_DIR" claude)"
   if command -v claude >/dev/null 2>&1; then

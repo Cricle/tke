@@ -2404,6 +2404,202 @@ fn compare_e2e_report_grades_claude_live_cases_using_builtin_expectations() {
 }
 
 #[test]
+fn compare_e2e_report_grades_claude_fair_cases_using_builtin_expectations() {
+    let base = temp_test_dir("claude-fair-e2e-cases");
+    fs::create_dir_all(base.join(".tmp-claude-e2e-fair")).expect("mkdir");
+
+    let fairfind_raw = base.join(".tmp-claude-e2e-fair/fairfind.raw.stream.jsonl");
+    fs::write(
+        &fairfind_raw,
+        [
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_fairfind_raw",
+                            "content": repeated_lines("src/rollout_stats.rs", 17)
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": "STAGE=rg --files src | head -n 40\nFILE=src/rollout_stats.rs\nCOUNT=15"
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write fairfind raw");
+
+    let fairfind_hook = base.join(".tmp-claude-e2e-fair/fairfind.rtk-hook.stream.jsonl");
+    fs::write(
+        &fairfind_hook,
+        [
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_fairfind_hook",
+                            "content": repeated_lines("src/rollout_stats.rs", 17)
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": "STAGE=rg --files src | head -n 40\nFILE=src/rollout_stats.rs\nCOUNT=15"
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write fairfind hook");
+
+    let fairbuild_raw = base.join(".tmp-claude-e2e-fair/fairbuild.raw.stream.jsonl");
+    fs::write(
+        &fairbuild_raw,
+        [
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_fairbuild_raw",
+                            "content": "test result: ok. 105 passed; 0 failed; 0 ignored; 0 measured"
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": "STAGE=cargo test --lib -- --nocapture | tail -n 80\nFILE=src/lib.rs\nCOUNT=0"
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write fairbuild raw");
+
+    let fairbuild_hook = base.join(".tmp-claude-e2e-fair/fairbuild.rtk-hook.stream.jsonl");
+    fs::write(
+        &fairbuild_hook,
+        [
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_fairbuild_hook",
+                            "content": "test result: ok. 105 passed; 0 failed; 0 ignored; 0 measured"
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": "STAGE=cargo test --lib -- --nocapture | tail -n 80\nFILE=src/lib.rs\nCOUNT=0"
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write fairbuild hook");
+
+    let fairrg_raw = base.join(".tmp-claude-e2e-fair/fairrg.raw.stream.jsonl");
+    fs::write(
+        &fairrg_raw,
+        [
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_fairrg_raw",
+                            "content": repeated_lines("src/tests.rs:10:normalize_text compare-e2e benchmark-commands", 8)
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": "STAGE=rg -n \"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\" src\nFILE=src/tests.rs\nKIND=search"
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write fairrg raw");
+
+    let fairrg_hook = base.join(".tmp-claude-e2e-fair/fairrg.rtk-hook.stream.jsonl");
+    fs::write(
+        &fairrg_hook,
+        [
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_fairrg_hook",
+                            "content": repeated_lines("src/tests.rs:10:normalize_text compare-e2e benchmark-commands", 8)
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": "STAGE=rg -n \"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\" src\nFILE=src/tests.rs\nKIND=search"
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write fairrg hook");
+
+    let report = build_e2e_compare_report(
+        vec![base.join(".tmp-claude-e2e-fair")],
+        Some("claude"),
+        &Config::default(),
+    )
+    .expect("report");
+
+    let fairfind_case = report
+        .cases
+        .iter()
+        .find(|case| case.name == "fairfind")
+        .expect("fairfind case");
+    assert_eq!(fairfind_case.variants[0].sample.correctness.status, "pass");
+
+    let fairbuild_case = report
+        .cases
+        .iter()
+        .find(|case| case.name == "fairbuild")
+        .expect("fairbuild case");
+    assert_eq!(fairbuild_case.variants[0].sample.correctness.status, "pass");
+
+    let fairrg_case = report
+        .cases
+        .iter()
+        .find(|case| case.name == "fairrg")
+        .expect("fairrg case");
+    assert_eq!(fairrg_case.variants[0].sample.correctness.status, "pass");
+}
+
+#[test]
 fn compare_e2e_report_supports_multiple_variants_including_rtk() {
     let base = temp_test_dir("e2e-report-rtk");
     fs::create_dir_all(base.join(".tmp-codex-e2e")).expect("mkdir");

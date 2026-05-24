@@ -2,7 +2,8 @@
 set -euo pipefail
 exec </dev/null
 
-ROOT="${1:-/root/github/tke}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${1:-$(cd -- "$SCRIPT_DIR/.." && pwd)}"
 HOST_RUST_TOOLCHAIN_BIN="${HOST_RUST_TOOLCHAIN_BIN:-$(dirname "$(rustup which cargo 2>/dev/null || command -v cargo)")}"
 HOST_TOOL_PATH="${HOST_TOOL_PATH:-$HOST_RUST_TOOLCHAIN_BIN:/root/.cargo/bin:/usr/local/bin:/usr/bin:/bin}"
 RUN_ROOT="${RUN_ROOT:-/tmp/tke-claude-harness-check}"

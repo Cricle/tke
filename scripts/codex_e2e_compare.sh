@@ -2,7 +2,8 @@
 set -euo pipefail
 exec </dev/null
 
-ROOT="${1:-/root/github/tke}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${1:-$(cd -- "$SCRIPT_DIR/.." && pwd)}"
 TKE_BIN="${TKE_BIN:-$ROOT/target/release/tke}"
 RTK_BIN="${RTK_BIN:-/tmp/rtk-bin/rtk}"
 SHIM_DIR="${SHIM_DIR:-/tmp/tke-e2e-shims}"

@@ -2,7 +2,8 @@
 set -euo pipefail
 exec </dev/null
 
-ROOT="${1:-/root/github/tke}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${1:-$(cd -- "$SCRIPT_DIR/.." && pwd)}"
 OUT_DIR="${OUT_DIR:-$ROOT/.tmp-claude-e2e}"
 PROMPT_DIR="${PROMPT_DIR:-/tmp/tke-claude-real-prompts}"
 

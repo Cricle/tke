@@ -150,7 +150,7 @@ Current real-task findings in this repo are:
 - Codex + `rtk-codex-rules`: the official `AGENTS.md + RTK.md` path was exercised fairly, but in the sampled real task Codex still executed the raw command path rather than an RTK-prefixed command, so no measured tool-output savings were observed there.
 - Claude + `raw`: verified correct on the real `findcase` Bash task.
 - Claude + `rtk-hook`: verified correct on the same real `findcase` Bash task after fixing the local comparison harness.
-- Claude + `tke`: default live usage now stays in compatibility mode on the tested `claude-sonnet-4-6` gateway path. Experimental live compression is only enabled with `TKE_CLAUDE_LIVE_TOOLS=1`, and should still be judged case by case in the benchmark docs.
+- Claude + `tke`: default live usage now stays in compatibility mode on the tested `claude-opus-4-6` gateway path. Experimental live compression is only enabled with `TKE_CLAUDE_LIVE_TOOLS=1`, and should still be judged case by case in the benchmark docs.
 
 Practical interpretation:
 

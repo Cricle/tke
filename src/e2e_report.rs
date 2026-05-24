@@ -236,7 +236,22 @@ fn discover_e2e_cases(
                 continue;
             };
             let modes = cases.entry((agent_name.clone(), name)).or_default();
-            modes.by_mode.insert(mode, path);
+            let prefer_new = !file_name.contains(".failed.");
+            match modes.by_mode.get(&mode) {
+                None => {
+                    modes.by_mode.insert(mode, path);
+                }
+                Some(existing) => {
+                    let existing_name = existing
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or_default();
+                    let existing_is_failed = existing_name.contains(".failed.");
+                    if prefer_new && existing_is_failed {
+                        modes.by_mode.insert(mode, path);
+                    }
+                }
+            }
         }
     }
     Ok(cases)
@@ -544,6 +559,24 @@ fn case_expectation(path: &Path) -> Option<CaseExpectation> {
 }
 
 fn case_expectation_for_name(name: &str) -> Option<CaseExpectation> {
+    if name.starts_with("fairrg.") {
+        return Some(CaseExpectation {
+            required_non_empty: &["STAGE"],
+            required_equal: &[("FILE", "src/tests.rs"), ("KIND", "search")],
+        });
+    }
+    if name.starts_with("fairfind.") {
+        return Some(CaseExpectation {
+            required_non_empty: &["STAGE"],
+            required_equal: &[("FILE", "src/rollout_stats.rs"), ("COUNT", "15")],
+        });
+    }
+    if name.starts_with("fairbuild.") {
+        return Some(CaseExpectation {
+            required_non_empty: &["STAGE"],
+            required_equal: &[("FILE", "src/lib.rs"), ("COUNT", "0")],
+        });
+    }
     if name.starts_with("rgcase.") {
         return Some(CaseExpectation {
             required_non_empty: &["STAGE", "KIND"],

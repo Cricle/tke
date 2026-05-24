@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="${1:-/root/github/tke}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${1:-$(cd -- "$SCRIPT_DIR/.." && pwd)}"
 TKE_BIN="${TKE_BIN:-$ROOT/target/release/tke}"
 
 python3 - "$ROOT" "$TKE_BIN" <<'PY'
@@ -29,17 +30,20 @@ def try_compare(agent, sources):
     return run_json(args)
 
 
-def load_attempts(agent_dir):
-    root_dir = root / agent_dir
-    if not root_dir.exists():
-        return []
-    out = []
-    for path in sorted(root_dir.glob("*.attempt.json")):
-        try:
-            out.append(json.loads(path.read_text()))
-        except Exception:
+def load_attempts(agent_dirs):
+    out = {}
+    for agent_dir in agent_dirs:
+        root_dir = root / agent_dir
+        if not root_dir.exists():
             continue
-    return out
+        for path in sorted(root_dir.glob("*.attempt.json")):
+            try:
+                item = json.loads(path.read_text())
+            except Exception:
+                continue
+            key = (item.get("name", "-"), item.get("mode", "-"))
+            out[key] = item
+    return [out[key] for key in sorted(out)]
 
 
 benchmark = run_json([str(tke_bin), "benchmark-commands"])
@@ -47,8 +51,8 @@ codex = try_compare(
     "codex",
     [".tmp-codex-e2e", ".tmp-codex-e2e-real", ".tmp-codex-e2e-fair"],
 )
-claude = try_compare("claude", [".tmp-claude-e2e"])
-claude_attempts = load_attempts(".tmp-claude-e2e")
+claude = try_compare("claude", [".tmp-claude-e2e", ".tmp-claude-e2e-fair"])
+claude_attempts = load_attempts([".tmp-claude-e2e", ".tmp-claude-e2e-fair"])
 
 
 def pct(value):
@@ -140,8 +144,8 @@ def collect_variant_rows(report, wanted_modes=None):
                     f"`{case_name}`",
                     f"`{mode}`",
                     correctness,
-                    str(variant["tool_tokens_saved"]),
-                    f"`{variant['verdict']}`",
+                    "-" if correctness == "gateway_error" else str(variant["tool_tokens_saved"]),
+                    "`gateway_error`" if correctness == "gateway_error" else f"`{variant['verdict']}`",
                 ]
             )
     return rows
@@ -171,7 +175,8 @@ def collect_summary_rows(report, wanted_modes=None):
             status = variant["sample"]["correctness"]["status"]
             if status in ("pass", "fail", "gateway_error", "ungraded"):
                 entry[status] += 1
-            entry["tool_tokens_saved"] += variant["tool_tokens_saved"]
+            if status != "gateway_error":
+                entry["tool_tokens_saved"] += variant["tool_tokens_saved"]
     rows = []
     for mode, entry in sorted(totals.items()):
         rows.append(
@@ -292,7 +297,9 @@ if claude:
             "Generated from:",
             "",
             "```bash",
-            "./target/release/tke compare-e2e --agent claude --source .tmp-claude-e2e",
+            "./target/release/tke compare-e2e --agent claude \\",
+            "  --source .tmp-claude-e2e \\",
+            "  --source .tmp-claude-e2e-fair",
             "```",
             "",
             md_table(
@@ -316,10 +323,11 @@ if claude:
     )
 
 if claude_attempts:
-    attempt_rows = []
+    live_attempt_rows = []
     live_probe_rows = []
-    ok_names = []
-    not_ok_names = []
+    live_ok_names = []
+    live_not_ok_names = []
+    fair_attempt_rows = []
     for item in claude_attempts:
         statuses = ",".join(str(status) for status in item.get("error_statuses", [])) or "-"
         name = item.get("name", "-")
@@ -333,20 +341,57 @@ if claude_attempts:
                     statuses,
                 ]
             )
-        if item.get("ok"):
-            ok_names.append(name)
+            if item.get("ok"):
+                live_ok_names.append(name)
+            else:
+                live_not_ok_names.append(name)
+            live_attempt_rows.append(
+                [
+                    f"`{name}`",
+                    f"`{item.get('mode', '-')}`",
+                    "yes" if item.get("ok") else "no",
+                    "yes" if item.get("completed") else "no",
+                    "yes" if item.get("result_is_error") else "no",
+                    statuses,
+                ]
+            )
+        elif name.startswith("compat"):
+            if item.get("ok"):
+                live_ok_names.append(name)
+            else:
+                live_not_ok_names.append(name)
+            live_attempt_rows.append(
+                [
+                    f"`{name}`",
+                    f"`{item.get('mode', '-')}`",
+                    "yes" if item.get("ok") else "no",
+                    "yes" if item.get("completed") else "no",
+                    "yes" if item.get("result_is_error") else "no",
+                    statuses,
+                ]
+            )
+        elif name.startswith("fair"):
+            fair_attempt_rows.append(
+                [
+                    f"`{normalize_case_name(name)}`",
+                    f"`{item.get('mode', '-')}`",
+                    "yes" if item.get("ok") else "no",
+                    "yes" if item.get("completed") else "no",
+                    "yes" if item.get("result_is_error") else "no",
+                    statuses,
+                ]
+            )
         else:
-            not_ok_names.append(name)
-        attempt_rows.append(
-            [
-                f"`{name}`",
-                f"`{item.get('mode', '-')}`",
-                "yes" if item.get("ok") else "no",
-                "yes" if item.get("completed") else "no",
-                "yes" if item.get("result_is_error") else "no",
-                statuses,
-            ]
-        )
+            live_attempt_rows.append(
+                [
+                    f"`{name}`",
+                    f"`{item.get('mode', '-')}`",
+                    "yes" if item.get("ok") else "no",
+                    "yes" if item.get("completed") else "no",
+                    "yes" if item.get("result_is_error") else "no",
+                    statuses,
+                ]
+            )
     benchmarks_md.extend(
         [
             "",
@@ -363,22 +408,34 @@ if claude_attempts:
             "",
             md_table(
                 ["Case", "Mode", "OK", "Completed", "Result error", "Error statuses"],
-                attempt_rows,
+                live_attempt_rows or [["-", "-", "-", "-", "-", "-"]],
             ),
         ]
     )
-    if ok_names or not_ok_names:
+    if fair_attempt_rows:
+        benchmarks_md.extend(
+            [
+                "",
+                "Claude fair-attempt summary:",
+                "",
+                md_table(
+                    ["Case", "Mode", "OK", "Completed", "Result error", "Error statuses"],
+                    fair_attempt_rows,
+                ),
+            ]
+        )
+    if live_ok_names or live_not_ok_names:
         notes = []
-        if ok_names:
+        if live_ok_names:
             notes.append(
                 "Successful live compatibility probes: "
-                + ", ".join(f"`{name}`" for name in sorted(ok_names))
+                + ", ".join(f"`{name}`" for name in sorted(live_ok_names))
                 + "."
             )
-        if not_ok_names:
+        if live_not_ok_names:
             notes.append(
                 "Still unstable or incomplete: "
-                + ", ".join(f"`{name}`" for name in sorted(not_ok_names))
+                + ", ".join(f"`{name}`" for name in sorted(live_not_ok_names))
                 + "."
             )
         benchmarks_md.extend(["", *notes])

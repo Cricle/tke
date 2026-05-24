@@ -2,7 +2,8 @@
 set -euo pipefail
 exec </dev/null
 
-ROOT="${1:-/root/github/tke}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${1:-$(cd -- "$SCRIPT_DIR/.." && pwd)}"
 MODE="${2:-raw}"
 NAME="${3:-findcase}"
 PROMPT_FILE="${4:-}"
