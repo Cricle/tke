@@ -1368,10 +1368,11 @@ fn pathlist_summary_keeps_first_last_and_skips_omitted_ranges() {
     assert_eq!(value["c"], 17);
     assert_eq!(
         value["pl"]["s"],
-        "COUNT=17, FIRST=src/tests.rs, LAST=src/rollout_stats.rs, DIR=src"
+        "COUNT=17, FIRST=tests.rs, LAST=rollout_stats.rs, DIR=src"
     );
-    assert_eq!(value["pl"]["f"], "src/tests.rs");
-    assert_eq!(value["pl"]["l"], "src/rollout_stats.rs");
+    assert_eq!(value["pl"]["d"], "src");
+    assert_eq!(value["pl"]["f"], "tests.rs");
+    assert_eq!(value["pl"]["l"], "rollout_stats.rs");
     assert!(
         value.get("o").is_none() || value["o"].as_array().is_some_and(|items| items.is_empty())
     );
@@ -1415,8 +1416,8 @@ fn pathlist_rollout_haystack_exposes_first_last_and_count() {
         "src/tests.rs",
         "src/rollout_stats.rs",
         "COUNT=17",
-        "FIRST=src/tests.rs",
-        "LAST=src/rollout_stats.rs",
+        "FIRST=tests.rs",
+        "LAST=rollout_stats.rs",
     ] {
         assert!(
             haystack.contains(fragment),

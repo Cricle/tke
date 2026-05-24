@@ -1,5 +1,5 @@
 use crate::app::Config;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 #[derive(Default, Clone, Copy)]
 pub(crate) struct RolloutOutputStats {
@@ -56,11 +56,36 @@ fn collect_json_strings(value: &Value, out: &mut String) {
             }
         }
         Value::Object(map) => {
+            collect_pathlist_expansions(map, out);
             for value in map.values() {
                 collect_json_strings(value, out);
             }
         }
         _ => {}
+    }
+}
+
+fn collect_pathlist_expansions(map: &Map<String, Value>, out: &mut String) {
+    let Some(pathlist) = map.get("pl").and_then(|value| value.as_object()) else {
+        return;
+    };
+    let Some(dir) = pathlist.get("d").and_then(|value| value.as_str()) else {
+        return;
+    };
+
+    for key in ["f", "l"] {
+        let Some(value) = pathlist.get(key).and_then(|value| value.as_str()) else {
+            continue;
+        };
+        if value.contains('/') || value.contains('\\') || dir == "." {
+            continue;
+        }
+        out.push_str(dir);
+        if !dir.ends_with('/') && !dir.ends_with('\\') {
+            out.push('/');
+        }
+        out.push_str(value);
+        out.push('\n');
     }
 }
 

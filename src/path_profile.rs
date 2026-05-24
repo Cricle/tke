@@ -13,6 +13,12 @@ pub(crate) fn collect_path_list_summary(lines: &[&str]) -> Option<PathListSummar
     let same_parent = dominant_parent(&entries);
     let first_full = entries.first().map(|entry| entry.value.clone());
     let last_full = entries.last().map(|entry| entry.value.clone());
+    let first_compact = entries
+        .first()
+        .map(|entry| summarize_entry(entry, same_parent.as_deref()));
+    let last_compact = entries
+        .last()
+        .map(|entry| summarize_entry(entry, same_parent.as_deref()));
     let mut dirs = HashMap::<String, Vec<&PathEntry>>::new();
     for entry in &entries {
         dirs.entry(entry.parent.clone()).or_default().push(entry);
@@ -68,16 +74,16 @@ pub(crate) fn collect_path_list_summary(lines: &[&str]) -> Option<PathListSummar
     let summary_text = build_summary_text(
         entries.len(),
         same_parent.as_deref(),
-        first_full.as_deref(),
-        last_full.as_deref(),
+        first_compact.as_deref(),
+        last_compact.as_deref(),
     );
     if let Some(parent) = same_parent {
         return Some(PathListSummary {
             rc: entries.len(),
             s: Some(summary_text),
             d: Some(parent),
-            f: first_full,
-            l: last_full,
+            f: first_compact,
+            l: last_compact,
             e: compact_examples,
             b: Vec::new(),
             r: Vec::new(),
