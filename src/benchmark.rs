@@ -784,12 +784,14 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
     let diff_pipeline_answer = "The selected stage is git diff, so the normalized payload preserves sc=git and p=diff and keeps the diff file summary instead of raw hunks.";
     let complex_triage_answer = "The combined triage trace preserves find pathlist, rg search, git diff summary, and cargo log summary across four Bash tool invocations.";
     let complex_code_trace_answer = "The combined code-trace preserves file summary, search summary, git diff summary, and cargo log summary across four Bash tool invocations.";
+    let complex_stacktrace_answer = "The combined stacktrace triage preserves python traceback summary, rg search summary, and cargo log summary across three Bash tool invocations.";
     let rtk_hook_find_answer = "The RTK hook sample preserves the same find pathlist-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_search_answer = "The RTK hook sample preserves the same rg search-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_diff_answer = "The RTK hook sample preserves the same git diff-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_build_answer = "The RTK hook sample preserves the same cargo build-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_complex_triage_answer = "The RTK hook triage trace preserves find pathlist, rg search, git diff summary, and cargo log summary across four Bash tool invocations.";
     let rtk_hook_complex_code_trace_answer = "The RTK hook code-trace preserves file summary, search summary, git diff summary, and cargo log summary across four Bash tool invocations.";
+    let rtk_hook_complex_stacktrace_answer = "The RTK hook stacktrace triage preserves python traceback summary, rg search summary, and cargo log summary across three Bash tool invocations.";
     vec![
         BenchmarkTaskSpec {
             name: "codex_api_trace_rollout_savings".to_owned(),
@@ -1171,6 +1173,60 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
             ),
         },
         BenchmarkTaskSpec {
+            name: "claude_bash_trace_complex_stacktrace_task".to_owned(),
+            mode: "api".to_owned(),
+            objective: "Verify that Claude preserves traceback structure, search context, and build-log follow-up across a multi-step debugging flow.".to_owned(),
+            required_fragments: vec![
+                "\"p\":\"stacktrace\"".to_owned(),
+                "\"k\":\"summary\"".to_owned(),
+                "\"k\":\"frame\"".to_owned(),
+                "\"sc\":\"rg\"".to_owned(),
+                "\"sr\":\"search\"".to_owned(),
+                "\"sc\":\"cargo\"".to_owned(),
+                "\"p\":\"log\"".to_owned(),
+                "\"lg\":".to_owned(),
+                complex_stacktrace_answer.to_owned(),
+            ],
+            rollout: build_claude_tool_rollout_steps(
+                &[
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_stacktrace_1".to_owned(),
+                        command: "python script.py".to_owned(),
+                        output: [
+                            "Traceback (most recent call last):",
+                            "  File \"app.py\", line 10, in <module>",
+                            "  File \"svc.py\", line 20, in run",
+                            "ValueError: boom",
+                        ]
+                        .join("\n"),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_stacktrace_2".to_owned(),
+                        command: "rg -n \"ValueError|run|compare-e2e\" src tests".to_owned(),
+                        output: repeated_task_search_output(
+                            &[
+                                "src/tests.rs:208:        \"Traceback (most recent call last):\",",
+                                "src/e2e_report.rs:167:    let rewritten = rewrite_agent_transcript(&raw_text, config)?;",
+                                "src/app.rs:289:        Some(\"compare-e2e\") => parse_compare_e2e(args),",
+                            ],
+                            90,
+                            "src/tests.rs",
+                            "stacktrace_search_trace",
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_stacktrace_3".to_owned(),
+                        command: "cargo test -- --nocapture | tail -n 80".to_owned(),
+                        output: format!(
+                            "{}\nerror: test failed, to rerun pass --lib\nwarning: deprecated assertion helper\n",
+                            repeated_lines("test parser::case ... ok", 120)
+                        ),
+                    },
+                ],
+                complex_stacktrace_answer,
+            ),
+        },
+        BenchmarkTaskSpec {
             name: "claude_rtk_hook_trace_selected_find_stage".to_owned(),
             mode: "api".to_owned(),
             objective: "Verify that the RTK hook path preserves find pathlist-stage semantics for Claude-style hook integrations.".to_owned(),
@@ -1371,6 +1427,60 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
                     },
                 ],
                 rtk_hook_complex_code_trace_answer,
+            ),
+        },
+        BenchmarkTaskSpec {
+            name: "claude_rtk_hook_trace_complex_stacktrace_task".to_owned(),
+            mode: "api".to_owned(),
+            objective: "Verify that the RTK hook path preserves traceback structure, search context, and build-log follow-up across a multi-step debugging flow.".to_owned(),
+            required_fragments: vec![
+                "\"p\":\"stacktrace\"".to_owned(),
+                "\"k\":\"summary\"".to_owned(),
+                "\"k\":\"frame\"".to_owned(),
+                "\"sc\":\"rg\"".to_owned(),
+                "\"sr\":\"search\"".to_owned(),
+                "\"sc\":\"cargo\"".to_owned(),
+                "\"p\":\"log\"".to_owned(),
+                "\"lg\":".to_owned(),
+                rtk_hook_complex_stacktrace_answer.to_owned(),
+            ],
+            rollout: build_claude_tool_rollout_steps(
+                &[
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_stacktrace_1".to_owned(),
+                        command: "python script.py".to_owned(),
+                        output: [
+                            "Traceback (most recent call last):",
+                            "  File \"app.py\", line 10, in <module>",
+                            "  File \"svc.py\", line 20, in run",
+                            "ValueError: boom",
+                        ]
+                        .join("\n"),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_stacktrace_2".to_owned(),
+                        command: "rg -n \"ValueError|run|compare-e2e\" src tests".to_owned(),
+                        output: repeated_task_search_output(
+                            &[
+                                "src/tests.rs:208:        \"Traceback (most recent call last):\",",
+                                "src/e2e_report.rs:167:    let rewritten = rewrite_agent_transcript(&raw_text, config)?;",
+                                "src/app.rs:289:        Some(\"compare-e2e\") => parse_compare_e2e(args),",
+                            ],
+                            90,
+                            "src/tests.rs",
+                            "rtk_stacktrace_search_trace",
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_stacktrace_3".to_owned(),
+                        command: "cargo test -- --nocapture | tail -n 80".to_owned(),
+                        output: format!(
+                            "{}\nerror: test failed, to rerun pass --lib\nwarning: deprecated assertion helper\n",
+                            repeated_lines("test parser::case ... ok", 120)
+                        ),
+                    },
+                ],
+                rtk_hook_complex_stacktrace_answer,
             ),
         },
     ]
