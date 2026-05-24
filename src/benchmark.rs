@@ -793,6 +793,7 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
     let cross_file_causality_answer = "The root cause is in src/tests.rs, not src/e2e_report.rs; both files changed, but sed and cargo tie the failure to claude_answer_consistency_task_rollout_is_rewritten in src/tests.rs while src/e2e_report.rs is only a supporting refactor.";
     let negative_evidence_answer = "The root cause is in src/tests.rs, not src/e2e_report.rs; rg listed both files, but only src/tests.rs contains the failing answer-consistency assertion, while src/e2e_report.rs only contains semantic_result_match and build_variant_verdict helpers.";
     let temporal_causality_answer = "The root cause is in the newer src/tests.rs change, not the older src/e2e_report.rs refactor; rg and sed show the failing assertion in src/tests.rs, git diff shows both files changed, but cargo ties the current failure only to claude_answer_consistency_task_rollout_is_rewritten.";
+    let symbol_collision_answer = "The root cause is in src/tests.rs, not src/e2e_report.rs; both files mention build_variant_verdict, but the failing assertion and the matching file snippet are in src/tests.rs while src/e2e_report.rs only defines the helper.";
     let rtk_hook_find_answer = "The RTK hook sample preserves the same find pathlist-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_search_answer = "The RTK hook sample preserves the same rg search-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_diff_answer = "The RTK hook sample preserves the same git diff-stage metadata and semantic answer fragments for Claude-style hook integrations.";
@@ -808,6 +809,7 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
     let rtk_hook_cross_file_causality_answer = "The RTK hook root cause is still src/tests.rs rather than src/e2e_report.rs; both files changed, but the failing test and the file read still converge on claude_answer_consistency_task_rollout_is_rewritten in src/tests.rs.";
     let rtk_hook_negative_evidence_answer = "The RTK hook root cause is still src/tests.rs rather than src/e2e_report.rs; rg listed both files, but only src/tests.rs contains the failing answer-consistency assertion while src/e2e_report.rs only has helper logic.";
     let rtk_hook_temporal_causality_answer = "The RTK hook root cause is still the newer src/tests.rs change rather than the older src/e2e_report.rs refactor; the current failure is tied to claude_answer_consistency_task_rollout_is_rewritten in src/tests.rs.";
+    let rtk_hook_symbol_collision_answer = "The RTK hook root cause is still src/tests.rs rather than src/e2e_report.rs; both files mention build_variant_verdict, but only src/tests.rs contains the failing assertion tied to the current failure.";
     vec![
         BenchmarkTaskSpec {
             name: "codex_api_trace_rollout_savings".to_owned(),
@@ -1860,6 +1862,75 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
             ),
         },
         BenchmarkTaskSpec {
+            name: "claude_bash_trace_symbol_collision_task".to_owned(),
+            mode: "api".to_owned(),
+            objective: "Verify that Claude can choose the right file when search returns the same symbol name in both a helper file and a failing test file.".to_owned(),
+            required_fragments: vec![
+                "\"sc\":\"find\"".to_owned(),
+                "\"p\":\"pathlist\"".to_owned(),
+                "tests.rs".to_owned(),
+                "e2e_report.rs".to_owned(),
+                "\"sc\":\"rg\"".to_owned(),
+                "\"sr\":\"search\"".to_owned(),
+                "build_variant_verdict".to_owned(),
+                "\"sc\":\"sed\"".to_owned(),
+                "\"p\":\"file\"".to_owned(),
+                "assert_eq!(build_variant_verdict(".to_owned(),
+                "\"sc\":\"cargo\"".to_owned(),
+                "\"p\":\"log\"".to_owned(),
+                "\"lg\":".to_owned(),
+                "FAILED src/tests.rs::build_variant_verdict_prefers_saved_and_correct".to_owned(),
+                symbol_collision_answer.to_owned(),
+            ],
+            rollout: build_claude_tool_rollout_steps(
+                &[
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_symbol_collision_1".to_owned(),
+                        command: "find /root/project/src -maxdepth 1 -type f | sort | head -n 120".to_owned(),
+                        output: repeated_candidate_root_cause_paths(120),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_symbol_collision_2".to_owned(),
+                        command: "rg -n \"build_variant_verdict|build_variant_verdict_prefers_saved_and_correct\" src".to_owned(),
+                        output: repeated_task_search_output(
+                            &[
+                                "src/tests.rs:4330:fn build_variant_verdict_prefers_saved_and_correct() {",
+                                "src/tests.rs:4334:    assert_eq!(build_variant_verdict(true, 12), \"saved_and_correct\");",
+                                "src/e2e_report.rs:167:fn build_variant_verdict(expected_result_match: bool, tool_tokens_saved: isize) -> String {",
+                                "src/e2e_report.rs:174:    if expected_result_match && tool_tokens_saved > 0 {",
+                            ],
+                            120,
+                            "src/tests.rs",
+                            "symbol_collision_search_trace",
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_symbol_collision_3".to_owned(),
+                        command: "sed -n '4328,4342p' src/tests.rs".to_owned(),
+                        output: repeated_task_code_block(
+                            &[
+                                "#[test]",
+                                "fn build_variant_verdict_prefers_saved_and_correct() {",
+                                "    assert_eq!(build_variant_verdict(true, 12), \"saved_and_correct\");",
+                                "    assert_eq!(build_variant_verdict(true, 0), \"correct_but_not_saved\");",
+                                "}",
+                            ],
+                            16,
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_symbol_collision_4".to_owned(),
+                        command: "cargo test --quiet".to_owned(),
+                        output: format!(
+                            "{}\nFAILED src/tests.rs::build_variant_verdict_prefers_saved_and_correct\nerror: test failed, to rerun pass --lib\n",
+                            repeated_lines("test parser::case ... ok", 120)
+                        ),
+                    },
+                ],
+                symbol_collision_answer,
+            ),
+        },
+        BenchmarkTaskSpec {
             name: "claude_rtk_hook_trace_selected_find_stage".to_owned(),
             mode: "api".to_owned(),
             objective: "Verify that the RTK hook path preserves find pathlist-stage semantics for Claude-style hook integrations.".to_owned(),
@@ -2731,6 +2802,75 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
                     },
                 ],
                 rtk_hook_temporal_causality_answer,
+            ),
+        },
+        BenchmarkTaskSpec {
+            name: "claude_rtk_hook_trace_symbol_collision_task".to_owned(),
+            mode: "api".to_owned(),
+            objective: "Verify that the RTK hook path can choose the right file when search returns the same symbol name in both a helper file and a failing test file.".to_owned(),
+            required_fragments: vec![
+                "\"sc\":\"find\"".to_owned(),
+                "\"p\":\"pathlist\"".to_owned(),
+                "tests.rs".to_owned(),
+                "e2e_report.rs".to_owned(),
+                "\"sc\":\"rg\"".to_owned(),
+                "\"sr\":\"search\"".to_owned(),
+                "build_variant_verdict".to_owned(),
+                "\"sc\":\"sed\"".to_owned(),
+                "\"p\":\"file\"".to_owned(),
+                "assert_eq!(build_variant_verdict(".to_owned(),
+                "\"sc\":\"cargo\"".to_owned(),
+                "\"p\":\"log\"".to_owned(),
+                "\"lg\":".to_owned(),
+                "FAILED src/tests.rs::build_variant_verdict_prefers_saved_and_correct".to_owned(),
+                rtk_hook_symbol_collision_answer.to_owned(),
+            ],
+            rollout: build_claude_tool_rollout_steps(
+                &[
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_symbol_collision_1".to_owned(),
+                        command: "find /root/project/src -maxdepth 1 -type f | sort | head -n 120".to_owned(),
+                        output: repeated_candidate_root_cause_paths(120),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_symbol_collision_2".to_owned(),
+                        command: "rg -n \"build_variant_verdict|build_variant_verdict_prefers_saved_and_correct\" src".to_owned(),
+                        output: repeated_task_search_output(
+                            &[
+                                "src/tests.rs:4330:fn build_variant_verdict_prefers_saved_and_correct() {",
+                                "src/tests.rs:4334:    assert_eq!(build_variant_verdict(true, 12), \"saved_and_correct\");",
+                                "src/e2e_report.rs:167:fn build_variant_verdict(expected_result_match: bool, tool_tokens_saved: isize) -> String {",
+                                "src/e2e_report.rs:174:    if expected_result_match && tool_tokens_saved > 0 {",
+                            ],
+                            120,
+                            "src/tests.rs",
+                            "rtk_symbol_collision_search_trace",
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_symbol_collision_3".to_owned(),
+                        command: "sed -n '4328,4342p' src/tests.rs".to_owned(),
+                        output: repeated_task_code_block(
+                            &[
+                                "#[test]",
+                                "fn build_variant_verdict_prefers_saved_and_correct() {",
+                                "    assert_eq!(build_variant_verdict(true, 12), \"saved_and_correct\");",
+                                "    assert_eq!(build_variant_verdict(true, 0), \"correct_but_not_saved\");",
+                                "}",
+                            ],
+                            16,
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_symbol_collision_4".to_owned(),
+                        command: "cargo test --quiet".to_owned(),
+                        output: format!(
+                            "{}\nFAILED src/tests.rs::build_variant_verdict_prefers_saved_and_correct\nerror: test failed, to rerun pass --lib\n",
+                            repeated_lines("test parser::case ... ok", 120)
+                        ),
+                    },
+                ],
+                rtk_hook_symbol_collision_answer,
             ),
         },
     ]

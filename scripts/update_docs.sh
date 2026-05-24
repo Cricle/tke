@@ -181,6 +181,7 @@ comparison_task_specs = [
     ("cross-file-causality", "claude_bash_trace_cross_file_causality_task", "claude_rtk_hook_trace_cross_file_causality_task"),
     ("negative-evidence", "claude_bash_trace_negative_evidence_task", "claude_rtk_hook_trace_negative_evidence_task"),
     ("temporal-causality", "claude_bash_trace_temporal_causality_task", "claude_rtk_hook_trace_temporal_causality_task"),
+    ("symbol-collision", "claude_bash_trace_symbol_collision_task", "claude_rtk_hook_trace_symbol_collision_task"),
 ]
 
 comparison_task_rows = []
