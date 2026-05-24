@@ -17,7 +17,7 @@ pub use app::{
     AppError, Config, Dispatch, benchmark_commands, compare_e2e_command, parse_dispatch,
     print_activate, print_deactivate, run_shim, run_wrapped, usage,
 };
-pub use release::{install_self, package_release};
+pub use release::install_self;
 pub use rollout_io::{capture_interactive, compare_rollout};
 pub use trim::ShellKind;
 

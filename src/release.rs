@@ -1,9 +1,7 @@
 use crate::AppError;
 use std::env;
-use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 pub fn install_self(bin_dir: Option<PathBuf>) -> Result<(), AppError> {
     let exe = env::current_exe()?;
@@ -24,101 +22,6 @@ pub fn install_self(bin_dir: Option<PathBuf>) -> Result<(), AppError> {
         "path_hint": path_hint(&dest_dir),
     });
     println!("{}", serde_json::to_string(&report)?);
-    Ok(())
-}
-
-pub fn package_release(_: &crate::Config) -> Result<(), AppError> {
-    let cwd = env::current_dir()?;
-    let dist = cwd.join("dist");
-    fs::create_dir_all(&dist)?;
-
-    let exe = env::current_exe()?;
-    let release_bin =
-        if exe.ends_with("target/release/tke") || exe.ends_with("target\\release\\tke.exe") {
-            exe
-        } else {
-            cwd.join("target")
-                .join("release")
-                .join(if cfg!(windows) { "tke.exe" } else { "tke" })
-        };
-    if !release_bin.is_file() {
-        return Err(AppError::Usage(format!(
-            "release binary not found at {}",
-            release_bin.display()
-        )));
-    }
-
-    let package_root = dist.join("tke-package");
-    if package_root.exists() {
-        fs::remove_dir_all(&package_root)?;
-    }
-    fs::create_dir_all(&package_root)?;
-    fs::copy(
-        &release_bin,
-        package_root.join(release_bin.file_name().unwrap_or_else(|| OsStr::new("tke"))),
-    )?;
-    fs::copy(cwd.join("README.md"), package_root.join("README.md"))?;
-
-    let archive = dist.join(if cfg!(windows) {
-        "tke-release.zip"
-    } else {
-        "tke-release.tar.gz"
-    });
-    if archive.exists() {
-        fs::remove_file(&archive)?;
-    }
-
-    let status = if cfg!(windows) {
-        Command::new("zip")
-            .arg("-r")
-            .arg(&archive)
-            .arg(".")
-            .current_dir(&package_root)
-            .status()?
-    } else {
-        Command::new("tar")
-            .arg("-czf")
-            .arg(&archive)
-            .arg("-C")
-            .arg(&dist)
-            .arg("tke-package")
-            .status()?
-    };
-    if !status.success() {
-        return Err(AppError::Usage(
-            "failed to create release archive".to_owned(),
-        ));
-    }
-
-    let sha = sha256_file(&archive)?;
-    let checksum_path = archive.with_extension(format!(
-        "{}sha256",
-        archive
-            .extension()
-            .and_then(|ext| ext.to_str())
-            .map(|ext| format!("{ext}."))
-            .unwrap_or_default()
-    ));
-    fs::write(
-        &checksum_path,
-        format!(
-            "{sha}  {}\n",
-            archive
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("archive")
-        ),
-    )?;
-
-    println!(
-        "{}",
-        serde_json::to_string(&serde_json::json!({
-            "v": 1,
-            "archive": archive.display().to_string(),
-            "sha256_file": checksum_path.display().to_string(),
-            "sha256": sha
-        }))?
-    );
     Ok(())
 }
 
@@ -184,20 +87,4 @@ fn path_hint(bin_dir: &Path) -> String {
             bin_dir.display()
         )
     }
-}
-
-fn sha256_file(path: &Path) -> Result<String, AppError> {
-    let output = Command::new("sha256sum").arg(path).output()?;
-    if !output.status.success() {
-        return Err(AppError::Usage(format!(
-            "failed to compute sha256 for {}",
-            path.display()
-        )));
-    }
-    let text = String::from_utf8_lossy(&output.stdout);
-    Ok(text
-        .split_whitespace()
-        .next()
-        .unwrap_or_default()
-        .to_owned())
 }

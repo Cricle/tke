@@ -2,6 +2,8 @@
 
 Local token shaving shim for AI coding CLIs.
 
+More detailed benchmark and real E2E notes live under [docs/README.md](./docs/README.md).
+
 ## What it does
 
 - Runs as a `Rust` binary with minimal dependencies.
@@ -72,7 +74,6 @@ tke deactivate
 tke capture-interactive [--source PATH] [--output PATH]
 tke compare-rollout [--source PATH]
 tke benchmark-commands [--check]
-tke package-release
 ```
 
 `tke <agent> ...` is the recommended low-friction entrypoint. It wraps a single agent launch without requiring `eval` or shell state changes.
@@ -114,6 +115,7 @@ Examples:
 tke compare-e2e
 tke compare-e2e --agent claude
 tke compare-e2e --source .tmp-claude-e2e --source .tmp-codex-e2e
+bash scripts/codex_real_suite.sh /root/github/tke
 ```
 
 `benchmark-commands` runs a built-in benchmark suite for the default high-frequency command families that `tke` optimizes, including code reading, search, path discovery, table/list output, diff, and build/test logs. It also includes fixed "real codex task" rollout benchmarks that simulate multi-step agent work on the same objective, and scans local rollout corpus files such as `.tmp-*.jsonl` and `.tke/interactive/*.jsonl`. The output is a JSON summary of byte and approximate token savings.
@@ -159,8 +161,6 @@ Practical interpretation:
 - built-in codex task rollouts must also clear a minimum savings bar and preserve required result fragments
 - `pass_through` cases must remain unchanged
 - rewritten corpus cases must not rewrite for negligible gain
-
-`package-release` creates a local release archive under `dist/` and writes a sibling SHA-256 checksum file.
 
 ## CI and Release
 

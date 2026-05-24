@@ -2,8 +2,8 @@ use std::env;
 use std::process;
 use tke::{
     AppError, Config, Dispatch, benchmark_commands, capture_interactive, compare_e2e_command,
-    compare_rollout, install_self, package_release, parse_dispatch, print_activate,
-    print_deactivate, run_shim, run_wrapped, usage,
+    compare_rollout, install_self, parse_dispatch, print_activate, print_deactivate, run_shim,
+    run_wrapped, usage,
 };
 
 fn main() {
@@ -48,7 +48,6 @@ fn run() -> Result<(), AppError> {
         Dispatch::CompareRollout { source } => compare_rollout(source, &config),
         Dispatch::CompareE2e { sources, agent } => compare_e2e_command(sources, agent, &config),
         Dispatch::BenchmarkCommands { check } => benchmark_commands(&config, check),
-        Dispatch::PackageRelease => package_release(&config),
         Dispatch::Shim { name, args } | Dispatch::ShimExec { name, args } => {
             let code = run_shim(&name, &args, &config)?;
             process::exit(code);

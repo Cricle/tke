@@ -242,7 +242,6 @@ pub enum Dispatch {
     BenchmarkCommands {
         check: bool,
     },
-    PackageRelease,
     Shim {
         name: String,
         args: Vec<String>,
@@ -289,7 +288,6 @@ pub fn parse_dispatch(argv0: &str, args: Vec<String>) -> Result<Dispatch, AppErr
         Some("compare-rollout") => parse_compare_rollout(args),
         Some("compare-e2e") => parse_compare_e2e(args),
         Some("benchmark-commands") => parse_benchmark_commands(args),
-        Some("package-release") => Ok(Dispatch::PackageRelease),
         Some("shim") => parse_shim_exec(args),
         Some(other) => Err(AppError::Usage(format!(
             "unknown subcommand `{other}`\n\n{}",
@@ -313,7 +311,6 @@ pub fn usage() -> String {
         "  tke compare-rollout [--source PATH]",
         "  tke compare-e2e [--source DIR]... [--agent codex|claude]",
         "  tke benchmark-commands [--check]",
-        "  tke package-release",
         "",
         "Examples:",
         "  tke install",
@@ -328,7 +325,6 @@ pub fn usage() -> String {
         "  tke compare-rollout",
         "  tke compare-e2e",
         "  tke benchmark-commands",
-        "  tke package-release",
     ]
     .join("\n")
 }
