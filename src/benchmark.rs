@@ -792,6 +792,7 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
     let misleading_signal_answer = "The root cause is still in src/tests.rs, not src/e2e_report.rs; the warning in src/e2e_report.rs is only a noisy clue, while rg, sed, git diff, and the failing cargo test all converge on claude_answer_consistency_task_rollout_is_rewritten in src/tests.rs.";
     let cross_file_causality_answer = "The root cause is in src/tests.rs, not src/e2e_report.rs; both files changed, but sed and cargo tie the failure to claude_answer_consistency_task_rollout_is_rewritten in src/tests.rs while src/e2e_report.rs is only a supporting refactor.";
     let negative_evidence_answer = "The root cause is in src/tests.rs, not src/e2e_report.rs; rg listed both files, but only src/tests.rs contains the failing answer-consistency assertion, while src/e2e_report.rs only contains semantic_result_match and build_variant_verdict helpers.";
+    let temporal_causality_answer = "The root cause is in the newer src/tests.rs change, not the older src/e2e_report.rs refactor; rg and sed show the failing assertion in src/tests.rs, git diff shows both files changed, but cargo ties the current failure only to claude_answer_consistency_task_rollout_is_rewritten.";
     let rtk_hook_find_answer = "The RTK hook sample preserves the same find pathlist-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_search_answer = "The RTK hook sample preserves the same rg search-stage metadata and semantic answer fragments for Claude-style hook integrations.";
     let rtk_hook_diff_answer = "The RTK hook sample preserves the same git diff-stage metadata and semantic answer fragments for Claude-style hook integrations.";
@@ -806,6 +807,7 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
     let rtk_hook_misleading_signal_answer = "The RTK hook root cause is still src/tests.rs rather than src/e2e_report.rs; the e2e_report warning is weaker evidence than the rg, sed, diff, and cargo test failure tied to claude_answer_consistency_task_rollout_is_rewritten.";
     let rtk_hook_cross_file_causality_answer = "The RTK hook root cause is still src/tests.rs rather than src/e2e_report.rs; both files changed, but the failing test and the file read still converge on claude_answer_consistency_task_rollout_is_rewritten in src/tests.rs.";
     let rtk_hook_negative_evidence_answer = "The RTK hook root cause is still src/tests.rs rather than src/e2e_report.rs; rg listed both files, but only src/tests.rs contains the failing answer-consistency assertion while src/e2e_report.rs only has helper logic.";
+    let rtk_hook_temporal_causality_answer = "The RTK hook root cause is still the newer src/tests.rs change rather than the older src/e2e_report.rs refactor; the current failure is tied to claude_answer_consistency_task_rollout_is_rewritten in src/tests.rs.";
     vec![
         BenchmarkTaskSpec {
             name: "codex_api_trace_rollout_savings".to_owned(),
@@ -1775,6 +1777,89 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
             ),
         },
         BenchmarkTaskSpec {
+            name: "claude_bash_trace_temporal_causality_task".to_owned(),
+            mode: "api".to_owned(),
+            objective: "Verify that Claude can distinguish the newer failing change from an older unrelated refactor when both files appear in the diff.".to_owned(),
+            required_fragments: vec![
+                "\"sc\":\"find\"".to_owned(),
+                "\"p\":\"pathlist\"".to_owned(),
+                "tests.rs".to_owned(),
+                "e2e_report.rs".to_owned(),
+                "\"sc\":\"rg\"".to_owned(),
+                "\"sr\":\"search\"".to_owned(),
+                "claude_answer_consistency_task_rollout_is_rewritten".to_owned(),
+                "\"sc\":\"sed\"".to_owned(),
+                "\"p\":\"file\"".to_owned(),
+                "fn claude_answer_consistency_task_rollout_is_rewritten()".to_owned(),
+                "\"sc\":\"git\"".to_owned(),
+                "\"p\":\"diff\"".to_owned(),
+                "\"p\":\"src/tests.rs\"".to_owned(),
+                "\"p\":\"src/e2e_report.rs\"".to_owned(),
+                "\"sc\":\"cargo\"".to_owned(),
+                "\"p\":\"log\"".to_owned(),
+                "\"lg\":".to_owned(),
+                "FAILED src/tests.rs::claude_answer_consistency_task_rollout_is_rewritten".to_owned(),
+                temporal_causality_answer.to_owned(),
+            ],
+            rollout: build_claude_tool_rollout_steps(
+                &[
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_temporal_causality_1".to_owned(),
+                        command: "find /root/project/src -maxdepth 1 -type f | sort | head -n 120".to_owned(),
+                        output: repeated_candidate_root_cause_paths(120),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_temporal_causality_2".to_owned(),
+                        command: "rg -n \"claude_answer_consistency_task_rollout_is_rewritten|semantic_result_match|build_variant_verdict\" src".to_owned(),
+                        output: repeated_task_search_output(
+                            &[
+                                "src/tests.rs:4201:fn claude_answer_consistency_task_rollout_is_rewritten() {",
+                                "src/e2e_report.rs:167:fn build_variant_verdict(expected_result_match: bool, tool_tokens_saved: isize) -> String {",
+                                "src/e2e_report.rs:194:fn semantic_result_match(baseline: &Sample, variant: &Sample, strict: bool) -> bool {",
+                            ],
+                            120,
+                            "src/tests.rs",
+                            "temporal_causality_search_trace",
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_temporal_causality_3".to_owned(),
+                        command: "sed -n '4198,4246p' src/tests.rs".to_owned(),
+                        output: repeated_task_code_block(
+                            &[
+                                "#[test]",
+                                "fn claude_answer_consistency_task_rollout_is_rewritten() {",
+                                "    let task = benchmark_task_specs()",
+                                "        .into_iter()",
+                                "        .find(|task| task.name == \"claude_bash_trace_answer_consistency_task\")",
+                                "        .expect(\"claude answer consistency task\");",
+                                "    assert!(haystack.contains(\"failing test signal\"));",
+                                "}",
+                            ],
+                            14,
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_temporal_causality_4".to_owned(),
+                        command: "git diff -- src/e2e_report.rs src/tests.rs".to_owned(),
+                        output: repeated_benchmark_multi_file_diff(&[
+                            ("src/e2e_report.rs", "older_refactor_case"),
+                            ("src/tests.rs", "newer_failure_case"),
+                        ]),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_task_temporal_causality_5".to_owned(),
+                        command: "cargo test --quiet".to_owned(),
+                        output: format!(
+                            "{}\nwarning: older refactor in src/e2e_report.rs predates this failure\nFAILED src/tests.rs::claude_answer_consistency_task_rollout_is_rewritten\nerror: test failed, to rerun pass --lib\n",
+                            repeated_lines("test parser::case ... ok", 120)
+                        ),
+                    },
+                ],
+                temporal_causality_answer,
+            ),
+        },
+        BenchmarkTaskSpec {
             name: "claude_rtk_hook_trace_selected_find_stage".to_owned(),
             mode: "api".to_owned(),
             objective: "Verify that the RTK hook path preserves find pathlist-stage semantics for Claude-style hook integrations.".to_owned(),
@@ -2563,6 +2648,89 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
                     },
                 ],
                 rtk_hook_negative_evidence_answer,
+            ),
+        },
+        BenchmarkTaskSpec {
+            name: "claude_rtk_hook_trace_temporal_causality_task".to_owned(),
+            mode: "api".to_owned(),
+            objective: "Verify that the RTK hook path can distinguish the newer failing change from an older unrelated refactor when both files appear in the diff.".to_owned(),
+            required_fragments: vec![
+                "\"sc\":\"find\"".to_owned(),
+                "\"p\":\"pathlist\"".to_owned(),
+                "tests.rs".to_owned(),
+                "e2e_report.rs".to_owned(),
+                "\"sc\":\"rg\"".to_owned(),
+                "\"sr\":\"search\"".to_owned(),
+                "claude_answer_consistency_task_rollout_is_rewritten".to_owned(),
+                "\"sc\":\"sed\"".to_owned(),
+                "\"p\":\"file\"".to_owned(),
+                "fn claude_answer_consistency_task_rollout_is_rewritten()".to_owned(),
+                "\"sc\":\"git\"".to_owned(),
+                "\"p\":\"diff\"".to_owned(),
+                "\"p\":\"src/tests.rs\"".to_owned(),
+                "\"p\":\"src/e2e_report.rs\"".to_owned(),
+                "\"sc\":\"cargo\"".to_owned(),
+                "\"p\":\"log\"".to_owned(),
+                "\"lg\":".to_owned(),
+                "FAILED src/tests.rs::claude_answer_consistency_task_rollout_is_rewritten".to_owned(),
+                rtk_hook_temporal_causality_answer.to_owned(),
+            ],
+            rollout: build_claude_tool_rollout_steps(
+                &[
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_temporal_causality_1".to_owned(),
+                        command: "find /root/project/src -maxdepth 1 -type f | sort | head -n 120".to_owned(),
+                        output: repeated_candidate_root_cause_paths(120),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_temporal_causality_2".to_owned(),
+                        command: "rg -n \"claude_answer_consistency_task_rollout_is_rewritten|semantic_result_match|build_variant_verdict\" src".to_owned(),
+                        output: repeated_task_search_output(
+                            &[
+                                "src/tests.rs:4201:fn claude_answer_consistency_task_rollout_is_rewritten() {",
+                                "src/e2e_report.rs:167:fn build_variant_verdict(expected_result_match: bool, tool_tokens_saved: isize) -> String {",
+                                "src/e2e_report.rs:194:fn semantic_result_match(baseline: &Sample, variant: &Sample, strict: bool) -> bool {",
+                            ],
+                            120,
+                            "src/tests.rs",
+                            "rtk_temporal_causality_search_trace",
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_temporal_causality_3".to_owned(),
+                        command: "sed -n '4198,4246p' src/tests.rs".to_owned(),
+                        output: repeated_task_code_block(
+                            &[
+                                "#[test]",
+                                "fn claude_answer_consistency_task_rollout_is_rewritten() {",
+                                "    let task = benchmark_task_specs()",
+                                "        .into_iter()",
+                                "        .find(|task| task.name == \"claude_bash_trace_answer_consistency_task\")",
+                                "        .expect(\"claude answer consistency task\");",
+                                "    assert!(haystack.contains(\"failing test signal\"));",
+                                "}",
+                            ],
+                            14,
+                        ),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_temporal_causality_4".to_owned(),
+                        command: "git diff -- src/e2e_report.rs src/tests.rs".to_owned(),
+                        output: repeated_benchmark_multi_file_diff(&[
+                            ("src/e2e_report.rs", "older_refactor_case"),
+                            ("src/tests.rs", "newer_failure_case"),
+                        ]),
+                    },
+                    BenchmarkTaskStep {
+                        call_id: "claude_rtk_hook_task_temporal_causality_5".to_owned(),
+                        command: "cargo test --quiet".to_owned(),
+                        output: format!(
+                            "{}\nwarning: older refactor in src/e2e_report.rs predates this failure\nFAILED src/tests.rs::claude_answer_consistency_task_rollout_is_rewritten\nerror: test failed, to rerun pass --lib\n",
+                            repeated_lines("test parser::case ... ok", 120)
+                        ),
+                    },
+                ],
+                rtk_hook_temporal_causality_answer,
             ),
         },
     ]
