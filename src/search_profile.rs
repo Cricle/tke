@@ -69,13 +69,16 @@ fn collect_grouped_search_chunks(lines: &[&str], max_matches: usize) -> Vec<Matc
         let mut kept = rows
             .iter()
             .take(3)
-            .map(|(_, line)| line.clone())
+            .enumerate()
+            .map(|(idx, (_, line))| compact_grouped_search_line(idx, line))
             .collect::<Vec<_>>();
         if rows.len() > 3
             && let Some((_, last)) = rows.last()
-            && kept.last() != Some(last)
         {
-            kept.push(last.clone());
+            let last_compact = compact_grouped_search_line(kept.len(), last);
+            if kept.last() != Some(&last_compact) {
+                kept.push(last_compact);
+            }
         }
         let start = rows.first().map(|(idx, _)| *idx).unwrap_or(0);
         let end = rows.last().map(|(idx, _)| idx + 1).unwrap_or(start + 1);
@@ -90,6 +93,16 @@ fn collect_grouped_search_chunks(lines: &[&str], max_matches: usize) -> Vec<Matc
         });
     }
     out
+}
+
+fn compact_grouped_search_line(index: usize, line: &str) -> String {
+    if index == 0 {
+        return line.to_owned();
+    }
+    let Some((_, rest)) = parse_search_result_line(line) else {
+        return line.to_owned();
+    };
+    format!(":{rest}")
 }
 
 fn parse_search_result_line(line: &str) -> Option<(String, String)> {

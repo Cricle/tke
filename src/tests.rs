@@ -238,6 +238,52 @@ fn search_profile_groups_results_by_file() {
     let value = value_from_json(&json);
     let chunks = value["m"].as_array().expect("matches");
     assert!(chunks.iter().any(|chunk| chunk["k"] == "file"));
+    let file_chunk = chunks
+        .iter()
+        .find(|chunk| chunk["k"] == "file")
+        .expect("file chunk");
+    let lines = file_chunk["l"].as_array().expect("chunk lines");
+    assert_eq!(
+        lines[0].as_str().expect("first line"),
+        "src/lib.rs:1:pub fn alpha_0() {}"
+    );
+    assert!(
+        lines[1].as_str().expect("second line").starts_with(":"),
+        "expected compact grouped line"
+    );
+}
+
+#[test]
+fn search_profile_compacts_repeated_file_prefixes_after_first_line() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "src/lib.rs:10:pub fn alpha() {}",
+        "src/lib.rs:11:pub fn beta() {}",
+        "src/lib.rs:12:pub fn gamma() {}",
+        "src/main.rs:5:pub fn run() {}",
+    ]
+    .join("\n");
+    let json = normalize_text(
+        "rg",
+        &["fn".to_owned()],
+        "stdout",
+        CommandKind::Search,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&json);
+    let chunks = value["m"].as_array().expect("matches");
+    let file_chunk = chunks
+        .iter()
+        .find(|chunk| chunk["k"] == "file")
+        .expect("file chunk");
+    let lines = file_chunk["l"].as_array().expect("chunk lines");
+    assert_eq!(lines.len(), 3);
+    assert_eq!(lines[0], "src/lib.rs:10:pub fn alpha() {}");
+    assert_eq!(lines[1], ":11:pub fn beta() {}");
+    assert_eq!(lines[2], ":12:pub fn gamma() {}");
 }
 
 #[test]
