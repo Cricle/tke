@@ -101,6 +101,8 @@ Current evidence:
 
 If the comparison standard is "which implementation gives this repo the stronger local compression primitive and the stronger current Codex result," the answer is already `tke`.
 
+The generated source-of-truth table for this section now lives in [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:52), so the evidence summary can be refreshed together with the benchmark artifacts instead of drifting as a hand-maintained note.
+
 ## Current Structured Advantage
 
 The current gap is not just aggregate token savings. `tke` now exposes explicit per-profile local summaries that can be replayed, inspected, and expanded inside this repo:

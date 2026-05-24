@@ -65,6 +65,36 @@ Built-in rollout/task benchmarks:
 | `claude_rtk_hook_trace_complex_triage_task` | api | 14972 | 968 | 14004 | 93.5% |
 | `claude_rtk_hook_trace_complex_code_trace_task` | api | 7682 | 1049 | 6633 | 86.3% |
 
+## Why TKE Is Better Today
+
+This section is generated from the current benchmark and E2E artifacts. The claim is intentionally narrow: it records where the current repo evidence already favors `tke` directly.
+
+| Evidence area | `tke` result | `rtk` result in this repo | Why this matters |
+| --- | --- | --- | --- |
+| Built-in local compression benchmarks | `33/34` cases, `57724` tokens saved, `91.0%` | No equivalent repo-local tool-output benchmark runner in this repo | `tke` can be measured locally and repeatedly without depending on agent compliance |
+| Built-in rollout/task traces | `17` traces, `88903` tokens saved, `91.3%` | RTK participates only through the fairness/synthetic harness subset wired here | `tke` has broader measured coverage inside the repo |
+| Codex real E2E | `4/4` pass, `6257` tool tokens saved | `0/2` pass, `11` token delta | Current real Codex evidence favors `tke` clearly |
+| Structured output surface | `pathlist`, `search`, `diff`, `log`, `table`, and `file` profiles emit inspectable `__TKE__{...}` summaries | No equivalent repo-local structured envelope | `tke` gives a concrete artifact that tooling can compare and audit |
+| Claude stable synthetic traces | `34831` tokens saved at `91.5%` | `34692` tokens saved at `91.8%` | `tke` is slightly ahead on absolute token savings even where `rtk-hook` is slightly ahead on ratio |
+
+Current built-in totals:
+
+| Scope | Cases | Tokens saved | Savings ratio |
+| --- | --- | --- | --- |
+| Default compress benchmarks | 33 | 57724 | 91.0% |
+| Built-in rollout/task traces | 17 | 88903 | 91.3% |
+
+Per-profile compression totals:
+
+| Profile | Cases | Tokens saved | Savings ratio |
+| --- | --- | --- | --- |
+| `diff` | 1 | 3459 | 93.7% |
+| `file` | 9 | 5468 | 78.1% |
+| `log` | 12 | 6947 | 74.4% |
+| `pathlist` | 6 | 36421 | 98.5% |
+| `search` | 2 | 4060 | 89.9% |
+| `table` | 3 | 1369 | 71.5% |
+
 Claude-oriented stable synthetic summary:
 
 | Path | Raw tokens | Rewritten tokens | Tokens saved | Savings | Fragments kept |
