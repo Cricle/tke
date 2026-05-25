@@ -4458,6 +4458,32 @@ fn python_path_output_uses_pathlist_profile() {
 }
 
 #[test]
+fn python_bare_identifier_list_does_not_use_pathlist_profile() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "agent_job_items",
+        "agent_jobs",
+        "jobs",
+        "logs",
+        "stage1_outputs",
+        "threads",
+    ]
+    .join("\n");
+    let normalized = normalize_text(
+        "python3",
+        &["script.py".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_ne!(value["p"], "pathlist");
+}
+
+#[test]
 fn python_table_output_uses_table_profile() {
     let mut cfg = Config::default();
     cfg.min_trim_bytes = 1;

@@ -999,6 +999,7 @@ pub(crate) fn select_profile(
     kind: CommandKind,
     lines: &[&str],
 ) -> TrimProfile {
+    let is_python_command = matches!(name, "python" | "python3");
     if name == "git"
         && args.first().map(String::as_str) == Some("status")
         && collect_git_status_summary(lines).is_some()
@@ -1008,8 +1009,12 @@ pub(crate) fn select_profile(
     if looks_like_json_document(name, lines) {
         return TrimProfile::Json;
     }
-    if matches!(name, "python" | "python3") {
-        if looks_like_path_list(lines) {
+    if is_python_command {
+        if looks_like_path_list(lines)
+            && lines
+                .iter()
+                .any(|line| has_explicit_path_signal(line.trim()))
+        {
             return TrimProfile::PathList;
         }
         if looks_like_table(lines) {
@@ -1022,7 +1027,7 @@ pub(crate) fn select_profile(
     if looks_like_stacktrace(lines) {
         return TrimProfile::Stacktrace;
     }
-    if looks_like_path_list(lines) {
+    if !is_python_command && looks_like_path_list(lines) {
         return TrimProfile::PathList;
     }
     if looks_like_table(lines) {
@@ -1169,6 +1174,19 @@ fn looks_like_json_document(name: &str, lines: &[&str]) -> bool {
     }
     let text = lines.join("\n");
     json_payload_text_for_command(name, &text).is_some()
+}
+
+fn has_explicit_path_signal(line: &str) -> bool {
+    if line.is_empty() {
+        return false;
+    }
+    line.starts_with('/')
+        || line.starts_with("./")
+        || line.starts_with("../")
+        || line.starts_with(".\\")
+        || line.starts_with("..\\")
+        || line.contains('/')
+        || line.contains('\\')
 }
 
 fn json_payload_text_for_command<'a>(name: &str, text: &'a str) -> Option<&'a str> {
