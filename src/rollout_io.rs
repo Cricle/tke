@@ -241,7 +241,7 @@ pub fn build_usage_stats_report(
         bytes_saved,
         bytes_saved_ratio: ratio(bytes_saved, raw_bytes),
         days: daily_usage_rows(&reports),
-        groups: usage_group_rows(&reports, group_by),
+        groups: usage_group_rows(&reports, &filter, group_by),
     })
 }
 
@@ -583,6 +583,7 @@ fn select_breakdown_pair(
 
 fn usage_group_rows(
     reports: &[RolloutCompareReport],
+    filter: &UsageStatsFilter,
     group_by: UsageStatsGroupBy,
 ) -> Vec<UsageStatsGroupReport> {
     let mut grouped = BTreeMap::<String, (usize, usize, usize, usize, usize, usize)>::new();
@@ -593,8 +594,8 @@ fn usage_group_rows(
                 item.raw_detail.total,
                 item.rewritten_detail.total,
             )],
-            UsageStatsGroupBy::Profile => report_record_rows(item, true),
-            UsageStatsGroupBy::Command => report_record_rows(item, false),
+            UsageStatsGroupBy::Profile => report_record_rows(item, filter, true),
+            UsageStatsGroupBy::Command => report_record_rows(item, filter, false),
         };
         for (key, raw, rewritten) in rows {
             let entry = grouped.entry(key).or_insert((0, 0, 0, 0, 0, 0));
@@ -640,11 +641,19 @@ fn usage_group_rows(
                 }
             },
         )
+        .filter(|row| {
+            if matches!(group_by, UsageStatsGroupBy::Day) {
+                true
+            } else {
+                row.tokens_saved != 0 || row.bytes_saved != 0
+            }
+        })
         .collect()
 }
 
 fn report_record_rows(
     report: &RolloutCompareReport,
+    filter: &UsageStatsFilter,
     by_profile: bool,
 ) -> Vec<(
     String,
@@ -653,7 +662,7 @@ fn report_record_rows(
 )> {
     let mut raw = BTreeMap::<String, crate::rollout_stats::RolloutOutputStats>::new();
     let mut rewritten = BTreeMap::<String, crate::rollout_stats::RolloutOutputStats>::new();
-    for (key, raw_stats, rewritten_stats) in paired_record_rows(report, by_profile) {
+    for (key, raw_stats, rewritten_stats) in paired_record_rows(report, filter, by_profile) {
         let raw_entry = raw.entry(key.clone()).or_default();
         raw_entry.fields += raw_stats.fields;
         raw_entry.bytes += raw_stats.bytes;
@@ -709,6 +718,7 @@ fn filtered_pair_stats(
 
 fn paired_record_rows(
     report: &RolloutCompareReport,
+    filter: &UsageStatsFilter,
     by_profile: bool,
 ) -> Vec<(
     String,
@@ -717,6 +727,11 @@ fn paired_record_rows(
 )> {
     paired_record_rows_with_meta(report)
         .into_iter()
+        .filter(|(profile, command, _, _)| match filter {
+            UsageStatsFilter::None => true,
+            UsageStatsFilter::Profile(value) => profile == value,
+            UsageStatsFilter::Command(value) => command == value,
+        })
         .map(|(profile, command, raw, rewritten)| {
             (if by_profile { profile } else { command }, raw, rewritten)
         })
