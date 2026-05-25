@@ -79,6 +79,8 @@ pub struct UsageStatsReport {
     groups: Vec<UsageStatsGroupReport>,
     top_profiles: Vec<UsageStatsGroupReport>,
     top_commands: Vec<UsageStatsGroupReport>,
+    bottom_profiles: Vec<UsageStatsGroupReport>,
+    bottom_commands: Vec<UsageStatsGroupReport>,
 }
 
 #[derive(Serialize)]
@@ -137,6 +139,7 @@ impl UsageStatsGroupBy {
 pub enum UsageStatsSortBy {
     Saved,
     Ratio,
+    LowRatio,
     Samples,
 }
 
@@ -145,6 +148,7 @@ impl UsageStatsSortBy {
         match self {
             Self::Saved => "saved",
             Self::Ratio => "ratio",
+            Self::LowRatio => "low-ratio",
             Self::Samples => "samples",
         }
     }
@@ -287,6 +291,20 @@ pub fn build_usage_stats_report(
         groups: usage_group_rows(&reports, filter, group_by, top, sort_by),
         top_profiles: usage_group_rows(&reports, filter, UsageStatsGroupBy::Profile, top, sort_by),
         top_commands: usage_group_rows(&reports, filter, UsageStatsGroupBy::Command, top, sort_by),
+        bottom_profiles: usage_group_rows(
+            &reports,
+            filter,
+            UsageStatsGroupBy::Profile,
+            top,
+            UsageStatsSortBy::LowRatio,
+        ),
+        bottom_commands: usage_group_rows(
+            &reports,
+            filter,
+            UsageStatsGroupBy::Command,
+            top,
+            UsageStatsSortBy::LowRatio,
+        ),
     })
 }
 
@@ -534,6 +552,8 @@ fn print_usage_stats_report(report: &UsageStatsReport) -> Result<(), AppError> {
         for (label, groups) in [
             ("Top profiles", &report.top_profiles),
             ("Top commands", &report.top_commands),
+            ("Bottom profiles", &report.bottom_profiles),
+            ("Bottom commands", &report.bottom_commands),
         ] {
             if groups.is_empty() {
                 continue;
@@ -742,6 +762,12 @@ fn sort_usage_groups(rows: &mut [UsageStatsGroupReport], sort_by: UsageStatsSort
             .tokens_saved_ratio
             .total_cmp(&a.tokens_saved_ratio)
             .then_with(|| b.tokens_saved.cmp(&a.tokens_saved))
+            .then_with(|| a.key.cmp(&b.key)),
+        UsageStatsSortBy::LowRatio => a
+            .tokens_saved_ratio
+            .total_cmp(&b.tokens_saved_ratio)
+            .then_with(|| a.tokens_saved.cmp(&b.tokens_saved))
+            .then_with(|| b.samples.cmp(&a.samples))
             .then_with(|| a.key.cmp(&b.key)),
         UsageStatsSortBy::Samples => b
             .samples

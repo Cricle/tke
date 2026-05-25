@@ -376,7 +376,7 @@ pub fn usage() -> String {
         "  tke deactivate",
         "  tke capture-interactive [--source PATH] [--output PATH]",
         "  tke compare-rollout [--source PATH]",
-        "  tke stats [--source PATH]... [--limit N] [--profile NAME] [--command NAME] [--by day|profile|command] [--changed-only] [--top N] [--sort saved|ratio|samples] [--json]",
+        "  tke stats [--source PATH]... [--limit N] [--profile NAME] [--command NAME] [--by day|profile|command] [--changed-only] [--top N] [--sort saved|ratio|low-ratio|samples] [--json]",
         "  tke compare-e2e [--source DIR]... [--agent codex|claude]",
         "  tke benchmark-commands [--check]",
         "",
@@ -396,6 +396,7 @@ pub fn usage() -> String {
         "  tke stats --json --limit 10",
         "  tke stats --profile pathlist --by command",
         "  tke stats --changed-only --top 8 --sort ratio",
+        "  tke stats --by command --sort low-ratio",
         "  tke compare-e2e",
         "  tke benchmark-commands",
     ]
@@ -746,6 +747,7 @@ fn parse_stats(args: Vec<String>) -> Result<Dispatch, AppError> {
                 sort_by = match value.as_str() {
                     "saved" => UsageStatsSortBy::Saved,
                     "ratio" => UsageStatsSortBy::Ratio,
+                    "low-ratio" => UsageStatsSortBy::LowRatio,
                     "samples" => UsageStatsSortBy::Samples,
                     _ => {
                         return Err(AppError::Usage(format!(

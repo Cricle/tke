@@ -2499,6 +2499,37 @@ fn parse_stats_dispatch_with_changed_only_top_and_sort() {
 }
 
 #[test]
+fn parse_stats_dispatch_with_low_ratio_sort() {
+    let dispatch = parse_dispatch(
+        "tke",
+        vec![
+            "tke".to_owned(),
+            "stats".to_owned(),
+            "--by".to_owned(),
+            "command".to_owned(),
+            "--sort".to_owned(),
+            "low-ratio".to_owned(),
+        ],
+    )
+    .expect("dispatch");
+    match dispatch {
+        Dispatch::Stats {
+            group_by, sort_by, ..
+        } => {
+            assert!(matches!(
+                group_by,
+                crate::rollout_io::UsageStatsGroupBy::Command
+            ));
+            assert!(matches!(
+                sort_by,
+                crate::rollout_io::UsageStatsSortBy::LowRatio
+            ));
+        }
+        other => panic!("unexpected dispatch: {other:?}"),
+    }
+}
+
+#[test]
 fn detailed_rollout_stats_track_profile_breakdown() {
     let mut cfg = Config::default();
     cfg.min_trim_bytes = 1;
@@ -2587,6 +2618,16 @@ fn usage_stats_report_includes_top_profiles_and_commands() {
     );
     assert!(
         value["top_commands"]
+            .as_array()
+            .is_some_and(|rows| !rows.is_empty())
+    );
+    assert!(
+        value["bottom_profiles"]
+            .as_array()
+            .is_some_and(|rows| !rows.is_empty())
+    );
+    assert!(
+        value["bottom_commands"]
             .as_array()
             .is_some_and(|rows| !rows.is_empty())
     );
