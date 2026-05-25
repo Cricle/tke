@@ -22,9 +22,8 @@ use crate::rollout_stats::{
 use crate::shim::{maybe_normalize_text, normalize_text, normalize_text_with_stage};
 use crate::trim::{
     CommandKind, ShellKind, candidate_command_names, canonical_command_name, classify_command,
-    create_windows_cmd_shim, is_failure_signal_line, is_log_signal, is_warning_signal,
-    match_terms, now_millis, read_stream_payload, render_activate_script,
-    render_deactivate_script,
+    create_windows_cmd_shim, is_failure_signal_line, is_log_signal, is_warning_signal, match_terms,
+    now_millis, read_stream_payload, render_activate_script, render_deactivate_script,
 };
 use std::fs;
 use std::io::{self, Cursor, Read};
@@ -1163,16 +1162,18 @@ fn parses_powershell_get_clipboard_pipeline_as_source_stage() {
 
 #[test]
 fn parses_powershell_select_object_last_as_tail_stage() {
-    let parsed =
-        parse_command_execution("pwsh -Command \"Get-Content /tmp/demo.txt | Select-Object -Last 20\"");
+    let parsed = parse_command_execution(
+        "pwsh -Command \"Get-Content /tmp/demo.txt | Select-Object -Last 20\"",
+    );
     assert_eq!(parsed.last_stage().name, "tail");
     assert_eq!(parsed.last_stage().role.as_str(), "summarize");
 }
 
 #[test]
 fn parses_powershell_select_object_skip_as_filter_stage() {
-    let parsed =
-        parse_command_execution("pwsh -Command \"Get-Content /tmp/demo.txt | Select-Object -Skip 10\"");
+    let parsed = parse_command_execution(
+        "pwsh -Command \"Get-Content /tmp/demo.txt | Select-Object -Skip 10\"",
+    );
     assert_eq!(parsed.last_stage().name, "awk");
     assert_eq!(parsed.last_stage().role.as_str(), "filter");
 }
@@ -1387,10 +1388,45 @@ fn live_pipeline_decision_normalizes_last_stage_for_build_tail() {
 fn default_tool_commands_cover_common_reading_tools() {
     let cfg = Config::default();
     for name in [
-        "ls", "find", "fd", "bat", "nl", "awk", "cut", "sort", "uniq", "wc", "tree", "xargs", "jq",
-        "curl", "tr", "perl", "gls", "gfind", "ggrep", "mdfind", "pbpaste", "Get-ChildItem",
-        "Get-Content", "Get-Clipboard", "Select-String", "more", "more.com", "open", "qlmanage",
-        "mdls", "plutil", "xattr", "gsed", "ghead", "gtail", "guniq", "gwc", "gdu", "gdf",
+        "ls",
+        "find",
+        "fd",
+        "bat",
+        "nl",
+        "awk",
+        "cut",
+        "sort",
+        "uniq",
+        "wc",
+        "tree",
+        "xargs",
+        "jq",
+        "curl",
+        "tr",
+        "perl",
+        "gls",
+        "gfind",
+        "ggrep",
+        "mdfind",
+        "pbpaste",
+        "Get-ChildItem",
+        "Get-Content",
+        "Get-Clipboard",
+        "Select-String",
+        "more",
+        "more.com",
+        "open",
+        "qlmanage",
+        "mdls",
+        "plutil",
+        "xattr",
+        "gsed",
+        "ghead",
+        "gtail",
+        "guniq",
+        "gwc",
+        "gdu",
+        "gdf",
     ] {
         assert!(cfg.is_tool_command(name), "missing tool command {name}");
     }
@@ -1513,7 +1549,11 @@ fn classify_common_code_reading_commands() {
     assert!(matches!(
         classify_command(
             "Select-String",
-            &["-Pattern".to_owned(), "normalize_text".to_owned(), "src/lib.rs".to_owned()]
+            &[
+                "-Pattern".to_owned(),
+                "normalize_text".to_owned(),
+                "src/lib.rs".to_owned()
+            ]
         ),
         CommandKind::Search
     ));
@@ -1532,7 +1572,11 @@ fn classify_common_code_reading_commands() {
     assert!(matches!(
         classify_command(
             "ggrep",
-            &["-n".to_owned(), "normalize_text".to_owned(), "src/tests.rs".to_owned()]
+            &[
+                "-n".to_owned(),
+                "normalize_text".to_owned(),
+                "src/tests.rs".to_owned()
+            ]
         ),
         CommandKind::Search
     ));
@@ -1552,7 +1596,10 @@ fn classify_common_code_reading_commands() {
         CommandKind::File
     ));
     assert!(matches!(
-        classify_command("gsed", &["-n".to_owned(), "1,20p".to_owned(), "src/lib.rs".to_owned()]),
+        classify_command(
+            "gsed",
+            &["-n".to_owned(), "1,20p".to_owned(), "src/lib.rs".to_owned()]
+        ),
         CommandKind::File
     ));
     assert!(matches!(
@@ -1560,7 +1607,14 @@ fn classify_common_code_reading_commands() {
         CommandKind::File
     ));
     assert!(matches!(
-        classify_command("mdls", &["-name".to_owned(), "kMDItemKind".to_owned(), "/tmp/demo.png".to_owned()]),
+        classify_command(
+            "mdls",
+            &[
+                "-name".to_owned(),
+                "kMDItemKind".to_owned(),
+                "/tmp/demo.png".to_owned()
+            ]
+        ),
         CommandKind::File
     ));
     assert!(matches!(
@@ -1576,16 +1630,25 @@ fn classify_common_code_reading_commands() {
         CommandKind::File
     ));
     assert!(matches!(
-        classify_command("stat", &["-f".to_owned(), "%N".to_owned(), "/tmp/demo.txt".to_owned()]),
+        classify_command(
+            "stat",
+            &["-f".to_owned(), "%N".to_owned(), "/tmp/demo.txt".to_owned()]
+        ),
         CommandKind::File
     ));
     assert!(matches!(classify_command("ghead", &[]), CommandKind::File));
     assert!(matches!(classify_command("gtail", &[]), CommandKind::File));
-    assert!(matches!(classify_command("guniq", &[]), CommandKind::Generic));
+    assert!(matches!(
+        classify_command("guniq", &[]),
+        CommandKind::Generic
+    ));
     assert!(matches!(classify_command("gwc", &[]), CommandKind::Generic));
     assert!(matches!(classify_command("gdu", &[]), CommandKind::Log));
     assert!(matches!(classify_command("gdf", &[]), CommandKind::Log));
-    assert!(matches!(classify_command("pbpaste", &[]), CommandKind::File));
+    assert!(matches!(
+        classify_command("pbpaste", &[]),
+        CommandKind::File
+    ));
     assert!(matches!(
         classify_command("more", &["README.md".to_owned()]),
         CommandKind::File
@@ -5658,7 +5721,10 @@ fn df_table_prefers_capacity_columns_over_full_width() {
         .iter()
         .filter_map(|value| value.as_str())
         .collect::<Vec<_>>();
-    assert_eq!(cols, vec!["Filesystem", "Size", "Used", "Use%", "Mounted on"]);
+    assert_eq!(
+        cols,
+        vec!["Filesystem", "Size", "Used", "Use%", "Mounted on"]
+    );
 }
 
 #[test]

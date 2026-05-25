@@ -571,10 +571,16 @@ impl ParsedStage {
 
 fn canonical_stage_with_args(name: &str, args: &[String]) -> String {
     if name == "head" {
-        if args.iter().any(|arg| matches!(arg.as_str(), "-Last" | "-last")) {
+        if args
+            .iter()
+            .any(|arg| matches!(arg.as_str(), "-Last" | "-last"))
+        {
             return "tail".to_owned();
         }
-        if args.iter().any(|arg| matches!(arg.as_str(), "-Skip" | "-skip")) {
+        if args
+            .iter()
+            .any(|arg| matches!(arg.as_str(), "-Skip" | "-skip"))
+        {
             return "awk".to_owned();
         }
     }

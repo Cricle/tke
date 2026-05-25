@@ -971,9 +971,7 @@ fn first_non_flag_arg(args: &[String]) -> Option<&str> {
 
 pub(crate) fn canonical_command_name(name: &str) -> &str {
     match name {
-        "Get-Content" | "get-content" | "Get-Clipboard" | "get-clipboard" | "gc" | "type" => {
-            "cat"
-        }
+        "Get-Content" | "get-content" | "Get-Clipboard" | "get-clipboard" | "gc" | "type" => "cat",
         "gsed" => "sed",
         "Select-String" | "select-string" | "sls" | "findstr" => "grep",
         "Get-ChildItem" | "get-childitem" | "gci" | "dir" => "ls",
@@ -1017,13 +1015,18 @@ pub(crate) fn classify_command(name: &str, args: &[String]) -> CommandKind {
         {
             CommandKind::Log
         }
-        "ls" if args.iter().any(|arg| matches!(arg.as_str(), "-Recurse" | "-recurse")) => {
+        "ls" if args
+            .iter()
+            .any(|arg| matches!(arg.as_str(), "-Recurse" | "-recurse")) =>
+        {
             CommandKind::Search
         }
         "rg" | "grep" | "find" | "fd" | "tree" | "ls" | "which" => CommandKind::Search,
         "readlink" | "stat"
             if args.iter().any(|arg| has_leading_char(arg, '/'))
-                || args.iter().any(|arg| matches!(arg.as_str(), "-f" | "-l" | "-name")) =>
+                || args
+                    .iter()
+                    .any(|arg| matches!(arg.as_str(), "-f" | "-l" | "-name")) =>
         {
             CommandKind::File
         }
