@@ -619,12 +619,28 @@ pub(crate) fn benchmark_specs() -> Vec<BenchmarkSpec> {
             sample: repeated_benchmark_search(),
         },
         BenchmarkSpec {
+            name: "git_grep_code".to_owned(),
+            command: "git grep -n 'fn\\|struct\\|impl\\|enum' -- src".to_owned(),
+            profile: "search".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_git_grep_1".to_owned(),
+            sample: repeated_benchmark_search(),
+        },
+        BenchmarkSpec {
             name: "find_paths".to_owned(),
             command: "find /root/project -type f | head -n 500".to_owned(),
             profile: "pathlist".to_owned(),
             expected: BenchmarkExpectation::Compress,
             call_id: "bench_find_1".to_owned(),
             sample: repeated_benchmark_paths(500),
+        },
+        BenchmarkSpec {
+            name: "git_ls_files".to_owned(),
+            command: "git ls-files src".to_owned(),
+            profile: "pathlist".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_git_ls_files_1".to_owned(),
+            sample: repeated_benchmark_paths(240),
         },
         BenchmarkSpec {
             name: "fd_paths".to_owned(),
@@ -937,6 +953,14 @@ pub(crate) fn benchmark_specs() -> Vec<BenchmarkSpec> {
             expected: BenchmarkExpectation::Compress,
             call_id: "bench_python3_1".to_owned(),
             sample: repeated_benchmark_python_log(),
+        },
+        BenchmarkSpec {
+            name: "python_unittest".to_owned(),
+            command: "python -m unittest -v".to_owned(),
+            profile: "log".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_python_unittest_1".to_owned(),
+            sample: repeated_benchmark_build_log("python-unittest"),
         },
         BenchmarkSpec {
             name: "python_json".to_owned(),
@@ -3482,6 +3506,19 @@ fn repeated_benchmark_build_log(kind: &str) -> String {
             );
             rows.push("2 passed, 1 failed, 1 skipped in 3.12s".to_owned());
             rows.push("warning: deprecated fixture used".to_owned());
+            rows.join("\n")
+        }
+        "python-unittest" => {
+            let mut rows = Vec::new();
+            for idx in 0..117 {
+                rows.push(format!(
+                    "test_case_{idx:03} (tests.test_suite.CaseSuite.test_case_{idx:03}) ... ok"
+                ));
+            }
+            rows.push("FAILED (failures=2, errors=1, skipped=3)".to_owned());
+            rows.push("Ran 123 tests in 3.12s".to_owned());
+            rows.push("Traceback (most recent call last):".to_owned());
+            rows.push("AssertionError: expected parser state".to_owned());
             rows.join("\n")
         }
         "npm" | "pnpm" | "yarn" | "bun" | "node" => {

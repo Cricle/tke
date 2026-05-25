@@ -3,7 +3,11 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="${1:-$(cd -- "$SCRIPT_DIR/.." && pwd)}"
-TKE_BIN="${TKE_BIN:-$ROOT/target/release/tke}"
+LOCAL_TKE_BIN="$ROOT/target/release/tke"
+TKE_BIN="${TKE_BIN:-$LOCAL_TKE_BIN}"
+if [[ -x "$LOCAL_TKE_BIN" ]]; then
+  TKE_BIN="$LOCAL_TKE_BIN"
+fi
 
 python3 - "$ROOT" "$TKE_BIN" <<'PY'
 import json
@@ -16,7 +20,9 @@ tke_bin = pathlib.Path(sys.argv[2])
 
 
 def run_json(args):
-    data = subprocess.check_output(args, cwd=root, text=True)
+    env = dict(**__import__("os").environ)
+    env["TKE_MIN_TRIM_BYTES"] = "1"
+    data = subprocess.check_output(args, cwd=root, text=True, env=env)
     return json.loads(data)
 
 

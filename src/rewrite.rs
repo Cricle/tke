@@ -532,7 +532,7 @@ impl ParsedStage {
         if base == "xargs"
             && let Some((payload_name, payload_args)) = parse_xargs_payload(&tokens[cmd_idx + 1..])
         {
-            let role = classify_stage_role(&payload_name);
+            let role = classify_stage_role_with_args(&payload_name, &payload_args);
             return Self {
                 name: payload_name,
                 args: payload_args,
@@ -542,7 +542,7 @@ impl ParsedStage {
         }
 
         let args = tokens.iter().skip(cmd_idx + 1).cloned().collect::<Vec<_>>();
-        let role = classify_stage_role(&base);
+        let role = classify_stage_role_with_args(&base, &args);
         let args = if matches!(base.as_str(), "head" | "tail") {
             trim_head_tail_args(args)
         } else {
@@ -635,6 +635,25 @@ pub(crate) fn classify_stage_role(name: &str) -> StageRole {
         | "netstat" | "systemctl" | "psql" | "redis-cli" => StageRole::Build,
         _ => StageRole::Unknown,
     }
+}
+
+fn classify_stage_role_with_args(name: &str, args: &[String]) -> StageRole {
+    if name == "git" {
+        match args
+            .iter()
+            .find(|arg| !has_prefix(arg, "-"))
+            .map(String::as_str)
+        {
+            Some("grep" | "ls-files") => return StageRole::Search,
+            Some("diff") => return StageRole::Source,
+            Some("show" | "blame") => return StageRole::Source,
+            Some("status" | "log" | "branch" | "remote" | "ls-remote" | "rev-parse") => {
+                return StageRole::Build;
+            }
+            _ => {}
+        }
+    }
+    classify_stage_role(name)
 }
 
 fn read_proc_cmdline(pid: u32) -> Option<String> {

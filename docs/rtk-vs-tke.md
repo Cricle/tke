@@ -155,7 +155,7 @@ Interpretation:
 - `rtk-hook` is currently the stable fairness path for Claude.
 - `tke` on Claude currently prioritizes compatibility by default and should not yet be treated as equally mature live compression.
 - Even so, the underlying `tke` local compression primitives are broader and more inspectable than the current RTK fairness path, because they operate on normalized tool output rather than only on agent integration behavior.
-- In the current seventeen-scenario stable synthetic Claude-oriented traces, `tke` saves `125184` tokens total at `88.2%`, while `rtk-hook` saves `126356` at `88.4%`; both preserve all required semantic fragments in those controlled cases, and the complex scenario deltas are listed directly in [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:151).
+- In the current seventeen-scenario stable synthetic Claude-oriented traces, `tke` saves `125184` tokens total at `88.7%`, while `rtk-hook` saves `126356` at `88.8%`; both preserve all required semantic fragments in those controlled cases, and the complex scenario deltas are listed directly in [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:151).
 
 ## Important Fairness Cases
 

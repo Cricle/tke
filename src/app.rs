@@ -335,6 +335,7 @@ pub enum Dispatch {
         filter: UsageStatsFilter,
         group_by: UsageStatsGroupBy,
         changed_only: bool,
+        refresh: bool,
         top: usize,
         sort_by: UsageStatsSortBy,
         json: bool,
@@ -416,7 +417,7 @@ pub fn usage() -> String {
         "  tke deactivate",
         "  tke capture-interactive [--source PATH] [--output PATH]",
         "  tke compare-rollout [--source PATH]",
-        "  tke stats [--source PATH]... [--limit N] [--profile NAME] [--command NAME] [--by day|profile|command] [--changed-only] [--top N] [--sort saved|ratio|low-ratio|samples] [--json]",
+        "  tke stats [--source PATH]... [--limit N] [--profile NAME] [--command NAME] [--by day|profile|command] [--changed-only] [--refresh] [--top N] [--sort saved|ratio|low-ratio|samples] [--json]",
         "  tke compare-e2e [--source DIR]... [--agent codex|claude]",
         "  tke benchmark-commands [--check]",
         "",
@@ -437,6 +438,7 @@ pub fn usage() -> String {
         "  tke stats --profile pathlist --by command",
         "  tke stats --changed-only --top 8 --sort ratio",
         "  tke stats --by command --sort low-ratio",
+        "  tke stats --refresh",
         "  tke compare-e2e",
         "  tke benchmark-commands",
     ]
@@ -722,6 +724,7 @@ fn parse_stats(args: Vec<String>) -> Result<Dispatch, AppError> {
     let mut filter = UsageStatsFilter::None;
     let mut group_by = UsageStatsGroupBy::Day;
     let mut changed_only = false;
+    let mut refresh = false;
     let mut top = 10usize;
     let mut sort_by = UsageStatsSortBy::Saved;
     let mut json = false;
@@ -772,6 +775,7 @@ fn parse_stats(args: Vec<String>) -> Result<Dispatch, AppError> {
                 };
             }
             "--changed-only" => changed_only = true,
+            "--refresh" => refresh = true,
             "--top" => {
                 let value = iter.next().ok_or_else(|| {
                     AppError::Usage(format!("missing value for --top\n\n{}", usage()))
@@ -812,6 +816,7 @@ fn parse_stats(args: Vec<String>) -> Result<Dispatch, AppError> {
         filter,
         group_by,
         changed_only,
+        refresh,
         top,
         sort_by,
         json,

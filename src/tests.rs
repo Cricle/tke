@@ -16,7 +16,8 @@ use crate::rollout_io::{
     build_usage_stats_report, capture_interactive,
 };
 use crate::rollout_stats::{
-    collect_rollout_output_stats, collect_rollout_output_stats_detailed, rollout_string_haystack,
+    collect_rollout_output_stats, collect_rollout_output_stats_detailed,
+    rollout_has_relevant_tool_output, rollout_string_haystack,
 };
 use crate::shim::{maybe_normalize_text, normalize_text, normalize_text_with_stage};
 use crate::trim::{
@@ -649,6 +650,19 @@ fn build_summary_extracts_maven_style_counts() {
 }
 
 #[test]
+fn build_summary_extracts_maven_error_count_when_failures_are_zero() {
+    let lines = [
+        "[INFO] BUILD FAILURE",
+        "[ERROR] Tests run: 120, Failures: 0, Errors: 2, Skipped: 1",
+    ];
+    let refs = lines.iter().copied().collect::<Vec<_>>();
+    let summary = crate::trim::collect_build_summary("mvn", &refs).expect("summary");
+    assert_eq!(summary.fl, 2);
+    assert_eq!(summary.sk, 1);
+    assert_eq!(summary.tt, 120);
+}
+
+#[test]
 fn build_summary_extracts_dotnet_style_counts() {
     let lines = [
         "Passed TestCase.Parser",
@@ -701,6 +715,29 @@ fn build_summary_extracts_pytest_style_counts() {
     assert_eq!(summary.fl, 1);
     assert_eq!(summary.sk, 1);
     assert_eq!(summary.tt, 4);
+}
+
+#[test]
+fn build_summary_extracts_python_unittest_counts() {
+    let lines = [
+        "test_parser (tests.test_parser.ParserTests.test_parser) ... ok",
+        "FAILED (failures=2, errors=1, skipped=3)",
+        "Ran 12 tests in 0.452s",
+    ];
+    let refs = lines.iter().copied().collect::<Vec<_>>();
+    let summary = crate::trim::collect_build_summary("python", &refs).expect("summary");
+    assert_eq!(summary.fl, 3);
+    assert_eq!(summary.sk, 3);
+    assert_eq!(summary.tt, 12);
+}
+
+#[test]
+fn build_summary_extracts_cargo_ignored_counts_into_total() {
+    let lines = ["test result: ok. 117 passed; 0 failed; 4 ignored; 0 measured"];
+    let refs = lines.iter().copied().collect::<Vec<_>>();
+    let summary = crate::trim::collect_build_summary("cargo", &refs).expect("summary");
+    assert_eq!(summary.ok, 117);
+    assert_eq!(summary.tt, 121);
 }
 
 #[test]
@@ -1197,6 +1234,13 @@ fn stage_selection_prefers_search_over_source_in_mixed_pipeline() {
 }
 
 #[test]
+fn stage_selection_treats_git_grep_as_search() {
+    let parsed = parse_command_execution("git grep -n normalize_text src | head -n 20");
+    assert_eq!(parsed.selected_stage().name, "git");
+    assert_eq!(parsed.selected_stage().role.as_str(), "search");
+}
+
+#[test]
 fn live_pipeline_passthrough_skips_multi_stage_cat_rg_head_pipeline() {
     let parsed =
         parse_live_shell_pipeline("cat /tmp/tke-codex/huge.txt | rg -n '^SECTION 599' | head -n 1");
@@ -1422,6 +1466,21 @@ fn classify_common_code_reading_commands() {
     assert!(matches!(
         classify_command("git", &["show".to_owned(), "HEAD:src/lib.rs".to_owned()]),
         CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command(
+            "git",
+            &[
+                "grep".to_owned(),
+                "-n".to_owned(),
+                "normalize_text".to_owned()
+            ]
+        ),
+        CommandKind::Search
+    ));
+    assert!(matches!(
+        classify_command("git", &["ls-files".to_owned(), "src".to_owned()]),
+        CommandKind::Search
     ));
     assert!(matches!(
         classify_command("file", &["src/lib.rs".to_owned()]),
@@ -2737,6 +2796,7 @@ fn parse_stats_dispatch() {
             filter,
             group_by,
             changed_only,
+            refresh,
             top,
             sort_by,
             json,
@@ -2749,6 +2809,7 @@ fn parse_stats_dispatch() {
                 crate::rollout_io::UsageStatsGroupBy::Day
             ));
             assert!(!changed_only);
+            assert!(!refresh);
             assert_eq!(top, 10);
             assert!(matches!(
                 sort_by,
@@ -2779,6 +2840,7 @@ fn parse_stats_dispatch_with_profile_and_group() {
             filter,
             group_by,
             changed_only,
+            refresh,
             top,
             sort_by,
             ..
@@ -2794,6 +2856,7 @@ fn parse_stats_dispatch_with_profile_and_group() {
                 crate::rollout_io::UsageStatsGroupBy::Command
             ));
             assert!(!changed_only);
+            assert!(!refresh);
             assert_eq!(top, 10);
             assert!(matches!(
                 sort_by,
@@ -2825,6 +2888,7 @@ fn parse_stats_dispatch_with_changed_only_top_and_sort() {
         Dispatch::Stats {
             filter,
             changed_only,
+            refresh,
             top,
             sort_by,
             ..
@@ -2836,6 +2900,7 @@ fn parse_stats_dispatch_with_changed_only_top_and_sort() {
                 other => panic!("unexpected filter: {other:?}"),
             }
             assert!(changed_only);
+            assert!(!refresh);
             assert_eq!(top, 7);
             assert!(matches!(
                 sort_by,
@@ -2862,17 +2927,34 @@ fn parse_stats_dispatch_with_low_ratio_sort() {
     .expect("dispatch");
     match dispatch {
         Dispatch::Stats {
-            group_by, sort_by, ..
+            group_by,
+            refresh,
+            sort_by,
+            ..
         } => {
             assert!(matches!(
                 group_by,
                 crate::rollout_io::UsageStatsGroupBy::Command
             ));
+            assert!(!refresh);
             assert!(matches!(
                 sort_by,
                 crate::rollout_io::UsageStatsSortBy::LowRatio
             ));
         }
+        other => panic!("unexpected dispatch: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_stats_dispatch_with_refresh() {
+    let dispatch = parse_dispatch(
+        "tke",
+        vec!["tke".to_owned(), "stats".to_owned(), "--refresh".to_owned()],
+    )
+    .expect("dispatch");
+    match dispatch {
+        Dispatch::Stats { refresh, .. } => assert!(refresh),
         other => panic!("unexpected dispatch: {other:?}"),
     }
 }
@@ -2952,6 +3034,7 @@ fn usage_stats_report_includes_top_profiles_and_commands() {
         &UsageStatsFilter::None,
         UsageStatsGroupBy::Day,
         false,
+        false,
         5,
         UsageStatsSortBy::Saved,
         &cfg,
@@ -2979,6 +3062,77 @@ fn usage_stats_report_includes_top_profiles_and_commands() {
             .as_array()
             .is_some_and(|rows| !rows.is_empty())
     );
+}
+
+#[test]
+fn rollout_tool_output_probe_ignores_plain_messages() {
+    let jsonl = [
+        serde_json::json!({
+            "type": "assistant",
+            "message": {
+                "content": [{"type": "text", "text": "plain assistant text"}]
+            }
+        })
+        .to_string(),
+        serde_json::json!({
+            "type": "user",
+            "message": {
+                "content": [{"type": "text", "text": "plain user text"}]
+            }
+        })
+        .to_string(),
+    ]
+    .join("\n");
+    assert!(!rollout_has_relevant_tool_output(&jsonl));
+}
+
+#[test]
+fn usage_stats_custom_sources_do_not_write_default_cache() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    let base = temp_test_dir("stats-cache-skip");
+    let sessions = base.join(".codex/sessions/2026/05/25");
+    fs::create_dir_all(&sessions).expect("mkdir");
+    let rollout = sessions.join("demo.jsonl");
+    fs::write(
+        &rollout,
+        serde_json::json!({
+            "type": "item.completed",
+            "item": {
+                "id": "item_1",
+                "type": "command_execution",
+                "command": "find src -type f",
+                "aggregated_output": repeated_lines("/root/project/src/lib.rs", 60)
+            }
+        })
+        .to_string(),
+    )
+    .expect("write rollout");
+
+    let project = base.join("project");
+    fs::create_dir_all(project.join(".tke")).expect("project dir");
+    let original_cwd = std::env::current_dir().expect("cwd");
+    std::env::set_current_dir(&project).expect("chdir");
+
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let report = build_usage_stats_report(
+        vec![base.join(".codex/sessions")],
+        Some(10),
+        &UsageStatsFilter::None,
+        UsageStatsGroupBy::Day,
+        false,
+        false,
+        5,
+        UsageStatsSortBy::Saved,
+        &cfg,
+    )
+    .expect("report");
+    let value = serde_json::to_value(report).expect("json");
+
+    std::env::set_current_dir(original_cwd).expect("restore cwd");
+
+    assert_eq!(value["samples"], 1);
+    assert!(!project.join(".tke/stats-cache.json").exists());
 }
 
 #[test]
@@ -4021,7 +4175,9 @@ fn benchmark_report_contains_expected_cases() {
         "tail_code",
         "rg_code",
         "grep_code",
+        "git_grep_code",
         "find_paths",
+        "git_ls_files",
         "fd_paths",
         "tree_paths",
         "sort_paths",
@@ -4055,6 +4211,7 @@ fn benchmark_report_contains_expected_cases() {
         "composer_test",
         "python_log",
         "python3_log",
+        "python_unittest",
         "ps_table",
         "ss_table",
         "netstat_table",

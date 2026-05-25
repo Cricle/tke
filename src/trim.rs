@@ -607,38 +607,48 @@ fn extract_build_counts(line: &str, tokens: &[String]) -> Option<BuildCounters> 
     let mut matched = false;
     let install_line = has_token_sequence(tokens, &["successfully", "installed"]);
 
-    if !install_line && let Some(count) = colon_label_count(line, "passed") {
+    let explicit_ok = (!install_line)
+        .then(|| label_value_count(line, "passed"))
+        .flatten();
+    let explicit_failures = (!install_line)
+        .then(|| label_value_count(line, "failed").or_else(|| label_value_count(line, "failures")))
+        .flatten();
+    let explicit_errors = (!install_line)
+        .then(|| label_value_count(line, "errors"))
+        .flatten();
+    let explicit_skipped = (!install_line)
+        .then(|| label_value_count(line, "skipped").or_else(|| label_value_count(line, "ignored")))
+        .flatten();
+    let explicit_total = (!install_line && looks_like_test_count_line(tokens))
+        .then(|| label_value_count(line, "total").or_else(|| label_value_count(line, "tests run")))
+        .flatten();
+
+    if let Some(count) = explicit_ok {
         out.ok = count;
         matched = true;
     }
-    if !install_line
-        && let Some(count) =
-            colon_label_count(line, "failed").or_else(|| colon_label_count(line, "failures"))
-    {
-        out.fl = count;
+    if explicit_failures.is_some() || explicit_errors.is_some() {
+        out.fl = explicit_failures.unwrap_or(0) + explicit_errors.unwrap_or(0);
         matched = true;
     }
-    if !install_line && let Some(count) = colon_label_count(line, "skipped") {
+    if let Some(count) = explicit_skipped {
         out.sk = count;
         matched = true;
     }
-    if !install_line
-        && looks_like_test_count_line(tokens)
-        && let Some(count) =
-            colon_label_count(line, "total").or_else(|| colon_label_count(line, "tests run"))
-    {
+    if let Some(count) = explicit_total {
         out.tt = count;
         matched = true;
     }
 
-    if out.ok == 0
+    if explicit_ok.is_none()
         && let Some(count) = count_before_token(tokens, "passed")
             .or_else(|| count_before_sequence(tokens, &["tests", "passed"]))
     {
         out.ok = count;
         matched = true;
     }
-    if out.fl == 0
+    if explicit_failures.is_none()
+        && explicit_errors.is_none()
         && let Some(count) = count_before_token(tokens, "failed")
             .or_else(|| count_before_token(tokens, "failures"))
             .or_else(|| count_before_sequence(tokens, &["tests", "failed"]))
@@ -646,14 +656,16 @@ fn extract_build_counts(line: &str, tokens: &[String]) -> Option<BuildCounters> 
         out.fl = count;
         matched = true;
     }
-    if out.sk == 0
-        && let Some(count) = count_before_token(tokens, "skipped")
+    if explicit_skipped.is_none()
+        && let Some(count) =
+            count_before_token(tokens, "skipped").or_else(|| count_before_token(tokens, "ignored"))
     {
         out.sk = count;
         matched = true;
     }
-    if out.tt == 0
+    if explicit_total.is_none()
         && let Some(count) = count_after_sequence(tokens, &["tests", "run"])
+            .or_else(|| count_after_sequence(tokens, &["ran"]))
             .or_else(|| count_before_sequence(tokens, &["tests", "completed"]))
             .or_else(|| count_before_sequence(tokens, &["test", "completed"]))
             .or_else(|| {
@@ -792,7 +804,7 @@ fn count_packages_after_install(line: &str, tokens: &[String]) -> Option<usize> 
     (count > 0).then_some(count)
 }
 
-fn colon_label_count(line: &str, label: &str) -> Option<usize> {
+fn label_value_count(line: &str, label: &str) -> Option<usize> {
     let lower = line.to_ascii_lowercase();
     let label_len = label.len();
     lower.char_indices().find_map(|(idx, _)| {
@@ -810,14 +822,15 @@ fn colon_label_count(line: &str, label: &str) -> Option<usize> {
             return None;
         }
         let rest = lower.get(end..)?.trim_start();
-        let rest = rest.strip_prefix(':')?.trim_start();
+        let rest = rest
+            .strip_prefix(':')
+            .or_else(|| rest.strip_prefix('='))?
+            .trim_start();
         let digits = rest
             .chars()
             .take_while(|ch| ch.is_ascii_digit())
             .collect::<String>();
-        (!digits.is_empty())
-            .then(|| digits.parse::<usize>().ok())
-            .flatten()
+        Some(digits.parse::<usize>().ok().unwrap_or(0)).filter(|_| !digits.is_empty())
     })
 }
 
@@ -950,6 +963,12 @@ pub(crate) fn real_path_string() -> String {
     env::var("TKE_REAL_PATH").unwrap_or_else(|_| env::var("PATH").unwrap_or_default())
 }
 
+fn first_non_flag_arg(args: &[String]) -> Option<&str> {
+    args.iter()
+        .find(|arg| !has_prefix(arg, "-"))
+        .map(String::as_str)
+}
+
 pub(crate) fn classify_command(name: &str, args: &[String]) -> CommandKind {
     match name {
         "ps" | "ss" | "netstat" | "systemctl" | "docker" | "du" | "df" | "psql" | "redis-cli" => {
@@ -972,12 +991,15 @@ pub(crate) fn classify_command(name: &str, args: &[String]) -> CommandKind {
         "sort" | "uniq" | "wc" | "xargs" | "jq" | "curl" | "readlink" | "stat" => {
             CommandKind::Generic
         }
-        "git" if args.first().map(String::as_str) == Some("diff") => CommandKind::Diff,
-        "git" if args.first().map(String::as_str) == Some("show") => CommandKind::File,
-        "git" if args.first().map(String::as_str) == Some("status") => CommandKind::Log,
+        "git" if first_non_flag_arg(args) == Some("diff") => CommandKind::Diff,
+        "git" if matches!(first_non_flag_arg(args), Some("show" | "blame")) => CommandKind::File,
+        "git" if first_non_flag_arg(args) == Some("status") => CommandKind::Log,
+        "git" if matches!(first_non_flag_arg(args), Some("grep" | "ls-files")) => {
+            CommandKind::Search
+        }
         "git"
             if matches!(
-                args.first().map(String::as_str),
+                first_non_flag_arg(args),
                 Some("rev-parse" | "remote" | "branch" | "log" | "ls-remote")
             ) =>
         {
