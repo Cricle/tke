@@ -887,7 +887,8 @@ fn live_pipeline_decision_normalizes_last_stage_for_build_tail() {
 fn default_tool_commands_cover_common_reading_tools() {
     let cfg = Config::default();
     for name in [
-        "ls", "find", "fd", "bat", "nl", "awk", "cut", "sort", "uniq", "wc", "tree", "xargs",
+        "ls", "find", "fd", "bat", "nl", "awk", "cut", "sort", "uniq", "wc", "tree", "xargs", "jq",
+        "curl", "tr", "perl",
     ] {
         assert!(cfg.is_tool_command(name), "missing tool command {name}");
     }
@@ -897,9 +898,50 @@ fn default_tool_commands_cover_common_reading_tools() {
 fn default_tool_commands_cover_core_agent_workflows() {
     let cfg = Config::default();
     for name in [
-        "cat", "sed", "rg", "grep", "git", "cargo", "pytest", "npm", "pnpm", "yarn", "dotnet",
-        "go", "cmake", "ctest", "make", "ninja", "node", "tail", "head", "ls", "find", "fd", "bat",
-        "nl", "awk", "cut", "sort", "uniq", "wc", "tree", "xargs",
+        "cat",
+        "sed",
+        "rg",
+        "grep",
+        "git",
+        "cargo",
+        "pytest",
+        "npm",
+        "pnpm",
+        "yarn",
+        "dotnet",
+        "go",
+        "cmake",
+        "ctest",
+        "make",
+        "ninja",
+        "node",
+        "tail",
+        "head",
+        "ls",
+        "find",
+        "fd",
+        "bat",
+        "nl",
+        "awk",
+        "cut",
+        "sort",
+        "uniq",
+        "wc",
+        "tree",
+        "xargs",
+        "jq",
+        "curl",
+        "python",
+        "python3",
+        "docker",
+        "ps",
+        "ss",
+        "netstat",
+        "systemctl",
+        "tr",
+        "perl",
+        "du",
+        "df",
     ] {
         assert!(cfg.is_tool_command(name), "missing tool command {name}");
     }
@@ -960,8 +1002,46 @@ fn classify_common_code_reading_commands() {
         CommandKind::File
     ));
     assert!(matches!(
+        classify_command("tr", &["-s".to_owned(), " ".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command(
+            "perl",
+            &[
+                "-ne".to_owned(),
+                "print".to_owned(),
+                "src/lib.rs".to_owned()
+            ]
+        ),
+        CommandKind::File
+    ));
+    assert!(matches!(
         classify_command("wc", &["-l".to_owned(), "src/lib.rs".to_owned()]),
         CommandKind::Generic
+    ));
+    assert!(matches!(
+        classify_command(
+            "curl",
+            &["-s".to_owned(), "http://127.0.0.1/demo".to_owned()]
+        ),
+        CommandKind::Generic
+    ));
+    assert!(matches!(
+        classify_command("jq", &[".".to_owned(), "/tmp/demo.json".to_owned()]),
+        CommandKind::Generic
+    ));
+    assert!(matches!(
+        classify_command("python3", &["script.py".to_owned()]),
+        CommandKind::Log
+    ));
+    assert!(matches!(
+        classify_command("ps", &["aux".to_owned()]),
+        CommandKind::Log
+    ));
+    assert!(matches!(
+        classify_command("docker", &["ps".to_owned()]),
+        CommandKind::Log
     ));
 }
 
@@ -976,12 +1056,17 @@ fn stage_roles_cover_default_tool_commands() {
         ("tree", "search"),
         ("sed", "filter"),
         ("awk", "filter"),
+        ("perl", "filter"),
         ("cut", "filter"),
         ("sort", "filter"),
         ("uniq", "filter"),
+        ("tr", "filter"),
+        ("jq", "filter"),
         ("head", "summarize"),
         ("tail", "summarize"),
         ("wc", "summarize"),
+        ("du", "summarize"),
+        ("df", "summarize"),
         ("cargo", "build"),
         ("dotnet", "build"),
         ("go", "build"),
@@ -990,6 +1075,14 @@ fn stage_roles_cover_default_tool_commands() {
         ("make", "build"),
         ("ninja", "build"),
         ("node", "build"),
+        ("python", "build"),
+        ("python3", "build"),
+        ("ps", "build"),
+        ("ss", "build"),
+        ("netstat", "build"),
+        ("systemctl", "build"),
+        ("curl", "source"),
+        ("docker", "source"),
     ] {
         assert_eq!(classify_stage_role(name).as_str(), expected, "{name}");
     }
@@ -3266,8 +3359,19 @@ fn benchmark_report_contains_expected_cases() {
         "make_build",
         "ninja_build",
         "node_test",
+        "python_log",
+        "python3_log",
         "ps_table",
+        "ss_table",
+        "netstat_table",
         "systemctl_table",
+        "docker_ps_table",
+        "du_table",
+        "df_table",
+        "jq_json",
+        "curl_json",
+        "tr_code",
+        "perl_code",
         "xargs_cat",
     ] {
         assert!(report.cases.iter().any(|case| case.name == name), "{name}");
@@ -3578,6 +3682,8 @@ fn benchmark_report_covers_default_tool_families() {
         "cut ",
         "head ",
         "tail ",
+        "tr ",
+        "perl ",
         "rg ",
         "grep ",
         "git ",
@@ -3600,8 +3706,17 @@ fn benchmark_report_covers_default_tool_families() {
         "uniq",
         "wc ",
         "ls ",
+        "jq ",
+        "curl ",
+        "python ",
+        "python3 ",
+        "docker ",
         "ps ",
+        "ss ",
+        "netstat ",
         "systemctl ",
+        "du ",
+        "df ",
         "xargs ",
     ] {
         assert!(commands.iter().any(|cmd| cmd.contains(needle)), "{needle}");
@@ -3661,6 +3776,11 @@ fn benchmark_specs_cover_default_tool_commands() {
                 commands.iter().any(|cmd| cmd.starts_with("head ")),
                 "{tool}"
             ),
+            "tr" => assert!(commands.iter().any(|cmd| cmd.starts_with("tr ")), "{tool}"),
+            "perl" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("perl ")),
+                "{tool}"
+            ),
             "dotnet" => assert!(
                 commands.iter().any(|cmd| cmd.starts_with("dotnet ")),
                 "{tool}"
@@ -3699,10 +3819,39 @@ fn benchmark_specs_cover_default_tool_commands() {
             "sort" => assert!(commands.iter().any(|cmd| cmd.contains("| sort")), "{tool}"),
             "uniq" => assert!(commands.iter().any(|cmd| cmd.contains("| uniq")), "{tool}"),
             "wc" => assert!(commands.iter().any(|cmd| cmd.starts_with("wc ")), "{tool}"),
+            "jq" => assert!(commands.iter().any(|cmd| cmd.starts_with("jq ")), "{tool}"),
+            "curl" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("curl ")),
+                "{tool}"
+            ),
+            "python" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("python ")),
+                "{tool}"
+            ),
+            "python3" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("python3 ")),
+                "{tool}"
+            ),
             "tree" => assert!(
                 commands.iter().any(|cmd| cmd.starts_with("tree ")),
                 "{tool}"
             ),
+            "docker" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("docker ")),
+                "{tool}"
+            ),
+            "ps" => assert!(commands.iter().any(|cmd| cmd.starts_with("ps ")), "{tool}"),
+            "ss" => assert!(commands.iter().any(|cmd| cmd.starts_with("ss ")), "{tool}"),
+            "netstat" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("netstat ")),
+                "{tool}"
+            ),
+            "systemctl" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("systemctl ")),
+                "{tool}"
+            ),
+            "du" => assert!(commands.iter().any(|cmd| cmd.starts_with("du ")), "{tool}"),
+            "df" => assert!(commands.iter().any(|cmd| cmd.starts_with("df ")), "{tool}"),
             "xargs" => assert!(
                 commands.iter().any(|cmd| cmd.contains("xargs cat")),
                 "{tool}"
@@ -3736,19 +3885,35 @@ fn default_tool_commands_have_expected_command_kinds() {
                 "3".to_owned(),
                 "src".to_owned(),
             ],
+            "jq" => vec![".".to_owned(), "/tmp/demo.json".to_owned()],
+            "curl" => vec!["-s".to_owned(), "http://127.0.0.1/demo".to_owned()],
+            "python" | "python3" => vec!["script.py".to_owned()],
+            "docker" => vec!["ps".to_owned()],
+            "ps" => vec!["aux".to_owned()],
+            "ss" => vec!["-ltnp".to_owned()],
+            "netstat" => vec!["-ltnp".to_owned()],
+            "systemctl" => vec!["list-units".to_owned()],
+            "du" => vec!["-sh".to_owned(), "/root/project".to_owned()],
+            "df" => vec!["-h".to_owned()],
             "head" | "tail" => vec!["-n".to_owned(), "20".to_owned(), "src/lib.rs".to_owned()],
             "sed" => vec!["-n".to_owned(), "1,20p".to_owned(), "src/lib.rs".to_owned()],
             "bat" => vec!["--style=plain".to_owned(), "src/lib.rs".to_owned()],
             "nl" => vec!["-ba".to_owned(), "src/lib.rs".to_owned()],
             "awk" => vec!["{print}".to_owned(), "src/lib.rs".to_owned()],
             "cut" => vec!["-c1-120".to_owned(), "src/lib.rs".to_owned()],
+            "tr" => vec!["-s".to_owned(), " ".to_owned()],
+            "perl" => vec![
+                "-ne".to_owned(),
+                "print".to_owned(),
+                "src/lib.rs".to_owned(),
+            ],
             "sort" | "uniq" | "wc" | "xargs" => Vec::new(),
             _ => vec!["src/lib.rs".to_owned()],
         };
 
         let kind = classify_command(tool, &args);
         match *tool {
-            "cat" | "sed" | "tail" | "head" | "bat" | "nl" | "awk" | "cut" => {
+            "cat" | "sed" | "tail" | "head" | "bat" | "nl" | "awk" | "cut" | "tr" | "perl" => {
                 assert!(matches!(kind, CommandKind::File), "{tool}");
             }
             "rg" | "grep" | "find" | "fd" | "tree" | "ls" => {
@@ -3756,10 +3921,11 @@ fn default_tool_commands_have_expected_command_kinds() {
             }
             "git" => assert!(matches!(kind, CommandKind::Diff), "{tool}"),
             "cargo" | "pytest" | "npm" | "pnpm" | "yarn" | "dotnet" | "go" | "cmake" | "ctest"
-            | "make" | "ninja" | "node" => {
+            | "make" | "ninja" | "node" | "python" | "python3" | "docker" | "ps" | "ss"
+            | "netstat" | "systemctl" | "du" | "df" => {
                 assert!(matches!(kind, CommandKind::Log), "{tool}");
             }
-            "sort" | "uniq" | "wc" | "xargs" => {
+            "sort" | "uniq" | "wc" | "xargs" | "jq" | "curl" => {
                 assert!(matches!(kind, CommandKind::Generic), "{tool}");
             }
             other => panic!("unexpected default tool command {other}"),

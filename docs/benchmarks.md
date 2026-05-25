@@ -28,27 +28,28 @@ Generated from:
 | `dotnet_test` | log | 827 | 210 | 617 | 74.6% |
 | `go_test` | log | 705 | 162 | 543 | 77.0% |
 | `ninja_build` | log | 796 | 199 | 597 | 75.0% |
-| `ps_table` | table | 655 | 153 | 502 | 76.6% |
-| `systemctl_table` | table | 682 | 126 | 556 | 81.5% |
+| `ps_table` | table | 655 | 154 | 501 | 76.5% |
+| `systemctl_table` | table | 682 | 139 | 543 | 79.6% |
 
 Profile averages:
 
 | Profile | Cases | Average token savings |
 | --- | --- | --- |
 | diff | 1 | 93.7% |
-| file | 9 | 77.9% |
+| file | 11 | 77.4% |
 | generic | 1 | 0.0% |
-| log | 12 | 74.9% |
+| json | 2 | 33.9% |
+| log | 14 | 75.3% |
 | pathlist | 6 | 96.7% |
 | search | 2 | 89.9% |
-| table | 3 | 70.6% |
+| table | 8 | 59.4% |
 
 Built-in rollout/task benchmarks:
 
 | Task | Mode | Raw tokens | Rewritten tokens | Tokens saved | Savings |
 | --- | --- | --- | --- | --- | --- |
 | `codex_api_trace_rollout_savings` | api | 5389 | 505 | 4884 | 90.6% |
-| `codex_api_trace_default_tool_coverage` | api | 4021 | 769 | 3252 | 80.9% |
+| `codex_api_trace_default_tool_coverage` | api | 4695 | 799 | 3896 | 83.0% |
 | `codex_interactive_trace_selected_search_stage` | interactive | 2913 | 570 | 2343 | 80.4% |
 | `codex_interactive_trace_selected_find_stage` | interactive | 8125 | 93 | 8032 | 98.9% |
 | `codex_interactive_trace_selected_build_stage` | interactive | 1102 | 226 | 876 | 79.5% |
@@ -93,8 +94,8 @@ This section is generated from the current benchmark and E2E artifacts. The clai
 
 | Evidence area | `tke` result | `rtk` result in this repo | Why this matters |
 | --- | --- | --- | --- |
-| Built-in local compression benchmarks | `33/34` cases, `57793` tokens saved, `91.1%` | No equivalent repo-local tool-output benchmark runner in this repo | `tke` can be measured locally and repeatedly without depending on agent compliance |
-| Built-in rollout/task traces | `39` traces, `272413` tokens saved, `88.9%` | RTK participates only through the fairness/synthetic harness subset wired here | `tke` has broader measured coverage inside the repo |
+| Built-in local compression benchmarks | `43/34` cases, `65971` tokens saved, `80.6%` | No equivalent repo-local tool-output benchmark runner in this repo | `tke` can be measured locally and repeatedly without depending on agent compliance |
+| Built-in rollout/task traces | `39` traces, `273057` tokens saved, `88.9%` | RTK participates only through the fairness/synthetic harness subset wired here | `tke` has broader measured coverage inside the repo |
 | Codex real E2E | `4/4` pass, `6257` tool tokens saved | `0/2` pass, `11` token delta | Current real Codex evidence favors `tke` clearly |
 | Structured output surface | `pathlist`, `search`, `diff`, `log`, `table`, and `file` profiles emit inspectable `__TKE__{...}` summaries | No equivalent repo-local structured envelope | `tke` gives a concrete artifact that tooling can compare and audit |
 | Claude stable synthetic traces | `125937` tokens saved at `88.7%` | `127089` tokens saved at `88.9%` | `rtk-hook` currently leads on both absolute token savings and ratio in the stable synthetic Claude traces, while `tke` remains competitive on fragment retention |
@@ -103,19 +104,20 @@ Current built-in totals:
 
 | Scope | Cases | Tokens saved | Savings ratio |
 | --- | --- | --- | --- |
-| Default compress benchmarks | 33 | 57793 | 91.1% |
-| Built-in rollout/task traces | 39 | 272413 | 88.9% |
+| Default compress benchmarks | 43 | 65971 | 80.6% |
+| Built-in rollout/task traces | 39 | 273057 | 88.9% |
 
 Per-profile compression totals:
 
 | Profile | Cases | Tokens saved | Savings ratio |
 | --- | --- | --- | --- |
 | `diff` | 1 | 3459 | 93.7% |
-| `file` | 9 | 5468 | 78.1% |
-| `log` | 12 | 6998 | 74.9% |
+| `file` | 11 | 6582 | 77.5% |
+| `json` | 2 | 4560 | 33.9% |
+| `log` | 14 | 8275 | 75.3% |
 | `pathlist` | 6 | 36439 | 98.6% |
 | `search` | 2 | 4060 | 89.9% |
-| `table` | 3 | 1369 | 71.5% |
+| `table` | 7 | 2596 | 69.6% |
 
 Claude-oriented stable synthetic summary:
 

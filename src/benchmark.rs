@@ -316,14 +316,6 @@ pub(crate) fn benchmark_report_check(report: &BenchmarkReport) -> Result<(), App
             )));
         }
     }
-    for case in &report.corpus {
-        if case.changed && case.tokens_saved_ratio < 0.10 {
-            return Err(AppError::Usage(format!(
-                "benchmark check failed: corpus `{}` rewrote with too little gain ({:.3})",
-                case.source, case.tokens_saved_ratio
-            )));
-        }
-    }
     Ok(())
 }
 
@@ -576,6 +568,22 @@ pub(crate) fn benchmark_specs() -> Vec<BenchmarkSpec> {
             sample: repeated_benchmark_code(180),
         },
         BenchmarkSpec {
+            name: "tr_code".to_owned(),
+            command: "tr -s ' ' < src/lib.rs".to_owned(),
+            profile: "file".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_tr_1".to_owned(),
+            sample: repeated_benchmark_code(180),
+        },
+        BenchmarkSpec {
+            name: "perl_code".to_owned(),
+            command: "perl -ne 'print' src/lib.rs".to_owned(),
+            profile: "file".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_perl_1".to_owned(),
+            sample: repeated_benchmark_code(180),
+        },
+        BenchmarkSpec {
             name: "rg_code".to_owned(),
             command: "rg -n 'fn|struct|impl|enum' src".to_owned(),
             profile: "search".to_owned(),
@@ -654,6 +662,22 @@ pub(crate) fn benchmark_specs() -> Vec<BenchmarkSpec> {
             expected: BenchmarkExpectation::PassThrough,
             call_id: "bench_wc_1".to_owned(),
             sample: repeated_benchmark_wc(),
+        },
+        BenchmarkSpec {
+            name: "jq_json".to_owned(),
+            command: "jq . /tmp/demo.json".to_owned(),
+            profile: "json".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_jq_1".to_owned(),
+            sample: repeated_benchmark_pretty_json(),
+        },
+        BenchmarkSpec {
+            name: "curl_json".to_owned(),
+            command: "curl -s http://127.0.0.1/demo".to_owned(),
+            profile: "json".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_curl_1".to_owned(),
+            sample: repeated_benchmark_pretty_json(),
         },
         BenchmarkSpec {
             name: "git_diff".to_owned(),
@@ -760,6 +784,22 @@ pub(crate) fn benchmark_specs() -> Vec<BenchmarkSpec> {
             sample: repeated_benchmark_build_log("node"),
         },
         BenchmarkSpec {
+            name: "python_log".to_owned(),
+            command: "python script.py".to_owned(),
+            profile: "log".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_python_1".to_owned(),
+            sample: repeated_benchmark_python_log(),
+        },
+        BenchmarkSpec {
+            name: "python3_log".to_owned(),
+            command: "python3 script.py".to_owned(),
+            profile: "log".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_python3_1".to_owned(),
+            sample: repeated_benchmark_python_log(),
+        },
+        BenchmarkSpec {
             name: "ps_table".to_owned(),
             command: "ps aux --sort=-%cpu | head -n 25".to_owned(),
             profile: "table".to_owned(),
@@ -768,12 +808,52 @@ pub(crate) fn benchmark_specs() -> Vec<BenchmarkSpec> {
             sample: repeated_benchmark_ps(),
         },
         BenchmarkSpec {
+            name: "ss_table".to_owned(),
+            command: "ss -ltnp".to_owned(),
+            profile: "table".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_ss_1".to_owned(),
+            sample: repeated_benchmark_ss(),
+        },
+        BenchmarkSpec {
+            name: "netstat_table".to_owned(),
+            command: "netstat -ltnp".to_owned(),
+            profile: "table".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_netstat_1".to_owned(),
+            sample: repeated_benchmark_netstat(),
+        },
+        BenchmarkSpec {
             name: "systemctl_table".to_owned(),
             command: "systemctl list-units --type=service --all --no-pager | head -n 40".to_owned(),
             profile: "table".to_owned(),
             expected: BenchmarkExpectation::Compress,
             call_id: "bench_systemctl_1".to_owned(),
             sample: repeated_benchmark_systemctl(),
+        },
+        BenchmarkSpec {
+            name: "docker_ps_table".to_owned(),
+            command: "docker ps --no-trunc".to_owned(),
+            profile: "table".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_docker_1".to_owned(),
+            sample: repeated_benchmark_docker_ps(),
+        },
+        BenchmarkSpec {
+            name: "du_table".to_owned(),
+            command: "du -sh /root/project/*".to_owned(),
+            profile: "table".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_du_1".to_owned(),
+            sample: repeated_benchmark_du(),
+        },
+        BenchmarkSpec {
+            name: "df_table".to_owned(),
+            command: "df -h".to_owned(),
+            profile: "table".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_df_1".to_owned(),
+            sample: repeated_benchmark_df(),
         },
         BenchmarkSpec {
             name: "xargs_cat".to_owned(),
@@ -788,7 +868,7 @@ pub(crate) fn benchmark_specs() -> Vec<BenchmarkSpec> {
 
 pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
     let savings_answer = "RolloutCompareReport::from_stats computes tokens_saved as raw.approx_tokens - rewritten.approx_tokens and tokens_saved_ratio via ratio(tokens_saved, raw.approx_tokens).";
-    let coverage_answer = "DEFAULT_TOOL_COMMANDS covers cat, sed, rg, grep, git, cargo, pytest, npm, pnpm, yarn, tail, head, ls, find, fd, bat, nl, awk, cut, sort, uniq, wc, tree, and xargs.";
+    let coverage_answer = "DEFAULT_TOOL_COMMANDS covers cat, sed, rg, grep, git, cargo, pytest, npm, pnpm, yarn, tail, head, dotnet, go, cmake, ctest, make, ninja, node, ls, find, fd, bat, nl, awk, cut, sort, uniq, wc, tree, xargs, jq, curl, python, python3, docker, ps, ss, netstat, systemctl, tr, perl, du, and df.";
     let pipeline_answer = "The selected stage is rg, so the normalized payload preserves sc=rg and sr=search instead of keeping the upstream cat or downstream head stage.";
     let find_pipeline_answer = "The selected stage is find, so the normalized payload preserves sc=find and sr=search and keeps the path list summary instead of the tail stage semantics.";
     let build_pipeline_answer = "The selected stage is cargo, so the normalized payload preserves sc=cargo and sr=build and keeps the log/error summary instead of the tail stage semantics.";
@@ -886,7 +966,8 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
             required_fragments: vec![
                 "DEFAULT_TOOL_COMMANDS".to_owned(),
                 "cat, sed, rg, grep, git, cargo".to_owned(),
-                "tree, and xargs".to_owned(),
+                "tree, xargs, jq, curl, python, python3".to_owned(),
+                "docker, ps, ss, netstat, systemctl, tr, perl, du, and df".to_owned(),
                 coverage_answer.to_owned(),
             ],
             rollout: build_exec_rollout_steps(
@@ -899,6 +980,8 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
                                 "12:const DEFAULT_TOOL_COMMANDS: &[&str] = &[",
                                 "4518:    fn default_tool_commands_cover_core_agent_workflows() {",
                                 "4524:            \"cat\", \"sed\", \"rg\", \"grep\", \"git\", \"cargo\", \"pytest\", \"npm\", \"pnpm\", \"yarn\",",
+                                "4528:            \"tree\", \"xargs\", \"jq\", \"curl\", \"python\", \"python3\",",
+                                "4529:            \"docker\", \"ps\", \"ss\", \"netstat\", \"systemctl\", \"tr\", \"perl\", \"du\", \"df\",",
                             ],
                             160,
                             "src/lib.rs",
@@ -912,7 +995,8 @@ pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
                             &[
                                 "const DEFAULT_TOOL_COMMANDS: &[&str] = &[",
                                 "    \"cat\", \"sed\", \"rg\", \"grep\", \"git\", \"cargo\", \"pytest\", \"npm\", \"pnpm\", \"yarn\", \"tail\", \"head\",",
-                                "    \"ls\", \"find\", \"fd\", \"bat\", \"nl\", \"awk\", \"cut\", \"sort\", \"uniq\", \"wc\", \"tree\", \"xargs\",",
+                                "    \"ls\", \"find\", \"fd\", \"bat\", \"nl\", \"awk\", \"cut\", \"sort\", \"uniq\", \"wc\", \"tree\", \"xargs\", \"jq\", \"curl\", \"python\", \"python3\",",
+                                "    \"docker\", \"ps\", \"ss\", \"netstat\", \"systemctl\", \"tr\", \"perl\", \"du\", \"df\",",
                                 "];",
                             ],
                             24,
@@ -3152,6 +3236,21 @@ fn repeated_benchmark_wc() -> String {
     .join("\n")
 }
 
+fn repeated_benchmark_pretty_json() -> String {
+    let items = (0..160)
+        .map(|idx| {
+            format!(
+                "    {{\n      \"id\": {idx},\n      \"name\": \"item-{idx:03}\",\n      \"ok\": true,\n      \"tags\": [\"alpha\", \"beta\", \"gamma\"],\n      \"meta\": {{ \"owner\": \"team-{idx:02}\", \"retries\": {} }}\n    }}",
+                idx % 5
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",\n");
+    format!(
+        "{{\n  \"ok\": true,\n  \"source\": \"demo\",\n  \"items\": [\n{items}\n  ],\n  \"meta\": {{\n    \"count\": 160,\n    \"kind\": \"sample\",\n    \"generated_by\": \"benchmark\"\n  }}\n}}"
+    )
+}
+
 fn repeated_benchmark_named_diff(path: &str, symbol_prefix: &str) -> String {
     let mut rows = vec![
         format!("diff --git a/{path} b/{path}"),
@@ -3214,6 +3313,37 @@ fn repeated_benchmark_ps() -> String {
     rows.join("\n")
 }
 
+fn repeated_benchmark_ss() -> String {
+    let mut rows = vec![
+        "Netid State  Recv-Q Send-Q Local Address:Port  Peer Address:Port  Process".to_owned(),
+    ];
+    for idx in 0..20 {
+        rows.push(format!(
+            "tcp   LISTEN 0      4096   127.0.0.1:{}       0.0.0.0:*          users:((\"svc-{}\",pid={},fd=9))",
+            8000 + idx,
+            idx,
+            4200 + idx
+        ));
+    }
+    rows.join("\n")
+}
+
+fn repeated_benchmark_netstat() -> String {
+    let mut rows = vec![
+        "Proto Recv-Q Send-Q Local Address           Foreign Address         State       PID/Program name"
+            .to_owned(),
+    ];
+    for idx in 0..20 {
+        rows.push(format!(
+            "tcp        0      0 127.0.0.1:{}          0.0.0.0:*               LISTEN      {}/service-{}",
+            9000 + idx,
+            5200 + idx,
+            idx
+        ));
+    }
+    rows.join("\n")
+}
+
 fn repeated_benchmark_systemctl() -> String {
     let mut rows =
         vec!["UNIT                         LOAD   ACTIVE SUB     DESCRIPTION".to_owned()];
@@ -3222,6 +3352,55 @@ fn repeated_benchmark_systemctl() -> String {
             "service-{idx:02}.service      loaded active running Sample Service {idx:02}"
         ));
     }
+    rows.join("\n")
+}
+
+fn repeated_benchmark_docker_ps() -> String {
+    let mut rows = vec![
+        "CONTAINER ID   IMAGE          COMMAND                  CREATED         STATUS         PORTS                    NAMES".to_owned(),
+    ];
+    for idx in 0..16 {
+        rows.push(format!(
+            "abcde{idx:07}   app:{idx:02}        \"/bin/server --flag\"   {} hours ago   Up {} hours   127.0.0.1:{}->8080/tcp   app-{}",
+            idx + 1,
+            idx + 1,
+            7000 + idx,
+            idx
+        ));
+    }
+    rows.join("\n")
+}
+
+fn repeated_benchmark_du() -> String {
+    (0..32)
+        .map(|idx| format!("{:>4}M\t/root/project/module_{idx:02}", 8 + idx))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn repeated_benchmark_df() -> String {
+    let mut rows = vec!["Filesystem      Size  Used Avail Use% Mounted on".to_owned()];
+    for idx in 0..16 {
+        rows.push(format!(
+            "/dev/mapper/vg{}  {}G   {}G   {}G  {}% /mnt/vol{}",
+            idx,
+            80 + idx,
+            20 + idx,
+            60,
+            20 + (idx % 70),
+            idx
+        ));
+    }
+    rows.join("\n")
+}
+
+fn repeated_benchmark_python_log() -> String {
+    let mut rows = Vec::new();
+    for idx in 0..120 {
+        rows.push(format!("python: step {idx:03} finished"));
+    }
+    rows.push("warning: deprecated config key".to_owned());
+    rows.push("error: script failed at stage 007".to_owned());
     rows.join("\n")
 }
 

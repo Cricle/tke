@@ -518,11 +518,12 @@ impl StageRole {
 pub(crate) fn classify_stage_role(name: &str) -> StageRole {
     match name {
         "rg" | "grep" | "find" | "fd" | "tree" => StageRole::Search,
-        "cat" | "git" | "bat" | "nl" | "ls" => StageRole::Source,
-        "sed" | "awk" | "perl" | "cut" | "sort" | "uniq" | "tr" => StageRole::Filter,
-        "head" | "tail" | "wc" => StageRole::Summarize,
+        "cat" | "git" | "bat" | "nl" | "ls" | "curl" | "docker" => StageRole::Source,
+        "sed" | "awk" | "perl" | "cut" | "sort" | "uniq" | "tr" | "jq" => StageRole::Filter,
+        "head" | "tail" | "wc" | "du" | "df" => StageRole::Summarize,
         "cargo" | "pytest" | "npm" | "pnpm" | "yarn" | "dotnet" | "go" | "cmake" | "ctest"
-        | "make" | "ninja" | "node" => StageRole::Build,
+        | "make" | "ninja" | "node" | "python" | "python3" | "ps" | "ss" | "netstat"
+        | "systemctl" => StageRole::Build,
         _ => StageRole::Unknown,
     }
 }

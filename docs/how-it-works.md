@@ -45,7 +45,7 @@ eval "$(tke activate codex claude)"
 - `TKE_AGENT_CMDS`: wrapped agent names
 - `TKE_TOOL_CMDS`: wrapped tool names
 
-That means later calls to `codex`, `claude`, `rg`, `git`, `cargo`, and similar names first hit a `tke` shim instead of the system binary.
+That means later calls to `codex`, `claude`, `rg`, `git`, `cargo`, `jq`, `curl`, `python3`, `docker`, `ps`, and similar names first hit a `tke` shim instead of the system binary.
 
 ### 2. Shim Dispatch
 
@@ -96,7 +96,7 @@ Tool runtime:
 - [src/shim.rs](/root/github/tke/src/shim.rs:123)
 - [src/trim.rs](/root/github/tke/src/trim.rs:721)
 
-When an agent subprocess runs a wrapped tool like `rg`, `find`, `git diff`, or `cargo test`, `tke`:
+When an agent subprocess runs a wrapped tool like `rg`, `find`, `git diff`, `cargo test`, `curl`, `jq`, `docker ps`, or `python script.py`, `tke`:
 
 1. resolves the real binary
 2. captures stdout/stderr
@@ -141,7 +141,7 @@ Key profile code:
 - `pathlist`: collapse repeated directory structure into compact lists
 - `diff`: summarize file-level adds/deletes instead of keeping full hunks
 - `log`: keep first failures/warnings and fold repeated noise
-- `table`: shrink large list/table outputs such as `ps` and `docker ps`
+- `table`: shrink large list/table outputs such as `ps`, `ss`, `netstat`, `systemctl`, `docker ps`, and `df -h`
 
 That structure is why `tke` can stay deterministic: once command kind and raw output are known, the rewritten form is largely fixed.
 

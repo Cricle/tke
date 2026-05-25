@@ -11,7 +11,7 @@ If you want the internal execution model instead of usage notes, start with [doc
 - Runs as a `Rust` binary with minimal dependencies.
 - Activates only in the current shell session by prepending a shim directory to `PATH`.
 - Wraps agent CLIs like `codex` and downstream tool commands like `cat`, `rg`, `git`, `cargo`.
-- Covers common code-reading commands by default, including `cat`, `sed`, `rg`, `grep`, `find`, `fd`, `bat`, `nl`, `ls`, `tree`, `awk`, `cut`, `sort`, `uniq`, `wc`, and `xargs`.
+- Covers common agent-facing tool commands by default, including code/file reads (`cat`, `sed`, `bat`, `nl`, `awk`, `cut`, `tr`, `perl`), search/path discovery (`rg`, `grep`, `find`, `fd`, `ls`, `tree`), JSON/API inspection (`jq`, `curl`), build/test runners (`cargo`, `pytest`, `npm`, `pnpm`, `yarn`, `dotnet`, `go`, `cmake`, `ctest`, `make`, `ninja`, `node`, `python`, `python3`), and table/system output (`docker`, `ps`, `ss`, `netstat`, `systemctl`, `du`, `df`, `sort`, `uniq`, `wc`, `xargs`).
 - Converts long tool input/output into compact JSON blocks prefixed with `__TKE__`.
 - Tags each normalized block with a profile such as `file`, `search`, `pathlist`, `diff`, `log`, `table`, or `stacktrace`.
 - Rewrites nested `codex exec --json` `command_execution` event payloads so long `aggregated_output`/`stdout`/`stderr` fields are normalized too.
@@ -202,6 +202,8 @@ tke tty claude
 This is a compatibility path for hosts where `stdin` is not a real TTY. It is useful for getting terminal-bound commands to run, but it should not be treated as a guaranteed full-fidelity replacement for a native local terminal UI.
 
 `benchmark-commands` runs a built-in benchmark suite for the default high-frequency command families that `tke` optimizes, including code reading, search, path discovery, table/list output, diff, and build/test logs. It also includes fixed "real codex task" rollout benchmarks that simulate multi-step agent work on the same objective, and scans local rollout corpus files such as `.tmp-*.jsonl` and `.tke/interactive/*.jsonl`. The output is a JSON summary of byte and approximate token savings.
+
+`benchmark-commands --check` only gates on the built-in benchmark cases and fixed task traces. Dynamic local corpus files are still reported, but they do not fail the check because real user history can legitimately contain low-gain or no-gain sessions.
 
 For the Claude local harness itself, `bash scripts/verify_claude_harness.sh` verifies the isolated shell setup, `TKE_REAL_PATH`, and cargo/rustup cache wiring without making an external API call.
 

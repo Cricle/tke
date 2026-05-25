@@ -618,8 +618,11 @@ pub(crate) fn real_path_string() -> String {
 
 pub(crate) fn classify_command(name: &str, args: &[String]) -> CommandKind {
     match name {
-        "ps" | "ss" | "netstat" | "systemctl" => CommandKind::Log,
-        "cat" | "sed" | "head" | "tail" | "bat" | "nl" | "awk" | "cut" => CommandKind::File,
+        "ps" | "ss" | "netstat" | "systemctl" | "docker" | "du" | "df" => CommandKind::Log,
+        "cat" | "sed" | "head" | "tail" | "bat" | "nl" | "awk" | "cut" | "tr" | "perl" => {
+            CommandKind::File
+        }
+        "python" | "python3" => CommandKind::Log,
         "ls" if args
             .iter()
             .any(|arg| arg == "-l" || arg == "-la" || arg == "-lh" || arg == "-al") =>
@@ -627,7 +630,7 @@ pub(crate) fn classify_command(name: &str, args: &[String]) -> CommandKind {
             CommandKind::Log
         }
         "rg" | "grep" | "find" | "fd" | "tree" | "ls" => CommandKind::Search,
-        "sort" | "uniq" | "wc" | "xargs" => CommandKind::Generic,
+        "sort" | "uniq" | "wc" | "xargs" | "jq" | "curl" => CommandKind::Generic,
         "git" if args.first().map(String::as_str) == Some("diff") => CommandKind::Diff,
         "git" if matches!(args.first().map(String::as_str), Some("status" | "show")) => {
             CommandKind::Log
