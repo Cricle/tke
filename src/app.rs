@@ -8,6 +8,7 @@ use crate::trim::{
     default_output_trim, default_show_stats, default_tail_lines, detect_shell_kind, parse_usize,
     read_stdin_if_piped, render_activate_script, render_deactivate_script, resolve_real_command,
 };
+#[cfg(unix)]
 use nix::errno::Errno;
 use serde::Deserialize;
 use std::env;
@@ -132,6 +133,7 @@ impl From<serde_json::Error> for AppError {
     }
 }
 
+#[cfg(unix)]
 impl From<Errno> for AppError {
     fn from(value: Errno) -> Self {
         Self::Io(io::Error::from_raw_os_error(value as i32))

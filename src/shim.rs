@@ -12,17 +12,24 @@ use crate::trim::{
     profile_limits, read_stdin_if_piped, real_path_string, select_profile, should_force_trim,
     take_head, take_tail,
 };
+#[cfg(unix)]
 use nix::pty::{ForkptyResult, Winsize, forkpty};
+#[cfg(unix)]
 use nix::sys::signal::{Signal, kill};
+#[cfg(unix)]
 use nix::sys::termios::{SetArg, Termios, cfmakeraw, tcgetattr, tcsetattr};
+#[cfg(unix)]
 use nix::sys::wait::{WaitStatus, waitpid};
+#[cfg(unix)]
 use nix::unistd::{Pid, execve, read as nix_read, write as nix_write};
 use std::collections::BTreeSet;
 use std::env;
 use std::ffi::CString;
 use std::ffi::OsString;
+#[cfg(unix)]
 use std::fs::{File, OpenOptions};
 use std::io::{self, IsTerminal, Read, Write};
+#[cfg(unix)]
 use std::os::fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -322,6 +329,7 @@ pub(crate) fn passthrough(
     Ok(exit_code(status))
 }
 
+#[cfg(unix)]
 fn passthrough_with_native_pty(
     real_cmd: &Path,
     args: &[String],
@@ -381,6 +389,17 @@ fn passthrough_with_native_pty(
     }
 }
 
+#[cfg(not(unix))]
+fn passthrough_with_native_pty(
+    real_cmd: &Path,
+    args: &[String],
+    extra_envs: Option<Vec<(String, Option<OsString>)>>,
+    keep_shim_path: bool,
+) -> Result<i32, AppError> {
+    passthrough(real_cmd, args, extra_envs, None, keep_shim_path)
+}
+
+#[cfg(unix)]
 fn wait_for_child(child: Pid) -> Result<i32, AppError> {
     loop {
         match waitpid(child, None)? {
@@ -391,6 +410,7 @@ fn wait_for_child(child: Pid) -> Result<i32, AppError> {
     }
 }
 
+#[cfg(unix)]
 struct ParentTerminal {
     control_fd: Option<RawFd>,
     termios: Option<Termios>,
@@ -398,11 +418,13 @@ struct ParentTerminal {
     input: TerminalInput,
 }
 
+#[cfg(unix)]
 enum TerminalInput {
     Stdin,
     Tty(File),
 }
 
+#[cfg(unix)]
 impl ParentTerminal {
     fn capture() -> Self {
         let input = if io::stdin().is_terminal() {
@@ -461,17 +483,20 @@ impl ParentTerminal {
     }
 }
 
+#[cfg(unix)]
 struct RawTerminalGuard {
     fd: RawFd,
     original: Termios,
 }
 
+#[cfg(unix)]
 impl Drop for RawTerminalGuard {
     fn drop(&mut self) {
         let _ = tcsetattr(borrow_fd(self.fd), SetArg::TCSANOW, &self.original);
     }
 }
 
+#[cfg(unix)]
 fn capture_standard_terminal() -> (Option<RawFd>, Option<Termios>, Option<Winsize>) {
     capture_terminal_from_fd(0)
         .or_else(|| capture_terminal_from_fd(1))
@@ -480,12 +505,14 @@ fn capture_standard_terminal() -> (Option<RawFd>, Option<Termios>, Option<Winsiz
         .unwrap_or((None, None, env_winsize()))
 }
 
+#[cfg(unix)]
 fn capture_terminal_from_fd(fd: RawFd) -> Option<(RawFd, Option<Termios>, Option<Winsize>)> {
     let termios = tcgetattr(borrow_fd(fd)).ok()?;
     let winsize = read_winsize(fd);
     Some((fd, Some(termios), winsize))
 }
 
+#[cfg(unix)]
 fn read_winsize(fd: RawFd) -> Option<Winsize> {
     let mut winsize = Winsize {
         ws_row: 0,
@@ -502,6 +529,7 @@ fn read_winsize(fd: RawFd) -> Option<Winsize> {
     }
 }
 
+#[cfg(unix)]
 fn env_winsize() -> Option<Winsize> {
     let rows = env::var("LINES").ok()?.parse::<u16>().ok()?;
     let cols = env::var("COLUMNS").ok()?.parse::<u16>().ok()?;
@@ -516,11 +544,13 @@ fn env_winsize() -> Option<Winsize> {
     })
 }
 
+#[cfg(unix)]
 fn borrow_fd(fd: RawFd) -> BorrowedFd<'static> {
     // SAFETY: the caller only passes process-owned terminal fds that remain valid for the call.
     unsafe { BorrowedFd::borrow_raw(fd) }
 }
 
+#[cfg(unix)]
 fn relay_native_pty(
     child: Pid,
     master: OwnedFd,
@@ -605,6 +635,7 @@ fn relay_native_pty(
     status
 }
 
+#[cfg(unix)]
 fn write_fd_all(fd: &OwnedFd, mut bytes: &[u8]) -> Result<(), AppError> {
     while !bytes.is_empty() {
         let written = nix_write(fd, bytes)?;
@@ -613,6 +644,7 @@ fn write_fd_all(fd: &OwnedFd, mut bytes: &[u8]) -> Result<(), AppError> {
     Ok(())
 }
 
+#[cfg(unix)]
 fn apply_winsize(fd: RawFd, winsize: &Winsize) -> Result<(), AppError> {
     // SAFETY: `winsize` points to a valid struct for the duration of the ioctl call.
     let rc = unsafe { nix::libc::ioctl(fd, nix::libc::TIOCSWINSZ, winsize) };
