@@ -1463,6 +1463,32 @@ fn curl_http_json_output_uses_json_profile() {
 }
 
 #[test]
+fn curl_json_lines_output_uses_json_profile() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "{\"task_id\":\"a1\",\"status\":\"running\",\"progress\":90,\"error\":\"\"}",
+        "{\"task_id\":\"b2\",\"status\":\"running\",\"progress\":89,\"error\":\"\"}",
+        "{\"task_id\":\"c3\",\"status\":\"done\",\"progress\":100,\"error\":\"\"}",
+    ]
+    .join("\n");
+    let normalized = normalize_text(
+        "curl",
+        &[
+            "-s".to_owned(),
+            "http://127.0.0.1:8000/api/tasks".to_owned(),
+        ],
+        "stdout",
+        CommandKind::Generic,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "json");
+}
+
+#[test]
 fn curl_header_only_output_does_not_use_json_profile() {
     let mut cfg = Config::default();
     cfg.min_trim_bytes = 1;
@@ -4424,6 +4450,29 @@ fn python_json_output_uses_json_profile() {
     .to_string();
     let normalized = normalize_text(
         "python",
+        &["script.py".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "json");
+}
+
+#[test]
+fn python_json_lines_output_uses_json_profile() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "{\"task_id\":\"a1\",\"status\":\"running\",\"progress\":90}",
+        "{\"task_id\":\"b2\",\"status\":\"running\",\"progress\":89}",
+        "{\"task_id\":\"c3\",\"status\":\"done\",\"progress\":100}",
+    ]
+    .join("\n");
+    let normalized = normalize_text(
+        "python3",
         &["script.py".to_owned()],
         "stdout",
         CommandKind::Log,

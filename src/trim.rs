@@ -1173,7 +1173,7 @@ fn looks_like_json_document(name: &str, lines: &[&str]) -> bool {
         return false;
     }
     let text = lines.join("\n");
-    json_payload_text_for_command(name, &text).is_some()
+    json_payload_text_for_command(name, &text).is_some() || looks_like_json_lines(lines)
 }
 
 fn has_explicit_path_signal(line: &str) -> bool {
@@ -1187,6 +1187,22 @@ fn has_explicit_path_signal(line: &str) -> bool {
         || line.starts_with("..\\")
         || line.contains('/')
         || line.contains('\\')
+}
+
+fn looks_like_json_lines(lines: &[&str]) -> bool {
+    let non_empty = lines
+        .iter()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    if non_empty.len() < 2 {
+        return false;
+    }
+    non_empty.iter().all(|line| {
+        ((line.starts_with('{') && line.ends_with('}'))
+            || (line.starts_with('[') && line.ends_with(']')))
+            && serde_json::from_str::<serde_json::Value>(line).is_ok()
+    })
 }
 
 fn json_payload_text_for_command<'a>(name: &str, text: &'a str) -> Option<&'a str> {
