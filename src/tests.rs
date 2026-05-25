@@ -55,6 +55,18 @@ fn repeated_lines(prefix: &str, count: usize) -> String {
     crate::benchmark::repeated_lines(prefix, count)
 }
 
+#[test]
+fn whitelist_paths_match_path_boundaries_not_arbitrary_substrings() {
+    let mut cfg = Config::default();
+    cfg.whitelist_paths = vec!["/tmp/tke-codex".to_owned(), "src/tests.rs".to_owned()];
+    cfg.whitelist_extensions.clear();
+
+    assert!(cfg.is_whitelisted("cat", &["/tmp/tke-codex/session/output.json".to_owned()]));
+    assert!(cfg.is_whitelisted("sed", &["src/tests.rs".to_owned()]));
+    assert!(!cfg.is_whitelisted("cat", &["/tmp/notke-codex/session/output.json".to_owned()]));
+    assert!(!cfg.is_whitelisted("cat", &["src/tests.rs.bak".to_owned()]));
+}
+
 struct WouldBlockReader;
 
 impl Read for WouldBlockReader {
@@ -462,6 +474,14 @@ fn log_signal_detection_uses_tokens_not_substrings() {
     assert!(is_log_signal(
         "panic: runtime error: index out of range",
         &[]
+    ));
+    assert!(is_log_signal(
+        "src/core/parser.rs | 12 ++++++------",
+        &["core parser".to_owned()]
+    ));
+    assert!(!is_log_signal(
+        "src/core/parser.rs | 12 ++++++------",
+        &["ore par".to_owned()]
     ));
 }
 
@@ -1844,6 +1864,12 @@ fn parses_exec_command_envelope_output() {
     let raw = "Chunk ID: 13b6ef\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 500\nOutput:\nhello\nworld\n";
     assert_eq!(extract_exec_command_output(raw), Some("hello\nworld\n"));
     assert!(!looks_like_stderr_only_exec_output(raw));
+}
+
+#[test]
+fn stderr_only_exec_output_detects_tokenized_diagnostics() {
+    let raw = "Chunk ID: 13b6ef\nWall time: 0.0000 seconds\nProcess exited with code 1\nOriginal token count: 500\nOutput:\nTraceback (most recent call last):\nPermission denied\n";
+    assert!(looks_like_stderr_only_exec_output(raw));
 }
 
 #[test]

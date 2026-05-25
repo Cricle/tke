@@ -3,7 +3,7 @@ use crate::rewrite::{
     ParsedCommand, extract_exec_command_output, looks_like_stderr_only_exec_output,
     parse_command_execution, parse_exec_command_args, rewrite_command_like_values,
 };
-use crate::trim::classify_command;
+use crate::trim::{classify_command, has_prefix};
 use std::collections::HashMap;
 
 pub(crate) fn rewrite_agent_transcript(
@@ -128,7 +128,7 @@ fn rewrite_codex_tool_call_output(
     let Some(existing) = payload.get("output").and_then(|v| v.as_str()) else {
         return Ok(false);
     };
-    if existing.is_empty() || existing.starts_with(&config.json_prefix) {
+    if existing.is_empty() || has_prefix(existing, &config.json_prefix) {
         return Ok(false);
     }
     let Some(actual_output) = extract_exec_command_output(existing) else {
@@ -261,7 +261,7 @@ fn rewrite_claude_result_block(
     config: &Config,
 ) -> Result<bool, AppError> {
     if let Some(raw) = block.get("content").and_then(|v| v.as_str()) {
-        if raw.is_empty() || raw.starts_with(&config.json_prefix) {
+        if raw.is_empty() || has_prefix(raw, &config.json_prefix) {
             return Ok(false);
         }
         let Some(normalized) = normalize_with_parsed(parsed, "stdout", raw, config)? else {
@@ -285,7 +285,7 @@ fn rewrite_claude_result_block(
         let text = item
             .get("text")
             .and_then(|v| v.as_str())
-            .filter(|text| !text.is_empty() && !text.starts_with(&config.json_prefix));
+            .filter(|text| !text.is_empty() && !has_prefix(text, &config.json_prefix));
         let Some(text) = text else {
             continue;
         };

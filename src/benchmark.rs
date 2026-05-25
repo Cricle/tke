@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 pub(crate) use crate::rollout_stats::{
     collect_rollout_output_stats_detailed, rollout_string_haystack,
 };
+use crate::trim::has_prefix;
 
 #[derive(Serialize)]
 pub(crate) struct RolloutCompareReport {
@@ -200,7 +201,7 @@ fn benchmark_task_report(
     let preserved_fragments = spec
         .required_fragments
         .iter()
-        .filter(|fragment| haystack.contains(fragment.as_str()))
+        .filter(|fragment| haystack_contains_fragment(&haystack, fragment))
         .cloned()
         .collect::<Vec<_>>();
     Ok(BenchmarkTaskReport {
@@ -219,6 +220,24 @@ fn benchmark_task_report(
         required_fragments: spec.required_fragments,
         preserved_fragments,
     })
+}
+
+fn haystack_contains_fragment(haystack: &str, fragment: &str) -> bool {
+    if fragment.is_empty() {
+        return true;
+    }
+    if fragment.len() > haystack.len() {
+        return false;
+    }
+    haystack
+        .char_indices()
+        .map(|(idx, _)| idx)
+        .chain(std::iter::once(haystack.len()))
+        .any(|idx| {
+            haystack
+                .get(idx..)
+                .is_some_and(|tail| has_prefix(tail, fragment))
+        })
 }
 
 fn benchmark_corpus_reports(config: &Config) -> Result<Vec<CorpusCaseReport>, AppError> {

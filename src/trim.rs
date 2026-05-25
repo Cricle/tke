@@ -45,16 +45,20 @@ pub(crate) fn collect_term_chunks(
     if terms.is_empty() {
         return Vec::new();
     }
-    let lower_terms = terms
+    let term_sequences = terms
         .iter()
-        .map(|term| term.to_ascii_lowercase())
+        .map(|term| ascii_word_tokens(term))
+        .filter(|tokens| !tokens.is_empty())
         .collect::<Vec<_>>();
     let mut used = Vec::<(usize, usize)>::new();
     let mut out = Vec::new();
 
     for (idx, line) in lines.iter().enumerate() {
-        let lower = line.to_ascii_lowercase();
-        if !lower_terms.iter().any(|term| lower.contains(term)) {
+        let line_tokens = ascii_word_tokens(line);
+        if !term_sequences.iter().any(|sequence| {
+            let refs = sequence.iter().map(String::as_str).collect::<Vec<_>>();
+            has_token_sequence(&line_tokens, &refs)
+        }) {
             continue;
         }
         let start = idx.saturating_sub(context);
@@ -89,10 +93,10 @@ fn collect_diff_chunks(lines: &[&str], terms: &[String], limits: ProfileLimits) 
     let mut used = Vec::<(usize, usize)>::new();
 
     for (idx, line) in lines.iter().enumerate() {
-        if line.starts_with("diff --git ")
-            || line.starts_with("--- ")
-            || line.starts_with("+++ ")
-            || line.starts_with("index ")
+        let trimmed = line.trim_start();
+        if is_diff_file_header(trimmed)
+            || is_diff_path_marker(trimmed)
+            || is_diff_index_marker(trimmed)
         {
             if push_chunk(&mut out, &mut used, lines, idx, idx + 1, "file") && out.len() >= 4 {
                 break;
@@ -102,7 +106,7 @@ fn collect_diff_chunks(lines: &[&str], terms: &[String], limits: ProfileLimits) 
 
     for (idx, line) in lines.iter().enumerate() {
         let trimmed = line.trim_start();
-        if trimmed.starts_with("@@") {
+        if is_diff_hunk_header(trimmed) {
             let start = idx;
             let end = usize::min(lines.len(), idx + 3);
             if push_chunk(&mut out, &mut used, lines, start, end, "hunk") && out.len() >= 6 {
@@ -328,12 +332,12 @@ pub(crate) fn collect_diff_summary(lines: &[&str]) -> Option<DiffSummary> {
         let Some(file) = current.as_mut() else {
             continue;
         };
-        if line.starts_with("+++ ") || line.starts_with("--- ") || line.starts_with("@@") {
+        if is_diff_path_marker(line) || is_diff_hunk_header(line) {
             continue;
         }
-        if line.starts_with('+') {
+        if line.chars().next() == Some('+') {
             file.add += 1;
-        } else if line.starts_with('-') {
+        } else if line.chars().next() == Some('-') {
             file.del += 1;
         }
     }
@@ -352,12 +356,8 @@ fn collect_diff_stat_summary(lines: &[&str]) -> Option<DiffSummary> {
     let mut files = Vec::new();
     for line in lines {
         let trimmed = line.trim();
-        if trimmed.is_empty()
-            || trimmed.starts_with(|ch: char| ch.is_ascii_digit())
-            || trimmed.contains(" changed")
-            || trimmed.contains(" insertion")
-            || trimmed.contains(" deletion")
-        {
+        let tokens = ascii_word_tokens(trimmed);
+        if trimmed.is_empty() || is_diff_stat_totals_line(&tokens) {
             continue;
         }
         let Some((path, stat)) = trimmed.split_once('|') else {
@@ -557,13 +557,17 @@ pub(crate) fn compact_json_body_for_command(name: &str, text: &str) -> Option<Ve
     compact_json_body(payload)
 }
 
+pub(crate) fn has_prefix(raw: &str, prefix: &str) -> bool {
+    raw.len() >= prefix.len() && raw.as_bytes().get(..prefix.len()) == Some(prefix.as_bytes())
+}
+
 pub(crate) fn match_terms(name: &str, args: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     let mut seen = HashSet::new();
 
     for token in args
         .iter()
-        .filter(|arg| !arg.starts_with('-'))
+        .filter(|arg| !has_prefix(arg, "-"))
         .flat_map(|arg| split_token(arg))
         .chain(split_token(name))
         .chain(
@@ -684,7 +688,9 @@ pub(crate) fn classify_command(name: &str, args: &[String]) -> CommandKind {
             CommandKind::Log
         }
         "rg" | "grep" | "find" | "fd" | "tree" | "ls" | "which" => CommandKind::Search,
-        "readlink" | "stat" if args.iter().any(|arg| arg.starts_with('/')) => CommandKind::File,
+        "readlink" | "stat" if args.iter().any(|arg| has_leading_char(arg, '/')) => {
+            CommandKind::File
+        }
         "sort" | "uniq" | "wc" | "xargs" | "jq" | "curl" | "readlink" | "stat" => {
             CommandKind::Generic
         }
@@ -1184,10 +1190,10 @@ fn looks_like_diff(lines: &[&str]) -> bool {
         .iter()
         .take(48)
         .filter(|line| {
-            line.starts_with("diff --git ")
-                || line.starts_with("@@")
-                || line.starts_with("--- ")
-                || line.starts_with("+++ ")
+            let trimmed = line.trim_start();
+            is_diff_file_header(trimmed)
+                || is_diff_hunk_header(trimmed)
+                || is_diff_path_marker(trimmed)
         })
         .count();
     score >= 2
@@ -1219,13 +1225,8 @@ fn has_explicit_path_signal(line: &str) -> bool {
     if line.is_empty() {
         return false;
     }
-    line.starts_with('/')
-        || line.starts_with("./")
-        || line.starts_with("../")
-        || line.starts_with(".\\")
-        || line.starts_with("..\\")
-        || line.contains('/')
-        || line.contains('\\')
+    let trimmed = line.trim_start();
+    has_path_prefix(trimmed) || line.chars().any(|ch| matches!(ch, '/' | '\\'))
 }
 
 fn looks_like_json_lines(lines: &[&str]) -> bool {
@@ -1238,9 +1239,7 @@ fn looks_like_json_lines(lines: &[&str]) -> bool {
         return false;
     }
     non_empty.iter().all(|line| {
-        ((line.starts_with('{') && line.ends_with('}'))
-            || (line.starts_with('[') && line.ends_with(']')))
-            && serde_json::from_str::<serde_json::Value>(line).is_ok()
+        has_json_delimiters(line) && serde_json::from_str::<serde_json::Value>(line).is_ok()
     })
 }
 
@@ -1249,9 +1248,7 @@ fn json_payload_text_for_command<'a>(name: &str, text: &'a str) -> Option<&'a st
     if trimmed.len() < 2 {
         return None;
     }
-    if !((trimmed.starts_with('{') && trimmed.ends_with('}'))
-        || (trimmed.starts_with('[') && trimmed.ends_with(']')))
-    {
+    if !has_json_delimiters(trimmed) {
         if name == "curl" {
             return extract_http_json_body(text);
         }
@@ -1278,7 +1275,7 @@ fn extract_http_json_body(text: &str) -> Option<&str> {
 
     let mut lines = header.lines();
     let status_line = lines.next()?.trim_end_matches('\r').trim();
-    if !status_line.starts_with("HTTP/") {
+    if !is_http_status_line(status_line) {
         return None;
     }
     let status_code = status_line
@@ -1298,7 +1295,8 @@ fn extract_http_json_body(text: &str) -> Option<&str> {
         let Some((name, value)) = line.split_once(':') else {
             return None;
         };
-        if name.eq_ignore_ascii_case("content-type") && value.to_ascii_lowercase().contains("json")
+        if name.eq_ignore_ascii_case("content-type")
+            && has_ascii_token(&ascii_word_tokens(value), "json")
         {
             saw_json_content_type = true;
         }
@@ -1630,14 +1628,14 @@ fn looks_like_codeish_table_cell(cell: &str) -> bool {
     if trimmed.is_empty() {
         return false;
     }
-    trimmed.contains("fn ")
-        || trimmed.contains("struct ")
-        || trimmed.contains("impl ")
-        || trimmed.contains("println!")
-        || trimmed.contains("let ")
-        || trimmed.contains('{')
-        || trimmed.contains('}')
-        || trimmed.contains("::")
+    let tokens = ascii_word_tokens(trimmed);
+    has_token_prefix(&tokens, &["fn"])
+        || has_token_prefix(&tokens, &["struct"])
+        || has_token_prefix(&tokens, &["impl"])
+        || has_token_prefix(&tokens, &["let"])
+        || has_token_sequence(&tokens, &["println"])
+        || trimmed.chars().any(|ch| matches!(ch, '{' | '}'))
+        || has_repeated_symbol_pair(trimmed, ':')
 }
 
 fn normalize_header_name(header: &str) -> String {
@@ -1863,7 +1861,9 @@ fn push_unique_index(out: &mut Vec<usize>, idx: usize, cap: usize) {
 
 fn is_stack_frame(line: &str) -> bool {
     let trimmed = line.trim_start();
-    trimmed.starts_with("at ") || trimmed.starts_with('#') || has_source_location(trimmed)
+    has_token_prefix(&ascii_word_tokens(trimmed), &["at"])
+        || trimmed.chars().next() == Some('#')
+        || has_source_location(trimmed)
 }
 
 fn is_stack_summary(line: &str) -> bool {
@@ -1891,11 +1891,9 @@ fn classify_log_line(line: &str) -> LogLineClass {
         && (has_ascii_token(&tokens, "error")
             || has_ascii_token(&tokens, "panic")
             || has_ascii_token(&tokens, "exception")
+            || has_ascii_token(&tokens, "fail")
             || has_ascii_token(&tokens, "failed")
-            || has_token_sequence(&tokens, &["not", "ok"])
-            || trimmed.starts_with("--- FAIL:")
-            || trimmed.starts_with("FAIL ")
-            || trimmed.starts_with("FAILED "));
+            || has_token_sequence(&tokens, &["not", "ok"]));
     LogLineClass {
         warning,
         failure,
@@ -1926,7 +1924,7 @@ fn has_python_trace_location(line: &str) -> bool {
         && has_ascii_token(&ascii_word_tokens(line), "line")
 }
 
-fn ascii_word_tokens(line: &str) -> Vec<String> {
+pub(crate) fn ascii_word_tokens(line: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut current = String::new();
     for ch in line.chars() {
@@ -1942,11 +1940,11 @@ fn ascii_word_tokens(line: &str) -> Vec<String> {
     out
 }
 
-fn has_ascii_token(tokens: &[String], needle: &str) -> bool {
+pub(crate) fn has_ascii_token(tokens: &[String], needle: &str) -> bool {
     tokens.iter().any(|token| token == needle)
 }
 
-fn has_token_sequence(tokens: &[String], sequence: &[&str]) -> bool {
+pub(crate) fn has_token_sequence(tokens: &[String], sequence: &[&str]) -> bool {
     if sequence.is_empty() || tokens.len() < sequence.len() {
         return false;
     }
@@ -1956,6 +1954,16 @@ fn has_token_sequence(tokens: &[String], sequence: &[&str]) -> bool {
             .zip(sequence)
             .all(|(token, expected)| token == expected)
     })
+}
+
+pub(crate) fn has_token_prefix(tokens: &[String], prefix: &[&str]) -> bool {
+    if prefix.is_empty() || tokens.len() < prefix.len() {
+        return false;
+    }
+    prefix
+        .iter()
+        .enumerate()
+        .all(|(idx, expected)| tokens.get(idx).is_some_and(|token| token == expected))
 }
 
 fn is_zero_failed_summary(tokens: &[String]) -> bool {
@@ -1976,10 +1984,87 @@ pub(crate) fn is_log_signal(line: &str, terms: &[String]) -> bool {
     if class.warning || class.failure {
         return true;
     }
-    let lower = line.to_ascii_lowercase();
-    terms
+    let line_tokens = ascii_word_tokens(line);
+    let term_sequences = terms
         .iter()
-        .any(|term| !term.is_empty() && lower.contains(term))
+        .map(|term| ascii_word_tokens(term))
+        .filter(|tokens| !tokens.is_empty())
+        .collect::<Vec<_>>();
+    term_sequences.iter().any(|sequence| {
+        let refs = sequence.iter().map(String::as_str).collect::<Vec<_>>();
+        has_token_sequence(&line_tokens, &refs)
+    })
+}
+
+fn has_leading_char(raw: &str, ch: char) -> bool {
+    raw.chars().next() == Some(ch)
+}
+
+fn has_repeated_symbol_pair(raw: &str, symbol: char) -> bool {
+    let mut prev = None;
+    for ch in raw.chars() {
+        if prev == Some(symbol) && ch == symbol {
+            return true;
+        }
+        prev = Some(ch);
+    }
+    false
+}
+
+fn has_json_delimiters(raw: &str) -> bool {
+    matches!(
+        (raw.chars().next(), raw.chars().next_back()),
+        (Some('{'), Some('}')) | (Some('['), Some(']'))
+    )
+}
+
+fn has_path_prefix(raw: &str) -> bool {
+    let chars = raw.chars().collect::<Vec<_>>();
+    matches!(
+        chars.as_slice(),
+        ['/', ..] | ['.', '/', ..] | ['.', '.', '/', ..] | ['.', '\\', ..] | ['.', '.', '\\', ..]
+    )
+}
+
+fn is_http_status_line(line: &str) -> bool {
+    line.split_whitespace()
+        .next()
+        .and_then(|segment| segment.split('/').next())
+        == Some("HTTP")
+}
+
+fn is_diff_file_header(line: &str) -> bool {
+    let tokens = ascii_word_tokens(line);
+    has_token_prefix(&tokens, &["diff", "git"])
+}
+
+fn is_diff_index_marker(line: &str) -> bool {
+    has_token_prefix(&ascii_word_tokens(line), &["index"])
+}
+
+fn is_diff_path_marker(line: &str) -> bool {
+    let chars = line.chars().collect::<Vec<_>>();
+    matches!(chars.as_slice(), ['+', '+', '+', ..] | ['-', '-', '-', ..])
+}
+
+fn is_diff_hunk_header(line: &str) -> bool {
+    let chars = line.chars().collect::<Vec<_>>();
+    matches!(chars.as_slice(), ['@', '@', ..])
+}
+
+fn is_diff_stat_totals_line(tokens: &[String]) -> bool {
+    has_leading_numeric_token(tokens)
+        && (has_ascii_token(tokens, "changed")
+            || has_ascii_token(tokens, "insertion")
+            || has_ascii_token(tokens, "insertions")
+            || has_ascii_token(tokens, "deletion")
+            || has_ascii_token(tokens, "deletions"))
+}
+
+fn has_leading_numeric_token(tokens: &[String]) -> bool {
+    tokens
+        .first()
+        .is_some_and(|token| token.chars().all(|ch| ch.is_ascii_digit()))
 }
 
 #[derive(Serialize)]

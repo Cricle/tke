@@ -121,7 +121,7 @@ fn collect_pathlist_expansions(map: &Map<String, Value>, out: &mut String) {
         let Some(value) = pathlist.get(key).and_then(|value| value.as_str()) else {
             continue;
         };
-        if value.contains('/') || value.contains('\\') || dir == "." {
+        if value.chars().any(|ch| matches!(ch, '/' | '\\')) || dir == "." {
             continue;
         }
         out.push_str(dir);

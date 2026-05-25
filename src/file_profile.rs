@@ -1,5 +1,6 @@
 use crate::trim::{
-    MatchChunk, ProfileLimits, collect_term_chunks, push_chunk, push_existing_chunk,
+    MatchChunk, ProfileLimits, ascii_word_tokens, collect_term_chunks, has_token_prefix,
+    push_chunk, push_existing_chunk,
 };
 
 const MAX_DECL_CHUNKS: usize = 6;
@@ -98,36 +99,38 @@ fn normalized_code_line<'a>(line: &'a str) -> &'a str {
 }
 
 fn is_outline_line(line: &str) -> bool {
-    line.starts_with("use ")
-        || line.starts_with("mod ")
-        || line.starts_with("pub mod ")
-        || line.starts_with("const ")
-        || line.starts_with("pub const ")
-        || line.starts_with("type ")
-        || line.starts_with("pub type ")
-        || line.starts_with("trait ")
-        || line.starts_with("pub trait ")
-        || line.starts_with("impl ")
-        || line.starts_with("#[")
+    let tokens = ascii_word_tokens(line);
+    line.chars().next() == Some('#')
+        || has_token_prefix(&tokens, &["use"])
+        || has_token_prefix(&tokens, &["mod"])
+        || has_token_prefix(&tokens, &["pub", "mod"])
+        || has_token_prefix(&tokens, &["const"])
+        || has_token_prefix(&tokens, &["pub", "const"])
+        || has_token_prefix(&tokens, &["type"])
+        || has_token_prefix(&tokens, &["pub", "type"])
+        || has_token_prefix(&tokens, &["trait"])
+        || has_token_prefix(&tokens, &["pub", "trait"])
+        || has_token_prefix(&tokens, &["impl"])
         || is_code_boundary(line)
 }
 
 fn is_code_boundary(line: &str) -> bool {
-    line.starts_with("fn ")
-        || line.starts_with("pub fn ")
-        || line.starts_with("pub(crate) fn ")
-        || line.starts_with("async fn ")
-        || line.starts_with("pub async fn ")
-        || line.starts_with("pub(crate) async fn ")
-        || line.starts_with("struct ")
-        || line.starts_with("pub struct ")
-        || line.starts_with("pub(crate) struct ")
-        || line.starts_with("enum ")
-        || line.starts_with("pub enum ")
-        || line.starts_with("pub(crate) enum ")
-        || line.starts_with("class ")
-        || line.starts_with("def ")
-        || line.starts_with("function ")
+    let tokens = ascii_word_tokens(line);
+    has_token_prefix(&tokens, &["fn"])
+        || has_token_prefix(&tokens, &["pub", "fn"])
+        || has_token_prefix(&tokens, &["pub", "crate", "fn"])
+        || has_token_prefix(&tokens, &["async", "fn"])
+        || has_token_prefix(&tokens, &["pub", "async", "fn"])
+        || has_token_prefix(&tokens, &["pub", "crate", "async", "fn"])
+        || has_token_prefix(&tokens, &["struct"])
+        || has_token_prefix(&tokens, &["pub", "struct"])
+        || has_token_prefix(&tokens, &["pub", "crate", "struct"])
+        || has_token_prefix(&tokens, &["enum"])
+        || has_token_prefix(&tokens, &["pub", "enum"])
+        || has_token_prefix(&tokens, &["pub", "crate", "enum"])
+        || has_token_prefix(&tokens, &["class"])
+        || has_token_prefix(&tokens, &["def"])
+        || has_token_prefix(&tokens, &["function"])
 }
 
 fn find_block_end(lines: &[&str], start: usize) -> usize {

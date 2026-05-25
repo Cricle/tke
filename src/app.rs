@@ -14,7 +14,7 @@ use std::env;
 use std::ffi::OsString;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Component, Path, PathBuf};
 
 const DEFAULT_AGENT_COMMANDS: &[&str] = &["codex", "claude", "gemini", "aider"];
 const DEFAULT_TOOL_COMMANDS: &[&str] = &[
@@ -255,7 +255,7 @@ impl Config {
             if self
                 .whitelist_paths
                 .iter()
-                .any(|pattern| !pattern.is_empty() && arg.contains(pattern))
+                .any(|pattern| path_pattern_matches(arg, pattern))
             {
                 return true;
             }
@@ -269,6 +269,35 @@ impl Config {
         }
         false
     }
+}
+
+fn path_pattern_matches(arg: &str, pattern: &str) -> bool {
+    if pattern.is_empty() {
+        return false;
+    }
+    let arg_path = Path::new(arg);
+    let pattern_path = Path::new(pattern);
+    if arg_path == pattern_path {
+        return true;
+    }
+
+    let arg_components = normalized_path_components(arg_path);
+    let pattern_components = normalized_path_components(pattern_path);
+    if pattern_components.is_empty() || arg_components.len() < pattern_components.len() {
+        return false;
+    }
+    arg_components.starts_with(&pattern_components)
+}
+
+fn normalized_path_components(path: &Path) -> Vec<String> {
+    path.components()
+        .filter_map(|component| match component {
+            Component::Normal(value) => Some(value.to_string_lossy().into_owned()),
+            Component::RootDir => Some("/".to_owned()),
+            Component::Prefix(prefix) => Some(prefix.as_os_str().to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect()
 }
 
 #[derive(Debug)]

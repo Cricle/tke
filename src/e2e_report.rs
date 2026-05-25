@@ -476,7 +476,10 @@ fn last_text_block(content: &[serde_json::Value]) -> Option<String> {
 }
 
 fn is_tke_payload(text: &str) -> bool {
-    text.trim_start().starts_with("__TKE__")
+    let trimmed = text.trim_start();
+    let prefix = "__TKE__";
+    trimmed.len() >= prefix.len()
+        && trimmed.as_bytes().get(..prefix.len()) == Some(prefix.as_bytes())
 }
 
 fn parse_result_fields(text: &str) -> BTreeMap<String, String> {
@@ -634,43 +637,44 @@ fn case_expectation(path: &Path) -> Option<CaseExpectation> {
 }
 
 fn case_expectation_for_name(name: &str) -> Option<CaseExpectation> {
-    if name.starts_with("fairrg.") {
+    let prefix = name.split('.').next().unwrap_or_default();
+    if prefix == "fairrg" {
         return Some(CaseExpectation {
             required_non_empty: &["STAGE"],
             required_equal: &[("FILE", "src/tests.rs"), ("KIND", "search")],
         });
     }
-    if name.starts_with("fairfind.") {
+    if prefix == "fairfind" {
         return Some(CaseExpectation {
             required_non_empty: &["STAGE"],
             required_equal: &[("FILE", "src/rollout_stats.rs"), ("COUNT", "15")],
         });
     }
-    if name.starts_with("fairbuild.") {
+    if prefix == "fairbuild" {
         return Some(CaseExpectation {
             required_non_empty: &["STAGE"],
             required_equal: &[("FILE", "src/lib.rs"), ("COUNT", "0")],
         });
     }
-    if name.starts_with("rgcase.") {
+    if prefix == "rgcase" {
         return Some(CaseExpectation {
             required_non_empty: &["STAGE", "KIND"],
             required_equal: &[("FILE", "src/tests.rs")],
         });
     }
-    if name.starts_with("findcase.") {
+    if prefix == "findcase" {
         return Some(CaseExpectation {
             required_non_empty: &["STAGE"],
             required_equal: &[("FILE", "src/tests.rs"), ("COUNT", "17")],
         });
     }
-    if name.starts_with("buildcase.") {
+    if prefix == "buildcase" {
         return Some(CaseExpectation {
             required_non_empty: &["STAGE"],
             required_equal: &[("FILE", "src/lib.rs"), ("COUNT", "0")],
         });
     }
-    if name.starts_with("pipelinefix.") || name.starts_with("realtask.") {
+    if matches!(prefix, "pipelinefix" | "realtask") {
         return Some(CaseExpectation {
             required_non_empty: &["STAGE"],
             required_equal: &[("FILE", "src/benchmark.rs"), ("COUNT", "40")],

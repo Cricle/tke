@@ -107,7 +107,7 @@ fn compact_grouped_search_line(index: usize, line: &str) -> String {
 
 fn parse_search_result_line(line: &str) -> Option<(String, String)> {
     let (path, rest) = line.split_once(':')?;
-    if path.is_empty() || !path.contains('.') {
+    if path.is_empty() || !path.chars().any(|ch| ch == '.') {
         return None;
     }
     Some((path.to_owned(), rest.to_owned()))

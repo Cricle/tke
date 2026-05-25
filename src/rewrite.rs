@@ -1,6 +1,9 @@
 use crate::app::{AppError, Config};
 use crate::shim::maybe_normalize_text;
-use crate::trim::{base_name, classify_command};
+use crate::trim::{
+    ascii_word_tokens, base_name, classify_command, has_ascii_token, has_prefix, has_token_prefix,
+    has_token_sequence,
+};
 use std::fs;
 
 pub(crate) fn parse_exec_command_args(arguments: &str) -> Option<String> {
@@ -55,9 +58,10 @@ fn parse_exec_command_envelope(raw: &str) -> Option<ExecCommandEnvelope<'_>> {
 }
 
 fn matches_header_line(line: &str) -> bool {
-    line.starts_with("Chunk ID: ")
-        || line.starts_with("Wall time: ")
-        || line.starts_with("Original token count: ")
+    let tokens = ascii_word_tokens(line);
+    has_token_prefix(&tokens, &["chunk", "id"])
+        || has_token_prefix(&tokens, &["wall", "time"])
+        || has_token_prefix(&tokens, &["original", "token", "count"])
 }
 
 pub(crate) fn extract_exec_command_output(raw: &str) -> Option<&str> {
@@ -82,16 +86,16 @@ pub(crate) fn looks_like_stderr_only_exec_output(raw: &str) -> bool {
 }
 
 fn looks_like_diagnostic_line(line: &str) -> bool {
-    line.starts_with("error:")
-        || line.starts_with("warning:")
-        || line.starts_with("Traceback ")
-        || line.starts_with("Traceback (")
-        || line.contains(": error:")
-        || line.contains(": warning:")
-        || line.contains(" error reading ")
-        || line.ends_with("Is a directory")
-        || line.ends_with("No such file or directory")
-        || line.ends_with("Permission denied")
+    let trimmed = line.trim();
+    let tokens = ascii_word_tokens(trimmed);
+    let has_error = has_ascii_token(&tokens, "error");
+    let has_warning = has_ascii_token(&tokens, "warning") || has_ascii_token(&tokens, "warn");
+    let has_traceback = has_ascii_token(&tokens, "traceback");
+    let has_reading_error = has_token_sequence(&tokens, &["error", "reading"]);
+    let has_fs_error = has_token_sequence(&tokens, &["is", "a", "directory"])
+        || has_token_sequence(&tokens, &["no", "such", "file", "or", "directory"])
+        || has_token_sequence(&tokens, &["permission", "denied"]);
+    has_error || has_warning || has_traceback || has_reading_error || has_fs_error
 }
 
 pub(crate) fn rewrite_command_like_values(
@@ -130,7 +134,7 @@ pub(crate) fn rewrite_command_item_fields(
         let Some(existing) = obj.get(field).and_then(|value| value.as_str()) else {
             continue;
         };
-        if existing.is_empty() || existing.starts_with(&config.json_prefix) {
+        if existing.is_empty() || has_prefix(existing, &config.json_prefix) {
             continue;
         }
 
@@ -327,23 +331,24 @@ fn extract_nested_shell_invocation(tokens: &[String]) -> Option<String> {
 }
 
 fn extract_shell_loop_body(command: &str) -> Option<String> {
-    for prefix in ["for ", "while ", "until "] {
-        if !command.trim_start().starts_with(prefix) {
-            continue;
-        }
-        let (_, body_and_tail) = command.split_once(" do ")?;
-        let body = body_and_tail
-            .split_once("; done")
-            .map(|(body, _)| body)
-            .or_else(|| body_and_tail.split_once("\ndo").map(|(body, _)| body))
-            .unwrap_or(body_and_tail)
-            .trim();
-        if body.is_empty() {
-            return None;
-        }
-        return Some(body.to_owned());
+    let trimmed = command.trim_start();
+    let tokens = ascii_word_tokens(trimmed);
+    if !(has_token_prefix(&tokens, &["for"])
+        || has_token_prefix(&tokens, &["while"])
+        || has_token_prefix(&tokens, &["until"]))
+    {
+        return None;
     }
-    None
+
+    let body_start = find_shell_keyword_boundary(trimmed, "do")?;
+    let body_and_tail = trimmed.get(body_start..)?.trim_start();
+    let body_end =
+        find_shell_keyword_boundary(body_and_tail, "done").unwrap_or(body_and_tail.len());
+    let body = body_and_tail[..body_end]
+        .trim()
+        .trim_end_matches(';')
+        .trim();
+    (!body.is_empty()).then_some(body.to_owned())
 }
 
 fn shell_like_split(input: &str) -> Vec<String> {
@@ -458,7 +463,7 @@ fn first_real_token_with_index(tokens: &[String]) -> Option<(usize, &str)> {
         ) {
             idx += 1;
             while idx < tokens.len()
-                && (tokens[idx].starts_with('-')
+                && (token_starts_with_char(tokens[idx].as_str(), '-')
                     || token == "timeout" && is_timeout_duration_token(tokens[idx].as_str())
                     || token == "nice" && is_nice_priority_token(tokens[idx].as_str()))
             {
@@ -556,7 +561,7 @@ impl ParsedStage {
         let arg_weight = self
             .args
             .iter()
-            .filter(|arg| arg.starts_with('/') || arg.contains('.'))
+            .filter(|arg| arg.chars().next() == Some('/') || arg.chars().any(|ch| ch == '.'))
             .count() as i32;
         let position_weight = -(self.index as i32);
         (role_weight, arg_weight, position_weight)
@@ -572,7 +577,7 @@ fn trim_head_tail_args(args: Vec<String>) -> Vec<String> {
             idx += 2;
             continue;
         }
-        if arg.starts_with('-') {
+        if token_starts_with_char(arg, '-') {
             idx += 1;
             continue;
         }
@@ -661,4 +666,30 @@ fn read_proc_ppid(pid: u32) -> Option<u32> {
 
 fn current_linux_ppid() -> Option<u32> {
     read_proc_ppid(std::process::id())
+}
+
+fn token_starts_with_char(raw: &str, ch: char) -> bool {
+    raw.chars().next() == Some(ch)
+}
+
+fn find_shell_keyword_boundary(text: &str, keyword: &str) -> Option<usize> {
+    let keyword_len = keyword.len();
+    text.char_indices().find_map(|(idx, _)| {
+        let end = idx + keyword_len;
+        let segment = text.get(idx..end)?;
+        if segment != keyword {
+            return None;
+        }
+        let before_ok = idx == 0
+            || text[..idx]
+                .chars()
+                .next_back()
+                .is_none_or(|ch| ch.is_whitespace() || matches!(ch, ';' | '\n' | '\t'));
+        let after_ok = end == text.len()
+            || text[end..]
+                .chars()
+                .next()
+                .is_none_or(|ch| ch.is_whitespace() || matches!(ch, ';' | '\n' | '\t'));
+        (before_ok && after_ok).then_some(end)
+    })
 }

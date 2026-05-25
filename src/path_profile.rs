@@ -214,16 +214,17 @@ fn looks_like_path(line: &str) -> bool {
         && bytes[0].is_ascii_alphabetic()
         && (bytes[2] == b'/' || bytes[2] == b'\\');
     let has_separator = line.chars().any(|ch| ch == '/' || ch == '\\');
-    (line.starts_with('/')
-        || line.starts_with("./")
-        || line.starts_with("../")
-        || line.starts_with(".\\")
-        || line.starts_with("..\\")
-        || has_separator
-        || is_bare_name(line)
-        || windows_drive)
+    (has_path_prefix(line) || has_separator || is_bare_name(line) || windows_drive)
         && !line.ends_with(':')
         && !contains_arrow_mapping(line)
+}
+
+fn has_path_prefix(line: &str) -> bool {
+    let chars = line.chars().collect::<Vec<_>>();
+    matches!(
+        chars.as_slice(),
+        ['/', ..] | ['.', '/', ..] | ['.', '.', '/', ..] | ['.', '\\', ..] | ['.', '.', '\\', ..]
+    )
 }
 
 fn is_bare_name(line: &str) -> bool {
