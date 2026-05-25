@@ -4410,6 +4410,81 @@ fn large_json_uses_preview_body_lines() {
 }
 
 #[test]
+fn python_json_output_uses_json_profile() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = serde_json::json!({
+        "success": true,
+        "message": "python emitted json",
+        "data": {
+            "items": ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"],
+            "count": 6
+        }
+    })
+    .to_string();
+    let normalized = normalize_text(
+        "python",
+        &["script.py".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "json");
+}
+
+#[test]
+fn python_path_output_uses_pathlist_profile() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = (0..24)
+        .map(|idx| format!("/root/project/cache/item_{idx:03}.json"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let normalized = normalize_text(
+        "python3",
+        &["script.py".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "pathlist");
+    assert_eq!(value["c"], 24);
+}
+
+#[test]
+fn python_table_output_uses_table_profile() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "name        count   value",
+        "alpha       10      ready",
+        "beta        21      running",
+        "gamma       34      complete",
+        "delta       55      waiting",
+        "epsilon     89      stopped",
+    ]
+    .join("\n");
+    let normalized = normalize_text(
+        "python",
+        &["report.py".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "table");
+    assert_eq!(value["tb"]["rc"], 5);
+}
+
+#[test]
 fn psql_table_output_compresses() {
     let mut cfg = Config::default();
     cfg.min_trim_bytes = 1;

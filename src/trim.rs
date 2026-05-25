@@ -1008,6 +1008,14 @@ pub(crate) fn select_profile(
     if looks_like_json_document(name, lines) {
         return TrimProfile::Json;
     }
+    if matches!(name, "python" | "python3") {
+        if looks_like_path_list(lines) {
+            return TrimProfile::PathList;
+        }
+        if looks_like_table(lines) {
+            return TrimProfile::Table;
+        }
+    }
     if looks_like_diff(lines) {
         return TrimProfile::Diff;
     }

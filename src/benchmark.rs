@@ -832,6 +832,30 @@ pub(crate) fn benchmark_specs() -> Vec<BenchmarkSpec> {
             sample: repeated_benchmark_python_log(),
         },
         BenchmarkSpec {
+            name: "python_json".to_owned(),
+            command: "python script.py".to_owned(),
+            profile: "json".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_python_json_1".to_owned(),
+            sample: repeated_benchmark_pretty_json(),
+        },
+        BenchmarkSpec {
+            name: "python_paths".to_owned(),
+            command: "python3 script.py".to_owned(),
+            profile: "pathlist".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_python_paths_1".to_owned(),
+            sample: repeated_benchmark_paths(120),
+        },
+        BenchmarkSpec {
+            name: "python_table".to_owned(),
+            command: "python report.py".to_owned(),
+            profile: "table".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_python_table_1".to_owned(),
+            sample: repeated_benchmark_python_table(),
+        },
+        BenchmarkSpec {
             name: "ps_table".to_owned(),
             command: "ps aux --sort=-%cpu | head -n 25".to_owned(),
             profile: "table".to_owned(),
@@ -3454,6 +3478,18 @@ fn repeated_benchmark_python_log() -> String {
     }
     rows.push("warning: deprecated config key".to_owned());
     rows.push("error: script failed at stage 007".to_owned());
+    rows.join("\n")
+}
+
+fn repeated_benchmark_python_table() -> String {
+    let mut rows = vec!["name        count   value".to_owned()];
+    for idx in 0..18 {
+        rows.push(format!(
+            "item_{idx:02}    {:>5}   state_{:02}",
+            100 + idx * 11,
+            idx
+        ));
+    }
     rows.join("\n")
 }
 

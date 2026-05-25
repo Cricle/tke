@@ -93,6 +93,9 @@ selected_cases = [
     "dotnet_test",
     "go_test",
     "ninja_build",
+    "python_json",
+    "python_paths",
+    "python_table",
     "ps_table",
     "systemctl_table",
 ]
