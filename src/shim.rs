@@ -7,7 +7,7 @@ use crate::trim::{
     CommandKind, TrimEnvelope, TrimProfile, TrimStats, classify_command, collect_build_summary,
     collect_diff_summary, collect_git_status_summary, collect_kept_ranges,
     collect_path_list_kept_ranges, collect_path_list_summary, collect_profile_chunks,
-    collect_table_kept_ranges, collect_table_summary, compact_args, compact_json_body,
+    collect_table_kept_ranges, collect_table_summary, compact_args, compact_json_body_for_command,
     compute_omitted_ranges, create_single_shim, exit_code, match_terms, merge_ranges,
     profile_limits, read_stdin_if_piped, real_path_string, select_profile, should_force_trim,
     take_head, take_tail,
@@ -870,7 +870,7 @@ pub(crate) fn normalize_text_with_stage(
         None
     };
     let json_body = if forced && profile == TrimProfile::Json {
-        compact_json_body(text)
+        compact_json_body_for_command(name, text)
     } else {
         None
     };

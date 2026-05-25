@@ -712,6 +712,70 @@ fn parses_shell_wrapped_command_execution() {
 }
 
 #[test]
+fn parses_timeout_wrapped_command_execution() {
+    let parsed = parse_command_execution("timeout 30s env FOO=1 cargo test -- --nocapture");
+    assert_eq!(parsed.selected_stage().name, "cargo");
+    assert_eq!(parsed.selected_stage().role.as_str(), "build");
+}
+
+#[test]
+fn parses_stdbuf_wrapped_search_pipeline() {
+    let parsed = parse_command_execution(
+        "stdbuf -oL env FOO=1 rg -n normalize_text src/tests.rs | head -n 10",
+    );
+    assert_eq!(parsed.selected_stage().name, "rg");
+    assert_eq!(parsed.selected_stage().role.as_str(), "search");
+}
+
+#[test]
+fn parses_nice_wrapped_python_command() {
+    let parsed = parse_command_execution("nice -n 5 python3 script.py");
+    assert_eq!(parsed.selected_stage().name, "python3");
+    assert_eq!(parsed.selected_stage().role.as_str(), "build");
+}
+
+#[test]
+fn parses_bash_wrapped_which_pipeline() {
+    let parsed = parse_command_execution("bash -lc 'env FOO=1 which cargo | head -n 1'");
+    assert_eq!(parsed.selected_stage().name, "which");
+    assert_eq!(parsed.selected_stage().role.as_str(), "source");
+}
+
+#[test]
+fn parses_for_loop_wrapped_curl_healthcheck() {
+    let parsed = parse_command_execution(
+        "bash -lc 'for i in {1..20}; do curl -fsS http://127.0.0.1:8000/api/health && exit 0; sleep 1; done; exit 1'",
+    );
+    assert_eq!(parsed.selected_stage().name, "curl");
+    assert_eq!(parsed.selected_stage().role.as_str(), "source");
+}
+
+#[test]
+fn parses_for_loop_wrapped_curl_head_pipeline() {
+    let parsed = parse_command_execution(
+        "bash -lc 'for i in {1..20}; do curl -fsS http://127.0.0.1:5173/ | head -c 200 && exit 0; sleep 1; done; exit 1'",
+    );
+    assert_eq!(parsed.selected_stage().name, "curl");
+    assert_eq!(parsed.selected_stage().role.as_str(), "source");
+}
+
+#[test]
+fn stage_selection_ignores_head_count_argument() {
+    let parsed = parse_command_execution("curl -fsS http://127.0.0.1:5173/ | head -c 200");
+    assert_eq!(parsed.selected_stage().name, "curl");
+    assert_eq!(parsed.selected_stage().role.as_str(), "source");
+}
+
+#[test]
+fn parses_python_heredoc_command() {
+    let parsed = parse_command_execution(
+        "python - <<'PY'\nimport json\nprint(json.dumps({'ok': True}))\nPY",
+    );
+    assert_eq!(parsed.selected_stage().name, "python");
+    assert_eq!(parsed.selected_stage().role.as_str(), "build");
+}
+
+#[test]
 fn parses_powershell_wrapped_command_execution() {
     let parsed = parse_command_execution(
         "pwsh -Command \"Get-Content /tmp/demo.txt | rg -n section | Select-Object -First 1\"",
@@ -1046,6 +1110,30 @@ fn classify_common_code_reading_commands() {
         classify_command("docker", &["ps".to_owned()]),
         CommandKind::Log
     ));
+    assert!(matches!(
+        classify_command("which", &["cargo".to_owned()]),
+        CommandKind::Search
+    ));
+    assert!(matches!(
+        classify_command("git", &["show".to_owned(), "HEAD:src/lib.rs".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command("file", &["src/lib.rs".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command("stat", &["/tmp/demo.txt".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command("psql", &["-c".to_owned(), "select 1".to_owned()]),
+        CommandKind::Log
+    ));
+    assert!(matches!(
+        classify_command("redis-cli", &["info".to_owned()]),
+        CommandKind::Log
+    ));
 }
 
 #[test]
@@ -1086,6 +1174,12 @@ fn stage_roles_cover_default_tool_commands() {
         ("systemctl", "build"),
         ("curl", "source"),
         ("docker", "source"),
+        ("which", "source"),
+        ("readlink", "source"),
+        ("file", "source"),
+        ("stat", "source"),
+        ("psql", "build"),
+        ("redis-cli", "build"),
     ] {
         assert_eq!(classify_stage_role(name).as_str(), expected, "{name}");
     }
@@ -1339,6 +1433,55 @@ fn json_profile_compacts_pretty_json() {
     assert_eq!(parsed["ok"], true);
     assert_eq!(parsed["items"][1], 2);
     assert_eq!(parsed["name"], "demo");
+}
+
+#[test]
+fn curl_http_json_output_uses_json_profile() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 42\r\ndate: Fri, 22 May 2026 07:25:29 GMT\r\n\r\n{\"ok\":true,\"items\":[1,2,3],\"name\":\"demo\"}";
+    let normalized = normalize_text(
+        "curl",
+        &[
+            "-sS".to_owned(),
+            "-i".to_owned(),
+            "http://127.0.0.1:8800/demo".to_owned(),
+        ],
+        "stdout",
+        CommandKind::Generic,
+        text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "json");
+    let compacted = value["b"][0].as_str().expect("json body");
+    let parsed = value_from_json(compacted);
+    assert_eq!(parsed["ok"], true);
+    assert_eq!(parsed["items"][2], 3);
+    assert_eq!(parsed["name"], "demo");
+}
+
+#[test]
+fn curl_header_only_output_does_not_use_json_profile() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nCache-Control: no-cache\r\nDate: Sun, 17 May 2026 10:40:15 GMT\r\n\r\n";
+    let normalized = normalize_text(
+        "curl",
+        &[
+            "-I".to_owned(),
+            "-sS".to_owned(),
+            "http://127.0.0.1:5173".to_owned(),
+        ],
+        "stdout",
+        CommandKind::Generic,
+        text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_ne!(value["p"], "json");
 }
 
 #[test]
@@ -3876,6 +4019,10 @@ fn benchmark_specs_cover_default_tool_commands() {
                 commands.iter().any(|cmd| cmd.starts_with("git diff")),
                 "{tool}"
             ),
+            "which" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("which ")),
+                "{tool}"
+            ),
             "cargo" => assert!(
                 commands.iter().any(|cmd| cmd.starts_with("cargo ")),
                 "{tool}"
@@ -3975,6 +4122,10 @@ fn benchmark_specs_cover_default_tool_commands() {
                 commands.iter().any(|cmd| cmd.starts_with("systemctl ")),
                 "{tool}"
             ),
+            "psql" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("psql ")),
+                "{tool}"
+            ),
             "du" => assert!(commands.iter().any(|cmd| cmd.starts_with("du ")), "{tool}"),
             "df" => assert!(commands.iter().any(|cmd| cmd.starts_with("df ")), "{tool}"),
             "xargs" => assert!(
@@ -4018,6 +4169,7 @@ fn default_tool_commands_have_expected_command_kinds() {
             "ss" => vec!["-ltnp".to_owned()],
             "netstat" => vec!["-ltnp".to_owned()],
             "systemctl" => vec!["list-units".to_owned()],
+            "psql" => vec!["-c".to_owned(), "select 1".to_owned()],
             "du" => vec!["-sh".to_owned(), "/root/project".to_owned()],
             "df" => vec!["-h".to_owned()],
             "head" | "tail" => vec!["-n".to_owned(), "20".to_owned(), "src/lib.rs".to_owned()],
@@ -4027,6 +4179,7 @@ fn default_tool_commands_have_expected_command_kinds() {
             "awk" => vec!["{print}".to_owned(), "src/lib.rs".to_owned()],
             "cut" => vec!["-c1-120".to_owned(), "src/lib.rs".to_owned()],
             "tr" => vec!["-s".to_owned(), " ".to_owned()],
+            "which" => vec!["cargo".to_owned()],
             "perl" => vec![
                 "-ne".to_owned(),
                 "print".to_owned(),
@@ -4041,13 +4194,13 @@ fn default_tool_commands_have_expected_command_kinds() {
             "cat" | "sed" | "tail" | "head" | "bat" | "nl" | "awk" | "cut" | "tr" | "perl" => {
                 assert!(matches!(kind, CommandKind::File), "{tool}");
             }
-            "rg" | "grep" | "find" | "fd" | "tree" | "ls" => {
+            "rg" | "grep" | "find" | "fd" | "tree" | "ls" | "which" => {
                 assert!(matches!(kind, CommandKind::Search), "{tool}");
             }
             "git" => assert!(matches!(kind, CommandKind::Diff), "{tool}"),
             "cargo" | "pytest" | "npm" | "pnpm" | "yarn" | "dotnet" | "go" | "cmake" | "ctest"
             | "make" | "ninja" | "node" | "python" | "python3" | "docker" | "ps" | "ss"
-            | "netstat" | "systemctl" | "du" | "df" => {
+            | "netstat" | "systemctl" | "psql" | "du" | "df" => {
                 assert!(matches!(kind, CommandKind::Log), "{tool}");
             }
             "sort" | "uniq" | "wc" | "xargs" | "jq" | "curl" => {
@@ -4254,6 +4407,64 @@ fn large_json_uses_preview_body_lines() {
             .unwrap_or_default()
             > 1
     );
+}
+
+#[test]
+fn psql_table_output_compresses() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        " schema |           table            | rows ",
+        "--------+----------------------------+------",
+        " public | users                      | 1200 ",
+        " public | sessions                   | 8841 ",
+        " public | audit_events               | 19342 ",
+        " public | rollout_records            | 918 ",
+        " public | command_execution_records  | 44120 ",
+        " public | profile_stats              | 201 ",
+    ]
+    .join("\n");
+    let normalized = normalize_text(
+        "psql",
+        &["-c".to_owned(), "select * from stats".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "table");
+    assert_eq!(value["tb"]["hc"], 3);
+    assert_eq!(value["tb"]["rc"], 6);
+}
+
+#[test]
+fn which_path_output_uses_pathlist_profile() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "/usr/bin/cargo",
+        "/usr/bin/rustc",
+        "/usr/local/bin/tke",
+        "/usr/local/bin/codex",
+        "/usr/bin/rg",
+        "/usr/bin/git",
+    ]
+    .join("\n");
+    let normalized = normalize_text(
+        "which",
+        &["cargo".to_owned(), "rustc".to_owned(), "tke".to_owned()],
+        "stdout",
+        CommandKind::Search,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "pathlist");
+    assert_eq!(value["c"], 6);
+    assert_eq!(value["pl"]["e"].as_array().map(|v| v.len()), Some(4));
 }
 
 #[test]

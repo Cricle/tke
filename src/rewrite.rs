@@ -229,8 +229,15 @@ fn parse_command_execution_inner(command: &str, depth: usize) -> ParsedCommand {
         return ParsedCommand::default();
     }
 
-    let shell_body = extract_shell_body(command).unwrap_or(command).trim();
+    let extracted_shell_body = extract_shell_body(command);
+    let shell_body = extracted_shell_body.as_deref().unwrap_or(command).trim();
     let cleaned = shell_body.trim_matches(|c| c == '\'' || c == '"');
+    if let Some(loop_body) = extract_shell_loop_body(cleaned) {
+        let parsed = parse_command_execution_inner(&loop_body, depth + 1);
+        if !parsed.selected_stage().name.is_empty() {
+            return parsed;
+        }
+    }
     let tokens = shell_like_split(cleaned);
     if tokens.is_empty() {
         return ParsedCommand::default();
@@ -256,10 +263,23 @@ fn parse_command_execution_inner(command: &str, depth: usize) -> ParsedCommand {
     ParsedCommand::new(stages, Some(cleaned.to_owned()))
 }
 
-fn extract_shell_body(command: &str) -> Option<&str> {
-    for marker in [" -lc ", " -c ", " -Command ", " -command "] {
-        if let Some(pos) = command.find(marker) {
-            return Some(&command[(pos + marker.len())..]);
+fn extract_shell_body(command: &str) -> Option<String> {
+    let tokens = shell_like_split(command);
+    let (cmd_idx, cmd_token) = first_real_token_with_index(&tokens)?;
+    let shell = base_name(cmd_token);
+    if !matches!(
+        shell.as_str(),
+        "sh" | "bash" | "zsh" | "fish" | "pwsh" | "powershell" | "cmd" | "cmd.exe"
+    ) {
+        return None;
+    }
+
+    for window in tokens[cmd_idx + 1..].windows(2) {
+        if matches!(
+            window[0].as_str(),
+            "-lc" | "-c" | "-Command" | "-command" | "/c"
+        ) {
+            return Some(window[1].clone());
         }
     }
     None
@@ -302,6 +322,26 @@ fn extract_nested_shell_invocation(tokens: &[String]) -> Option<String> {
         if matches!(window[0].as_str(), "-c" | "-lc") {
             return Some(window[1].clone());
         }
+    }
+    None
+}
+
+fn extract_shell_loop_body(command: &str) -> Option<String> {
+    for prefix in ["for ", "while ", "until "] {
+        if !command.trim_start().starts_with(prefix) {
+            continue;
+        }
+        let (_, body_and_tail) = command.split_once(" do ")?;
+        let body = body_and_tail
+            .split_once("; done")
+            .map(|(body, _)| body)
+            .or_else(|| body_and_tail.split_once("\ndo").map(|(body, _)| body))
+            .unwrap_or(body_and_tail)
+            .trim();
+        if body.is_empty() {
+            return None;
+        }
+        return Some(body.to_owned());
     }
     None
 }
@@ -402,13 +442,28 @@ fn first_real_token_with_index(tokens: &[String]) -> Option<(usize, &str)> {
         let token = tokens[idx].as_str();
         if token == "env" {
             idx += 1;
+            while idx < tokens.len()
+                && matches!(tokens[idx].as_str(), "-i" | "--ignore-environment" | "--")
+            {
+                idx += 1;
+            }
             while idx < tokens.len() && looks_like_env_assignment(tokens[idx].as_str()) {
                 idx += 1;
             }
             continue;
         }
-        if matches!(token, "command" | "builtin" | "nohup" | "time") {
+        if matches!(
+            token,
+            "command" | "builtin" | "nohup" | "time" | "timeout" | "stdbuf" | "nice"
+        ) {
             idx += 1;
+            while idx < tokens.len()
+                && (tokens[idx].starts_with('-')
+                    || token == "timeout" && is_timeout_duration_token(tokens[idx].as_str())
+                    || token == "nice" && is_nice_priority_token(tokens[idx].as_str()))
+            {
+                idx += 1;
+            }
             continue;
         }
         if looks_like_env_assignment(token) {
@@ -425,6 +480,29 @@ fn parse_xargs_payload(tokens: &[String]) -> Option<(String, Vec<String>)> {
     let name = base_name(token);
     let args = tokens.iter().skip(idx + 1).cloned().collect();
     Some((name, args))
+}
+
+fn is_timeout_duration_token(token: &str) -> bool {
+    if token.is_empty() {
+        return false;
+    }
+    let numeric_len = token
+        .chars()
+        .take_while(|ch| ch.is_ascii_digit() || *ch == '.')
+        .count();
+    if numeric_len == 0 {
+        return false;
+    }
+    let suffix = &token[numeric_len..];
+    suffix.is_empty() || suffix.chars().all(|ch| ch.is_ascii_alphabetic())
+}
+
+fn is_nice_priority_token(token: &str) -> bool {
+    token
+        .strip_prefix('-')
+        .unwrap_or(token)
+        .chars()
+        .all(|ch| ch.is_ascii_digit())
 }
 
 #[derive(Clone, Default)]
@@ -460,6 +538,11 @@ impl ParsedStage {
 
         let args = tokens.iter().skip(cmd_idx + 1).cloned().collect::<Vec<_>>();
         let role = classify_stage_role(&base);
+        let args = if matches!(base.as_str(), "head" | "tail") {
+            trim_head_tail_args(args)
+        } else {
+            args
+        };
         Self {
             name: base,
             args,
@@ -478,6 +561,25 @@ impl ParsedStage {
         let position_weight = -(self.index as i32);
         (role_weight, arg_weight, position_weight)
     }
+}
+
+fn trim_head_tail_args(args: Vec<String>) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut idx = 0usize;
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if matches!(arg, "-n" | "-c") {
+            idx += 2;
+            continue;
+        }
+        if arg.starts_with('-') {
+            idx += 1;
+            continue;
+        }
+        out.extend(args.into_iter().skip(idx));
+        return out;
+    }
+    Vec::new()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
@@ -518,12 +620,13 @@ impl StageRole {
 pub(crate) fn classify_stage_role(name: &str) -> StageRole {
     match name {
         "rg" | "grep" | "find" | "fd" | "tree" => StageRole::Search,
-        "cat" | "git" | "bat" | "nl" | "ls" | "curl" | "docker" => StageRole::Source,
+        "cat" | "git" | "bat" | "nl" | "ls" | "curl" | "docker" | "which" | "readlink" | "file"
+        | "stat" => StageRole::Source,
         "sed" | "awk" | "perl" | "cut" | "sort" | "uniq" | "tr" | "jq" => StageRole::Filter,
         "head" | "tail" | "wc" | "du" | "df" => StageRole::Summarize,
         "cargo" | "pytest" | "npm" | "pnpm" | "yarn" | "dotnet" | "go" | "cmake" | "ctest"
         | "make" | "ninja" | "node" | "python" | "python3" | "ps" | "ss" | "netstat"
-        | "systemctl" => StageRole::Build,
+        | "systemctl" | "psql" | "redis-cli" => StageRole::Build,
         _ => StageRole::Unknown,
     }
 }

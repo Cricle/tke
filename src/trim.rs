@@ -514,6 +514,11 @@ pub(crate) fn compact_json_body(text: &str) -> Option<Vec<String>> {
     Some(compact_json_preview(&value, 6))
 }
 
+pub(crate) fn compact_json_body_for_command(name: &str, text: &str) -> Option<Vec<String>> {
+    let payload = json_payload_text_for_command(name, text)?;
+    compact_json_body(payload)
+}
+
 pub(crate) fn match_terms(name: &str, args: &[String]) -> Vec<String> {
     let mut out = Vec::new();
     let mut seen = HashSet::new();
@@ -627,8 +632,10 @@ pub(crate) fn real_path_string() -> String {
 
 pub(crate) fn classify_command(name: &str, args: &[String]) -> CommandKind {
     match name {
-        "ps" | "ss" | "netstat" | "systemctl" | "docker" | "du" | "df" => CommandKind::Log,
-        "cat" | "sed" | "head" | "tail" | "bat" | "nl" | "awk" | "cut" | "tr" | "perl" => {
+        "ps" | "ss" | "netstat" | "systemctl" | "docker" | "du" | "df" | "psql" | "redis-cli" => {
+            CommandKind::Log
+        }
+        "cat" | "sed" | "head" | "tail" | "bat" | "nl" | "awk" | "cut" | "tr" | "perl" | "file" => {
             CommandKind::File
         }
         "python" | "python3" => CommandKind::Log,
@@ -638,11 +645,21 @@ pub(crate) fn classify_command(name: &str, args: &[String]) -> CommandKind {
         {
             CommandKind::Log
         }
-        "rg" | "grep" | "find" | "fd" | "tree" | "ls" => CommandKind::Search,
-        "sort" | "uniq" | "wc" | "xargs" | "jq" | "curl" => CommandKind::Generic,
+        "rg" | "grep" | "find" | "fd" | "tree" | "ls" | "which" => CommandKind::Search,
+        "readlink" | "stat" if args.iter().any(|arg| arg.starts_with('/')) => CommandKind::File,
+        "sort" | "uniq" | "wc" | "xargs" | "jq" | "curl" | "readlink" | "stat" => {
+            CommandKind::Generic
+        }
         "git" if args.first().map(String::as_str) == Some("diff") => CommandKind::Diff,
-        "git" if matches!(args.first().map(String::as_str), Some("status" | "show")) => {
-            CommandKind::Log
+        "git" if args.first().map(String::as_str) == Some("show") => CommandKind::File,
+        "git" if args.first().map(String::as_str) == Some("status") => CommandKind::Log,
+        "git"
+            if matches!(
+                args.first().map(String::as_str),
+                Some("rev-parse" | "remote" | "branch" | "log" | "ls-remote")
+            ) =>
+        {
+            CommandKind::Generic
         }
         "cargo" | "pytest" | "npm" | "pnpm" | "yarn" | "dotnet" | "go" | "cmake" | "ctest"
         | "make" | "ninja" | "node" => CommandKind::Log,
@@ -988,7 +1005,7 @@ pub(crate) fn select_profile(
     {
         return TrimProfile::GitStatus;
     }
-    if looks_like_json_document(lines) {
+    if looks_like_json_document(name, lines) {
         return TrimProfile::Json;
     }
     if looks_like_diff(lines) {
@@ -1138,21 +1155,79 @@ fn looks_like_path_list(lines: &[&str]) -> bool {
     crate::path_profile::looks_like_path_list(lines)
 }
 
-fn looks_like_json_document(lines: &[&str]) -> bool {
+fn looks_like_json_document(name: &str, lines: &[&str]) -> bool {
     if lines.is_empty() {
         return false;
     }
     let text = lines.join("\n");
+    json_payload_text_for_command(name, &text).is_some()
+}
+
+fn json_payload_text_for_command<'a>(name: &str, text: &'a str) -> Option<&'a str> {
     let trimmed = text.trim();
     if trimmed.len() < 2 {
-        return false;
+        return None;
     }
     if !((trimmed.starts_with('{') && trimmed.ends_with('}'))
         || (trimmed.starts_with('[') && trimmed.ends_with(']')))
     {
-        return false;
+        if name == "curl" {
+            return extract_http_json_body(text);
+        }
+        return None;
     }
-    serde_json::from_str::<serde_json::Value>(trimmed).is_ok()
+    serde_json::from_str::<serde_json::Value>(trimmed)
+        .ok()
+        .map(|_| trimmed)
+}
+
+fn extract_http_json_body(text: &str) -> Option<&str> {
+    let (header, body) = if let Some((header, body)) = text.split_once("\r\n\r\n") {
+        (header, body)
+    } else if let Some((header, body)) = text.split_once("\n\n") {
+        (header, body)
+    } else {
+        return None;
+    };
+
+    let body = body.trim();
+    if body.is_empty() {
+        return None;
+    }
+
+    let mut lines = header.lines();
+    let status_line = lines.next()?.trim_end_matches('\r').trim();
+    if !status_line.starts_with("HTTP/") {
+        return None;
+    }
+    let status_code = status_line
+        .split_whitespace()
+        .nth(1)
+        .and_then(|value| value.parse::<u16>().ok())?;
+    if !(200..300).contains(&status_code) {
+        return None;
+    }
+
+    let mut saw_json_content_type = false;
+    for line in lines.take(64) {
+        let line = line.trim_end_matches('\r').trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((name, value)) = line.split_once(':') else {
+            return None;
+        };
+        if name.eq_ignore_ascii_case("content-type") && value.to_ascii_lowercase().contains("json")
+        {
+            saw_json_content_type = true;
+        }
+    }
+    if !saw_json_content_type {
+        return None;
+    }
+
+    serde_json::from_str::<serde_json::Value>(body).ok()?;
+    Some(body)
 }
 
 fn detect_table_layout(lines: &[&str]) -> Option<TableLayout> {
@@ -1165,6 +1240,15 @@ fn detect_table_layout(lines: &[&str]) -> Option<TableLayout> {
         let headers = split_table_fields(line, usize::MAX);
         if headers.len() < 3 || !looks_like_table_header(&headers) {
             continue;
+        }
+        if header_index + 1 < lines.len() {
+            let next_fields = split_table_fields(lines[header_index + 1].trim(), headers.len());
+            if next_fields
+                .iter()
+                .any(|field| looks_like_codeish_table_cell(field))
+            {
+                continue;
+            }
         }
 
         let mut rows = Vec::new();
@@ -1416,6 +1500,12 @@ fn split_on_any_whitespace(line: &str, max_fields: usize) -> Vec<String> {
 }
 
 fn looks_like_table_header(headers: &[String]) -> bool {
+    if headers
+        .iter()
+        .any(|header| looks_like_codeish_table_cell(header))
+    {
+        return false;
+    }
     let mut known = 0usize;
     let mut score = 0usize;
     for header in headers {
@@ -1452,6 +1542,21 @@ fn looks_like_table_header(headers: &[String]) -> bool {
         }
     }
     known >= 1 || score >= usize::max(4, headers.len().saturating_sub(1))
+}
+
+fn looks_like_codeish_table_cell(cell: &str) -> bool {
+    let trimmed = cell.trim();
+    if trimmed.is_empty() {
+        return false;
+    }
+    trimmed.contains("fn ")
+        || trimmed.contains("struct ")
+        || trimmed.contains("impl ")
+        || trimmed.contains("println!")
+        || trimmed.contains("let ")
+        || trimmed.contains('{')
+        || trimmed.contains('}')
+        || trimmed.contains("::")
 }
 
 fn normalize_header_name(header: &str) -> String {
@@ -1498,6 +1603,14 @@ fn is_known_table_header(header: &str) -> bool {
             | "avail"
             | "use%"
             | "mountedon"
+            | "column"
+            | "type"
+            | "value"
+            | "count"
+            | "database"
+            | "schema"
+            | "table"
+            | "rows"
     )
 }
 
@@ -1511,12 +1624,21 @@ fn select_table_columns(headers: &[String]) -> Vec<usize> {
         .map(|header| normalize_header_name(header))
         .collect::<Vec<_>>();
     let wanted = [
+        "filesystem",
         "user",
         "pid",
         "%cpu",
         "%mem",
+        "size",
+        "used",
+        "avail",
+        "use%",
+        "mountedon",
         "stat",
         "command",
+        "schema",
+        "table",
+        "rows",
         "unit",
         "active",
         "sub",
@@ -1544,16 +1666,16 @@ fn select_table_columns(headers: &[String]) -> Vec<usize> {
             if header == name && !selected.contains(&idx) {
                 selected.push(idx);
             }
-            if selected.len() >= 6 {
+            if selected.len() >= 5 {
                 break;
             }
         }
-        if selected.len() >= 6 {
+        if selected.len() >= 5 {
             break;
         }
     }
     for idx in 0..headers.len() {
-        if selected.len() >= 6 {
+        if selected.len() >= 5 {
             break;
         }
         if !selected.contains(&idx) {
@@ -1574,6 +1696,7 @@ fn select_table_rows(
     let cap = match name {
         "ps" | "ss" | "netstat" | "systemctl" => 5,
         "docker" if args.first().map(String::as_str) == Some("ps") => 5,
+        "ls" | "df" | "du" | "psql" => 5,
         _ => 6,
     };
 

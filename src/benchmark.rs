@@ -672,12 +672,44 @@ pub(crate) fn benchmark_specs() -> Vec<BenchmarkSpec> {
             sample: repeated_benchmark_pretty_json(),
         },
         BenchmarkSpec {
+            name: "git_show_file".to_owned(),
+            command: "git show HEAD:src/lib.rs".to_owned(),
+            profile: "file".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_git_show_1".to_owned(),
+            sample: repeated_benchmark_code(180),
+        },
+        BenchmarkSpec {
             name: "curl_json".to_owned(),
             command: "curl -s http://127.0.0.1/demo".to_owned(),
             profile: "json".to_owned(),
             expected: BenchmarkExpectation::Compress,
             call_id: "bench_curl_1".to_owned(),
             sample: repeated_benchmark_pretty_json(),
+        },
+        BenchmarkSpec {
+            name: "curl_http_json".to_owned(),
+            command: "curl -sS -i http://127.0.0.1:8800/v1/responses".to_owned(),
+            profile: "json".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_curl_http_json_1".to_owned(),
+            sample: repeated_benchmark_http_json_response(),
+        },
+        BenchmarkSpec {
+            name: "timeout_cargo_build".to_owned(),
+            command: "timeout 30s cargo build".to_owned(),
+            profile: "log".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_timeout_cargo_1".to_owned(),
+            sample: repeated_benchmark_build_log("cargo"),
+        },
+        BenchmarkSpec {
+            name: "psql_table".to_owned(),
+            command: "psql -c 'select schema, table, rows from stats'".to_owned(),
+            profile: "table".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_psql_1".to_owned(),
+            sample: repeated_benchmark_psql_table(),
         },
         BenchmarkSpec {
             name: "git_diff".to_owned(),
@@ -3251,6 +3283,13 @@ fn repeated_benchmark_pretty_json() -> String {
     )
 }
 
+fn repeated_benchmark_http_json_response() -> String {
+    format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 4096\r\ndate: Fri, 22 May 2026 07:25:31 GMT\r\n\r\n{}",
+        repeated_benchmark_pretty_json()
+    )
+}
+
 fn repeated_benchmark_named_diff(path: &str, symbol_prefix: &str) -> String {
     let mut rows = vec![
         format!("diff --git a/{path} b/{path}"),
@@ -3389,6 +3428,20 @@ fn repeated_benchmark_df() -> String {
             60,
             20 + (idx % 70),
             idx
+        ));
+    }
+    rows.join("\n")
+}
+
+fn repeated_benchmark_psql_table() -> String {
+    let mut rows = vec![
+        " schema |           table            | rows ".to_owned(),
+        "--------+----------------------------+------".to_owned(),
+    ];
+    for idx in 0..18 {
+        rows.push(format!(
+            " public | table_{idx:02}                 | {} ",
+            1000 + idx * 137
         ));
     }
     rows.join("\n")

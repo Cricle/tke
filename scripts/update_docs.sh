@@ -59,6 +59,14 @@ def pct(value):
     return f"{value * 100:.1f}%"
 
 
+def signed_int(value):
+    return f"{value:+d}"
+
+
+def signed_pp(value):
+    return f"{value * 100:+.1f} pp"
+
+
 def md_table(headers, rows):
     out = []
     out.append("| " + " | ".join(headers) + " |")
@@ -238,19 +246,35 @@ for label, tke_name, rtk_name in comparison_task_specs:
     tke_fragment_ok = len(tke_task["preserved_fragments"]) == len(tke_task["required_fragments"])
     rtk_fragment_ok = len(rtk_task["preserved_fragments"]) == len(rtk_task["required_fragments"])
     if tke_fragment_ok and rtk_fragment_ok:
-        fragment_winner = "`tie`"
+        fragment_status = "`both full`"
     elif tke_fragment_ok:
-        fragment_winner = "`tke`"
+        fragment_status = "`tke full`"
     elif rtk_fragment_ok:
-        fragment_winner = "`rtk-hook`"
+        fragment_status = "`rtk-hook full`"
     else:
-        fragment_winner = "`neither`"
+        fragment_status = "`partial`"
+
+    token_delta = rtk_task["tokens_saved"] - tke_task["tokens_saved"]
+    ratio_delta = rtk_task["tokens_saved_ratio"] - tke_task["tokens_saved_ratio"]
+    near_tie_token_limit = max(250, int(max(tke_task["tokens_saved"], rtk_task["tokens_saved"]) * 0.02))
+    near_tie_ratio_limit = 0.005
+    if tke_fragment_ok and rtk_fragment_ok and abs(token_delta) <= near_tie_token_limit and abs(ratio_delta) <= near_tie_ratio_limit:
+        practical_verdict = "`near-tie`"
+    elif tke_fragment_ok and not rtk_fragment_ok:
+        practical_verdict = "`tke`"
+    elif rtk_fragment_ok and not tke_fragment_ok:
+        practical_verdict = "`rtk-hook`"
+    elif token_winner == ratio_winner:
+        practical_verdict = token_winner
+    else:
+        practical_verdict = "`mixed`"
     comparison_verdict_rows.append(
         [
             label,
-            token_winner,
-            ratio_winner,
-            fragment_winner,
+            f"`{signed_int(token_delta)}`",
+            f"`{signed_pp(ratio_delta)}`",
+            fragment_status,
+            practical_verdict,
         ]
     )
 
@@ -668,10 +692,12 @@ benchmarks_md = [
         comparison_task_rows,
     ),
     "",
-    "Scenario verdicts:",
+    "Scenario deltas and practical verdicts:",
+    "",
+    "Positive deltas mean `rtk-hook` saved more than `tke`. `near-tie` means both paths kept all required fragments and the gap stayed within a small practical band (`<=250` tokens or `<=2%` of scenario savings, and `<=0.5 pp` ratio gap).",
     "",
     md_table(
-        ["Scenario", "Absolute token winner", "Savings-ratio winner", "Fragment winner"],
+        ["Scenario", "Token delta (RTK-TKE)", "Ratio delta (RTK-TKE)", "Fragment status", "Practical verdict"],
         comparison_verdict_rows,
     ),
     "",

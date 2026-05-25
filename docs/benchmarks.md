@@ -148,27 +148,29 @@ Task-mode comparison for Claude-oriented stable synthetic traces:
 | symbol-collision | `4612` (82.8%) | `4718` (83.0%) | `15/15` | `15/15` |
 | reversal | `8881` (86.7%) | `9123` (87.0%) | `19/19` | `19/19` |
 
-Scenario verdicts:
+Scenario deltas and practical verdicts:
 
-| Scenario | Absolute token winner | Savings-ratio winner | Fragment winner |
-| --- | --- | --- | --- |
-| find/pathlist | `tie` | `rtk-hook` | `tie` |
-| search | `tke` | `rtk-hook` | `tie` |
-| diff | `tie` | `rtk-hook` | `tie` |
-| build/log | `tie` | `rtk-hook` | `tie` |
-| complex/triage | `tie` | `tie` | `tie` |
-| complex/code-trace | `tie` | `tie` | `tie` |
-| complex/stacktrace | `rtk-hook` | `rtk-hook` | `tie` |
-| complex/stacktrace-diff | `rtk-hook` | `tke` | `tie` |
-| complex/root-cause | `rtk-hook` | `rtk-hook` | `tie` |
-| answer-consistency | `rtk-hook` | `rtk-hook` | `tie` |
-| candidate-root-cause | `rtk-hook` | `rtk-hook` | `tie` |
-| misleading-signal | `rtk-hook` | `rtk-hook` | `tie` |
-| cross-file-causality | `rtk-hook` | `rtk-hook` | `tie` |
-| negative-evidence | `rtk-hook` | `rtk-hook` | `tie` |
-| temporal-causality | `rtk-hook` | `rtk-hook` | `tie` |
-| symbol-collision | `rtk-hook` | `rtk-hook` | `tie` |
-| reversal | `rtk-hook` | `rtk-hook` | `tie` |
+Positive deltas mean `rtk-hook` saved more than `tke`. `near-tie` means both paths kept all required fragments and the gap stayed within a small practical band (`<=250` tokens or `<=2%` of scenario savings, and `<=0.5 pp` ratio gap).
+
+| Scenario | Token delta (RTK-TKE) | Ratio delta (RTK-TKE) | Fragment status | Practical verdict |
+| --- | --- | --- | --- | --- |
+| find/pathlist | `+0` | `+0.1 pp` | `both full` | `near-tie` |
+| search | `-143` | `+3.4 pp` | `both full` | `mixed` |
+| diff | `+0` | `+0.1 pp` | `both full` | `near-tie` |
+| build/log | `+0` | `+0.4 pp` | `both full` | `near-tie` |
+| complex/triage | `+0` | `+0.0 pp` | `both full` | `near-tie` |
+| complex/code-trace | `+0` | `+0.0 pp` | `both full` | `near-tie` |
+| complex/stacktrace | `+71` | `+0.3 pp` | `both full` | `near-tie` |
+| complex/stacktrace-diff | `+71` | `-0.0 pp` | `both full` | `near-tie` |
+| complex/root-cause | `+105` | `+0.0 pp` | `both full` | `near-tie` |
+| answer-consistency | `+105` | `+0.1 pp` | `both full` | `near-tie` |
+| candidate-root-cause | `+127` | `+0.3 pp` | `both full` | `near-tie` |
+| misleading-signal | `+132` | `+0.2 pp` | `both full` | `near-tie` |
+| cross-file-causality | `+126` | `+0.0 pp` | `both full` | `near-tie` |
+| negative-evidence | `+105` | `+0.2 pp` | `both full` | `near-tie` |
+| temporal-causality | `+105` | `+0.1 pp` | `both full` | `near-tie` |
+| symbol-collision | `+106` | `+0.3 pp` | `both full` | `near-tie` |
+| reversal | `+242` | `+0.3 pp` | `both full` | `near-tie` |
 
 ## Structured Summary Coverage
 
