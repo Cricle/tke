@@ -1,8 +1,8 @@
 use crate::app::{AppError, Config};
 use crate::shim::maybe_normalize_text;
 use crate::trim::{
-    ascii_word_tokens, base_name, classify_command, has_ascii_token, has_prefix, has_token_prefix,
-    has_token_sequence,
+    ascii_word_tokens, base_name, canonical_command_name, classify_command, has_ascii_token,
+    has_prefix, has_token_prefix, has_token_sequence,
 };
 use std::fs;
 
@@ -207,10 +207,10 @@ pub(crate) fn live_pipeline_decision(
     if parsed.stage_count() <= 1 {
         return LivePipelineDecision::NotPipeline;
     }
-    if !parsed.has_unique_stage_name(current_name) {
+    if !parsed.has_unique_stage_match(current_name) {
         return LivePipelineDecision::PassThrough;
     }
-    if parsed.last_stage().name != current_name {
+    if !stage_name_matches_current_command(&parsed.last_stage().name, current_name) {
         return LivePipelineDecision::PassThrough;
     }
     let selected = parsed.selected_stage();
@@ -423,10 +423,10 @@ impl ParsedCommand {
         !self.stages.is_empty()
     }
 
-    fn has_unique_stage_name(&self, name: &str) -> bool {
+    fn has_unique_stage_match(&self, current_name: &str) -> bool {
         self.stages
             .iter()
-            .filter(|stage| stage.name == name)
+            .filter(|stage| stage_name_matches_current_command(&stage.name, current_name))
             .count()
             == 1
     }
@@ -528,7 +528,7 @@ impl ParsedStage {
                 index,
             };
         };
-        let base = base_name(cmd_token);
+        let base = canonical_command_name(&base_name(cmd_token)).to_owned();
         if base == "xargs"
             && let Some((payload_name, payload_args)) = parse_xargs_payload(&tokens[cmd_idx + 1..])
         {
@@ -541,15 +541,16 @@ impl ParsedStage {
             };
         }
 
-        let args = tokens.iter().skip(cmd_idx + 1).cloned().collect::<Vec<_>>();
-        let role = classify_stage_role_with_args(&base, &args);
-        let args = if matches!(base.as_str(), "head" | "tail") {
-            trim_head_tail_args(args)
+        let raw_args = tokens.iter().skip(cmd_idx + 1).cloned().collect::<Vec<_>>();
+        let canonical_stage = canonical_stage_with_args(&base, &raw_args);
+        let role = classify_stage_role_with_args(&canonical_stage, &raw_args);
+        let args = if matches!(canonical_stage.as_str(), "head" | "tail") {
+            trim_head_tail_args(raw_args)
         } else {
-            args
+            raw_args
         };
         Self {
-            name: base,
+            name: canonical_stage,
             args,
             role,
             index,
@@ -566,6 +567,31 @@ impl ParsedStage {
         let position_weight = -(self.index as i32);
         (role_weight, arg_weight, position_weight)
     }
+}
+
+fn canonical_stage_with_args(name: &str, args: &[String]) -> String {
+    if name == "head" {
+        if args.iter().any(|arg| matches!(arg.as_str(), "-Last" | "-last")) {
+            return "tail".to_owned();
+        }
+        if args.iter().any(|arg| matches!(arg.as_str(), "-Skip" | "-skip")) {
+            return "awk".to_owned();
+        }
+    }
+    name.to_owned()
+}
+
+fn stage_name_matches_current_command(stage_name: &str, current_name: &str) -> bool {
+    let canonical_stage = canonical_command_name(stage_name);
+    let canonical_current = canonical_command_name(current_name);
+    if canonical_stage == canonical_current {
+        return true;
+    }
+
+    matches!(
+        base_name(current_name).as_str(),
+        "Select-Object" | "select-object"
+    ) && matches!(canonical_stage, "head" | "tail" | "awk")
 }
 
 fn trim_head_tail_args(args: Vec<String>) -> Vec<String> {
@@ -623,6 +649,7 @@ impl StageRole {
 }
 
 pub(crate) fn classify_stage_role(name: &str) -> StageRole {
+    let name = canonical_command_name(name);
     match name {
         "rg" | "grep" | "find" | "fd" | "tree" => StageRole::Search,
         "cat" | "git" | "bat" | "nl" | "ls" | "curl" | "docker" | "which" | "readlink" | "file"
@@ -638,6 +665,7 @@ pub(crate) fn classify_stage_role(name: &str) -> StageRole {
 }
 
 fn classify_stage_role_with_args(name: &str, args: &[String]) -> StageRole {
+    let name = canonical_command_name(name);
     if name == "git" {
         match args
             .iter()

@@ -21,9 +21,10 @@ use crate::rollout_stats::{
 };
 use crate::shim::{maybe_normalize_text, normalize_text, normalize_text_with_stage};
 use crate::trim::{
-    CommandKind, ShellKind, candidate_command_names, classify_command, create_windows_cmd_shim,
-    is_failure_signal_line, is_log_signal, is_warning_signal, match_terms, now_millis,
-    read_stream_payload, render_activate_script, render_deactivate_script,
+    CommandKind, ShellKind, candidate_command_names, canonical_command_name, classify_command,
+    create_windows_cmd_shim, is_failure_signal_line, is_log_signal, is_warning_signal,
+    match_terms, now_millis, read_stream_payload, render_activate_script,
+    render_deactivate_script,
 };
 use std::fs;
 use std::io::{self, Cursor, Read};
@@ -1116,6 +1117,100 @@ fn parses_powershell_wrapped_command_execution() {
 }
 
 #[test]
+fn parses_powershell_get_content_pipeline_as_source_stage() {
+    let parsed = parse_command_execution(
+        "pwsh -Command \"Get-Content /tmp/demo.txt | Select-Object -First 20\"",
+    );
+    assert_eq!(parsed.selected_stage().name, "cat");
+    assert_eq!(parsed.selected_stage().role.as_str(), "source");
+}
+
+#[test]
+fn parses_macos_mdfind_pipeline_as_search_stage() {
+    let parsed = parse_command_execution("mdfind kind:rust | head -n 20");
+    assert_eq!(parsed.selected_stage().name, "find");
+    assert_eq!(parsed.selected_stage().role.as_str(), "search");
+}
+
+#[test]
+fn parses_bsd_prefixed_ggrep_pipeline_as_search_stage() {
+    let parsed = parse_command_execution("ggrep -n normalize_text src/tests.rs | head -n 5");
+    assert_eq!(parsed.selected_stage().name, "grep");
+    assert_eq!(parsed.selected_stage().role.as_str(), "search");
+}
+
+#[test]
+fn parses_windows_more_pipeline_as_source_stage() {
+    let parsed = parse_command_execution("type README.md | more");
+    assert_eq!(parsed.selected_stage().name, "cat");
+    assert_eq!(parsed.selected_stage().role.as_str(), "source");
+}
+
+#[test]
+fn parses_macos_open_preview_as_source_stage() {
+    let parsed = parse_command_execution("qlmanage -p /tmp/demo.png");
+    assert_eq!(parsed.selected_stage().name, "cat");
+    assert_eq!(parsed.selected_stage().role.as_str(), "source");
+}
+
+#[test]
+fn parses_powershell_get_clipboard_pipeline_as_source_stage() {
+    let parsed =
+        parse_command_execution("pwsh -Command \"Get-Clipboard | Select-Object -First 20\"");
+    assert_eq!(parsed.selected_stage().name, "cat");
+    assert_eq!(parsed.selected_stage().role.as_str(), "source");
+}
+
+#[test]
+fn parses_powershell_select_object_last_as_tail_stage() {
+    let parsed =
+        parse_command_execution("pwsh -Command \"Get-Content /tmp/demo.txt | Select-Object -Last 20\"");
+    assert_eq!(parsed.last_stage().name, "tail");
+    assert_eq!(parsed.last_stage().role.as_str(), "summarize");
+}
+
+#[test]
+fn parses_powershell_select_object_skip_as_filter_stage() {
+    let parsed =
+        parse_command_execution("pwsh -Command \"Get-Content /tmp/demo.txt | Select-Object -Skip 10\"");
+    assert_eq!(parsed.last_stage().name, "awk");
+    assert_eq!(parsed.last_stage().role.as_str(), "filter");
+}
+
+#[test]
+fn canonical_command_name_maps_windows_aliases() {
+    assert_eq!(canonical_command_name("Get-Content"), "cat");
+    assert_eq!(canonical_command_name("Get-Clipboard"), "cat");
+    assert_eq!(canonical_command_name("gc"), "cat");
+    assert_eq!(canonical_command_name("type"), "cat");
+    assert_eq!(canonical_command_name("gsed"), "sed");
+    assert_eq!(canonical_command_name("Select-String"), "grep");
+    assert_eq!(canonical_command_name("findstr"), "grep");
+    assert_eq!(canonical_command_name("Get-ChildItem"), "ls");
+    assert_eq!(canonical_command_name("dir"), "ls");
+    assert_eq!(canonical_command_name("Measure-Object"), "wc");
+    assert_eq!(canonical_command_name("Select-Object"), "head");
+    assert_eq!(canonical_command_name("ggrep"), "grep");
+    assert_eq!(canonical_command_name("gls"), "ls");
+    assert_eq!(canonical_command_name("gfind"), "find");
+    assert_eq!(canonical_command_name("mdfind"), "find");
+    assert_eq!(canonical_command_name("mdls"), "cat");
+    assert_eq!(canonical_command_name("xattr"), "cat");
+    assert_eq!(canonical_command_name("pbpaste"), "cat");
+    assert_eq!(canonical_command_name("ghead"), "head");
+    assert_eq!(canonical_command_name("gtail"), "tail");
+    assert_eq!(canonical_command_name("guniq"), "uniq");
+    assert_eq!(canonical_command_name("gwc"), "wc");
+    assert_eq!(canonical_command_name("gdu"), "du");
+    assert_eq!(canonical_command_name("gdf"), "df");
+    assert_eq!(canonical_command_name("more"), "head");
+    assert_eq!(canonical_command_name("more.com"), "head");
+    assert_eq!(canonical_command_name("plutil"), "jq");
+    assert_eq!(canonical_command_name("open"), "cat");
+    assert_eq!(canonical_command_name("qlmanage"), "cat");
+}
+
+#[test]
 fn rewrites_multiple_command_output_fields() {
     let mut cfg = Config::default();
     cfg.min_trim_bytes = 1;
@@ -1293,7 +1388,9 @@ fn default_tool_commands_cover_common_reading_tools() {
     let cfg = Config::default();
     for name in [
         "ls", "find", "fd", "bat", "nl", "awk", "cut", "sort", "uniq", "wc", "tree", "xargs", "jq",
-        "curl", "tr", "perl",
+        "curl", "tr", "perl", "gls", "gfind", "ggrep", "mdfind", "pbpaste", "Get-ChildItem",
+        "Get-Content", "Get-Clipboard", "Select-String", "more", "more.com", "open", "qlmanage",
+        "mdls", "plutil", "xattr", "gsed", "ghead", "gtail", "guniq", "gwc", "gdu", "gdf",
     ] {
         assert!(cfg.is_tool_command(name), "missing tool command {name}");
     }
@@ -1407,6 +1504,102 @@ fn classify_common_code_reading_commands() {
     ));
     assert!(matches!(
         classify_command("ls", &["src".to_owned()]),
+        CommandKind::Search
+    ));
+    assert!(matches!(
+        classify_command("Get-Content", &["src/lib.rs".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command(
+            "Select-String",
+            &["-Pattern".to_owned(), "normalize_text".to_owned(), "src/lib.rs".to_owned()]
+        ),
+        CommandKind::Search
+    ));
+    assert!(matches!(
+        classify_command("Get-ChildItem", &["src".to_owned()]),
+        CommandKind::Search
+    ));
+    assert!(matches!(
+        classify_command("Get-ChildItem", &["-Recurse".to_owned(), "src".to_owned()]),
+        CommandKind::Search
+    ));
+    assert!(matches!(
+        classify_command("gls", &["src".to_owned()]),
+        CommandKind::Search
+    ));
+    assert!(matches!(
+        classify_command(
+            "ggrep",
+            &["-n".to_owned(), "normalize_text".to_owned(), "src/tests.rs".to_owned()]
+        ),
+        CommandKind::Search
+    ));
+    assert!(matches!(
+        classify_command(
+            "gfind",
+            &["src".to_owned(), "-name".to_owned(), "*.rs".to_owned()]
+        ),
+        CommandKind::Search
+    ));
+    assert!(matches!(
+        classify_command("mdfind", &["kind:rust".to_owned()]),
+        CommandKind::Search
+    ));
+    assert!(matches!(
+        classify_command("Get-Clipboard", &[]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command("gsed", &["-n".to_owned(), "1,20p".to_owned(), "src/lib.rs".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command("mdls", &["/tmp/demo.png".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command("mdls", &["-name".to_owned(), "kMDItemKind".to_owned(), "/tmp/demo.png".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command("xattr", &["/tmp/demo.png".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command("xattr", &["-l".to_owned(), "/tmp/demo.png".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command("plutil", &["-p".to_owned(), "/tmp/demo.plist".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command("stat", &["-f".to_owned(), "%N".to_owned(), "/tmp/demo.txt".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(classify_command("ghead", &[]), CommandKind::File));
+    assert!(matches!(classify_command("gtail", &[]), CommandKind::File));
+    assert!(matches!(classify_command("guniq", &[]), CommandKind::Generic));
+    assert!(matches!(classify_command("gwc", &[]), CommandKind::Generic));
+    assert!(matches!(classify_command("gdu", &[]), CommandKind::Log));
+    assert!(matches!(classify_command("gdf", &[]), CommandKind::Log));
+    assert!(matches!(classify_command("pbpaste", &[]), CommandKind::File));
+    assert!(matches!(
+        classify_command("more", &["README.md".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command("open", &["README.md".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command("qlmanage", &["-p".to_owned(), "/tmp/demo.png".to_owned()]),
+        CommandKind::File
+    ));
+    assert!(matches!(
+        classify_command("dir", &["src".to_owned()]),
         CommandKind::Search
     ));
     assert!(matches!(
@@ -1557,6 +1750,72 @@ fn stage_roles_cover_default_tool_commands() {
         ("redis-cli", "build"),
     ] {
         assert_eq!(classify_stage_role(name).as_str(), expected, "{name}");
+    }
+}
+
+#[test]
+fn stage_roles_cover_windows_equivalent_commands() {
+    for (name, expected) in [
+        ("Get-Content", "source"),
+        ("gc", "source"),
+        ("type", "source"),
+        ("Select-String", "search"),
+        ("findstr", "search"),
+        ("Get-ChildItem", "source"),
+        ("dir", "source"),
+        ("Measure-Object", "summarize"),
+        ("Select-Object", "summarize"),
+        ("Sort-Object", "filter"),
+        ("gls", "source"),
+        ("ggrep", "search"),
+        ("gfind", "search"),
+        ("mdfind", "search"),
+        ("Get-Clipboard", "source"),
+        ("gsed", "filter"),
+        ("mdls", "source"),
+        ("xattr", "source"),
+        ("plutil", "filter"),
+        ("pbpaste", "source"),
+        ("ghead", "summarize"),
+        ("gtail", "summarize"),
+        ("guniq", "filter"),
+        ("gwc", "summarize"),
+        ("gdu", "summarize"),
+        ("gdf", "summarize"),
+        ("more", "summarize"),
+        ("more.com", "summarize"),
+        ("open", "source"),
+        ("qlmanage", "source"),
+    ] {
+        assert_eq!(classify_stage_role(name).as_str(), expected, "{name}");
+    }
+}
+
+#[test]
+fn live_pipeline_decision_uses_canonical_current_command_name() {
+    let parsed = parse_live_shell_pipeline(
+        "Get-Content /tmp/demo.txt | Select-String section | Select-Object -First 1",
+    );
+    match live_pipeline_decision(&parsed, "Select-Object") {
+        LivePipelineDecision::Normalize(selected) => {
+            assert_eq!(selected.name, "grep");
+            assert_eq!(selected.role.as_str(), "search");
+        }
+        _ => panic!("expected normalize"),
+    }
+}
+
+#[test]
+fn live_pipeline_decision_handles_select_object_last_via_canonical_stage() {
+    let parsed = parse_live_shell_pipeline(
+        "Get-Content /tmp/demo.txt | Select-String section | Select-Object -Last 1",
+    );
+    match live_pipeline_decision(&parsed, "Select-Object") {
+        LivePipelineDecision::Normalize(selected) => {
+            assert_eq!(selected.name, "grep");
+            assert_eq!(selected.role.as_str(), "search");
+        }
+        _ => panic!("expected normalize"),
     }
 }
 
@@ -2842,6 +3101,36 @@ fn parse_stats_dispatch() {
                 crate::rollout_io::UsageStatsSortBy::Saved
             ));
             assert!(json);
+        }
+        other => panic!("unexpected dispatch: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_usage_stats_dispatch_alias() {
+    let dispatch = parse_dispatch(
+        "tke",
+        vec![
+            "tke".to_owned(),
+            "usage".to_owned(),
+            "stats".to_owned(),
+            "--source".to_owned(),
+            "/tmp/rollouts".to_owned(),
+            "--top".to_owned(),
+            "5".to_owned(),
+        ],
+    )
+    .expect("dispatch");
+    match dispatch {
+        Dispatch::Stats {
+            sources,
+            top,
+            refresh,
+            ..
+        } => {
+            assert_eq!(sources, vec![PathBuf::from("/tmp/rollouts")]);
+            assert_eq!(top, 5);
+            assert!(!refresh);
         }
         other => panic!("unexpected dispatch: {other:?}"),
     }
@@ -4725,7 +5014,7 @@ fn benchmark_specs_cover_default_tool_commands() {
         .map(|spec| spec.command.as_str())
         .collect::<Vec<_>>();
     for tool in default_tool_commands() {
-        match *tool {
+        match canonical_command_name(tool) {
             "cat" => assert!(
                 commands.iter().any(|cmd| cmd == &"cat src/lib.rs"),
                 "{tool}"
@@ -4890,7 +5179,7 @@ fn benchmark_specs_cover_default_tool_commands() {
                 commands.iter().any(|cmd| cmd.contains("xargs cat")),
                 "{tool}"
             ),
-            other => panic!("unexpected default tool command {other}"),
+            other => panic!("unexpected default tool command {tool} -> {other}"),
         }
     }
 }
@@ -4898,7 +5187,7 @@ fn benchmark_specs_cover_default_tool_commands() {
 #[test]
 fn default_tool_commands_have_expected_command_kinds() {
     for tool in default_tool_commands() {
-        let args = match *tool {
+        let args = match canonical_command_name(tool) {
             "git" => vec!["diff".to_owned()],
             "cargo" => vec!["build".to_owned()],
             "pytest" => vec!["-q".to_owned()],
@@ -4967,7 +5256,7 @@ fn default_tool_commands_have_expected_command_kinds() {
         };
 
         let kind = classify_command(tool, &args);
-        match *tool {
+        match canonical_command_name(tool) {
             "cat" | "sed" | "tail" | "head" | "bat" | "nl" | "awk" | "cut" | "tr" | "perl" => {
                 assert!(matches!(kind, CommandKind::File), "{tool}");
             }
@@ -4984,7 +5273,7 @@ fn default_tool_commands_have_expected_command_kinds() {
             "sort" | "uniq" | "wc" | "xargs" | "jq" | "curl" => {
                 assert!(matches!(kind, CommandKind::Generic), "{tool}");
             }
-            other => panic!("unexpected default tool command {other}"),
+            other => panic!("unexpected default tool command {tool} -> {other}"),
         }
     }
 }
@@ -5339,6 +5628,64 @@ fn psql_table_output_compresses() {
     assert_eq!(value["p"], "table");
     assert_eq!(value["tb"]["hc"], 3);
     assert_eq!(value["tb"]["rc"], 6);
+}
+
+#[test]
+fn df_table_prefers_capacity_columns_over_full_width() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "Filesystem      Size  Used Avail Use% Mounted on",
+        "/dev/mapper/vg0  80G   20G   60G  25% /mnt/vol0",
+        "/dev/mapper/vg1  81G   21G   60G  26% /mnt/vol1",
+        "/dev/mapper/vg2  82G   22G   60G  27% /mnt/vol2",
+        "/dev/mapper/vg3  83G   23G   60G  28% /mnt/vol3",
+    ]
+    .join("\n");
+    let normalized = normalize_text(
+        "df",
+        &["-h".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "table");
+    let cols = value["tb"]["c"].as_array().expect("cols");
+    let cols = cols
+        .iter()
+        .filter_map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(cols, vec!["Filesystem", "Size", "Used", "Use%", "Mounted on"]);
+}
+
+#[test]
+fn table_rows_omit_line_indexes_from_serialized_payload() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "name        count   value",
+        "alpha       10      ready",
+        "beta        21      running",
+        "gamma       34      complete",
+        "delta       55      waiting",
+        "epsilon     89      stopped",
+    ]
+    .join("\n");
+    let normalized = normalize_text(
+        "python",
+        &["report.py".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    let rows = value["tb"]["r"].as_array().expect("rows");
+    assert!(rows.iter().all(|row| row.get("i").is_none()));
 }
 
 #[test]

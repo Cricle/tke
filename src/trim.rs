@@ -969,7 +969,39 @@ fn first_non_flag_arg(args: &[String]) -> Option<&str> {
         .map(String::as_str)
 }
 
+pub(crate) fn canonical_command_name(name: &str) -> &str {
+    match name {
+        "Get-Content" | "get-content" | "Get-Clipboard" | "get-clipboard" | "gc" | "type" => {
+            "cat"
+        }
+        "gsed" => "sed",
+        "Select-String" | "select-string" | "sls" | "findstr" => "grep",
+        "Get-ChildItem" | "get-childitem" | "gci" | "dir" => "ls",
+        "Measure-Object" | "measure-object" => "wc",
+        "Select-Object" | "select-object" => "head",
+        "Sort-Object" | "sort-object" => "sort",
+        "Where-Object" | "where-object" => "awk",
+        "guniq" => "uniq",
+        "gwc" => "wc",
+        "ggrep" => "grep",
+        "gls" => "ls",
+        "gfind" => "find",
+        "mdfind" => "find",
+        "mdls" | "xattr" => "cat",
+        "pbpaste" => "cat",
+        "ghead" => "head",
+        "gtail" => "tail",
+        "gdu" => "du",
+        "gdf" => "df",
+        "more.com" | "more" => "head",
+        "plutil" => "jq",
+        "open" | "qlmanage" => "cat",
+        _ => name,
+    }
+}
+
 pub(crate) fn classify_command(name: &str, args: &[String]) -> CommandKind {
+    let name = canonical_command_name(name);
     match name {
         "ps" | "ss" | "netstat" | "systemctl" | "docker" | "du" | "df" | "psql" | "redis-cli" => {
             CommandKind::Log
@@ -977,6 +1009,7 @@ pub(crate) fn classify_command(name: &str, args: &[String]) -> CommandKind {
         "cat" | "sed" | "head" | "tail" | "bat" | "nl" | "awk" | "cut" | "tr" | "perl" | "file" => {
             CommandKind::File
         }
+        "jq" if args.iter().any(|arg| arg == "-p") => CommandKind::File,
         "python" | "python3" => CommandKind::Log,
         "ls" if args
             .iter()
@@ -984,8 +1017,14 @@ pub(crate) fn classify_command(name: &str, args: &[String]) -> CommandKind {
         {
             CommandKind::Log
         }
+        "ls" if args.iter().any(|arg| matches!(arg.as_str(), "-Recurse" | "-recurse")) => {
+            CommandKind::Search
+        }
         "rg" | "grep" | "find" | "fd" | "tree" | "ls" | "which" => CommandKind::Search,
-        "readlink" | "stat" if args.iter().any(|arg| has_leading_char(arg, '/')) => {
+        "readlink" | "stat"
+            if args.iter().any(|arg| has_leading_char(arg, '/'))
+                || args.iter().any(|arg| matches!(arg.as_str(), "-f" | "-l" | "-name")) =>
+        {
             CommandKind::File
         }
         "sort" | "uniq" | "wc" | "xargs" | "jq" | "curl" | "readlink" | "stat" => {
@@ -1806,11 +1845,63 @@ fn compact_json_scalar(value: &serde_json::Value) -> String {
 }
 
 fn split_table_fields(line: &str, max_fields: usize) -> Vec<String> {
+    if looks_like_df_header_line(line) {
+        return split_df_header_fields(line, max_fields);
+    }
+    if looks_like_df_data_line(line) {
+        return split_on_any_whitespace(line, max_fields);
+    }
     let aligned = split_on_wide_whitespace(line, max_fields);
     if aligned.len() >= 3 {
         return aligned;
     }
     split_on_any_whitespace(line, max_fields)
+}
+
+fn looks_like_df_header_line(line: &str) -> bool {
+    let normalized = normalize_header_name(line);
+    normalized.contains("filesystem")
+        && normalized.contains("mountedon")
+        && normalized.contains("use%")
+}
+
+fn looks_like_df_data_line(line: &str) -> bool {
+    let fields = line.split_whitespace().collect::<Vec<_>>();
+    fields.len() >= 6
+        && fields
+            .get(4)
+            .is_some_and(|value| value.ends_with('%') && parse_numeric_cell(value).is_some())
+        && fields.get(5).is_some_and(|value| has_path_prefix(value))
+}
+
+fn split_df_header_fields(line: &str, max_fields: usize) -> Vec<String> {
+    let fields = split_on_any_whitespace(line, usize::MAX);
+    if fields.len() < 6 {
+        return split_on_any_whitespace(line, max_fields);
+    }
+
+    let mut out = Vec::new();
+    let mut idx = 0usize;
+    while idx < fields.len() {
+        if idx + 1 < fields.len() && fields[idx] == "Mounted" && fields[idx + 1] == "on" {
+            out.push("Mounted on".to_owned());
+            idx += 2;
+            continue;
+        }
+        out.push(fields[idx].to_owned());
+        idx += 1;
+    }
+
+    if max_fields != usize::MAX && out.len() > max_fields {
+        let mut limited = out
+            .iter()
+            .take(max_fields.saturating_sub(1))
+            .cloned()
+            .collect::<Vec<_>>();
+        limited.push(out[max_fields - 1..].join(" "));
+        return limited;
+    }
+    out
 }
 
 fn split_on_wide_whitespace(line: &str, max_fields: usize) -> Vec<String> {
@@ -1994,6 +2085,74 @@ fn is_known_table_header(header: &str) -> bool {
 }
 
 fn select_table_columns(headers: &[String]) -> Vec<usize> {
+    select_named_table_columns(headers).unwrap_or_else(|| select_generic_table_columns(headers))
+}
+
+fn select_named_table_columns(headers: &[String]) -> Option<Vec<usize>> {
+    let normalized = headers
+        .iter()
+        .map(|header| normalize_header_name(header))
+        .collect::<Vec<_>>();
+
+    if normalized == ["filesystem", "size", "used", "avail", "use%", "mountedon"] {
+        return Some(select_columns_by_name(
+            &normalized,
+            &["filesystem", "size", "used", "use%", "mountedon"],
+            5,
+        ));
+    }
+
+    if normalized == ["schema", "table", "rows"] {
+        return Some(vec![0, 1, 2]);
+    }
+
+    if normalized.contains(&"command".to_owned())
+        && normalized.contains(&"pid".to_owned())
+        && normalized.contains(&"%cpu".to_owned())
+    {
+        return Some(select_columns_by_name(
+            &normalized,
+            &["user", "pid", "%cpu", "%mem", "command"],
+            5,
+        ));
+    }
+
+    if normalized.contains(&"containerid".to_owned()) && normalized.contains(&"names".to_owned()) {
+        return Some(select_columns_by_name(
+            &normalized,
+            &["containerid", "image", "status", "ports", "names"],
+            5,
+        ));
+    }
+
+    if normalized.contains(&"unit".to_owned()) && normalized.contains(&"description".to_owned()) {
+        return Some(select_columns_by_name(
+            &normalized,
+            &["unit", "active", "sub", "description"],
+            4,
+        ));
+    }
+
+    None
+}
+
+fn select_columns_by_name(normalized: &[String], wanted: &[&str], cap: usize) -> Vec<usize> {
+    let mut selected = Vec::new();
+    for name in wanted {
+        if let Some(idx) = normalized.iter().position(|header| header == name)
+            && !selected.contains(&idx)
+        {
+            selected.push(idx);
+        }
+        if selected.len() >= cap {
+            break;
+        }
+    }
+    selected.sort_unstable();
+    selected
+}
+
+fn select_generic_table_columns(headers: &[String]) -> Vec<usize> {
     if headers.len() <= 6 {
         return (0..headers.len()).collect();
     }
@@ -2437,6 +2596,7 @@ pub(crate) struct TableSummary {
 
 #[derive(Clone, Serialize)]
 pub(crate) struct TableRow {
+    #[serde(skip_serializing)]
     pub(crate) i: usize,
     pub(crate) v: Vec<String>,
 }

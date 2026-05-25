@@ -19,9 +19,18 @@ use std::path::{Component, Path, PathBuf};
 const DEFAULT_AGENT_COMMANDS: &[&str] = &["codex", "claude", "gemini", "aider"];
 const DEFAULT_TOOL_COMMANDS: &[&str] = &[
     "cat",
+    "Get-Content",
+    "Get-Clipboard",
+    "gc",
+    "type",
     "sed",
+    "gsed",
     "rg",
     "grep",
+    "ggrep",
+    "Select-String",
+    "sls",
+    "findstr",
     "git",
     "cargo",
     "pytest",
@@ -41,6 +50,8 @@ const DEFAULT_TOOL_COMMANDS: &[&str] = &[
     "composer",
     "tail",
     "head",
+    "more",
+    "more.com",
     "dotnet",
     "go",
     "cmake",
@@ -49,19 +60,34 @@ const DEFAULT_TOOL_COMMANDS: &[&str] = &[
     "ninja",
     "node",
     "ls",
+    "gls",
+    "Get-ChildItem",
+    "gci",
+    "dir",
     "find",
+    "gfind",
+    "mdfind",
+    "mdls",
     "fd",
     "bat",
     "nl",
     "awk",
+    "Where-Object",
     "cut",
     "sort",
+    "Sort-Object",
     "uniq",
+    "guniq",
     "wc",
+    "gwc",
+    "Measure-Object",
     "tree",
     "xargs",
     "jq",
+    "plutil",
     "curl",
+    "open",
+    "qlmanage",
     "python",
     "python3",
     "docker",
@@ -70,9 +96,15 @@ const DEFAULT_TOOL_COMMANDS: &[&str] = &[
     "netstat",
     "systemctl",
     "tr",
+    "ghead",
+    "gtail",
+    "gdu",
+    "gdf",
     "perl",
+    "xattr",
     "du",
     "df",
+    "pbpaste",
 ];
 
 #[cfg(test)]
@@ -393,6 +425,7 @@ pub fn parse_dispatch(argv0: &str, args: Vec<String>) -> Result<Dispatch, AppErr
         Some("capture-interactive") => parse_capture_interactive(args),
         Some("compare-rollout") => parse_compare_rollout(args),
         Some("stats") => parse_stats(args),
+        Some("usage") => parse_usage_alias(args),
         Some("compare-e2e") => parse_compare_e2e(args),
         Some("benchmark-commands") => parse_benchmark_commands(args),
         Some("shim") => parse_shim_exec(args),
@@ -418,6 +451,7 @@ pub fn usage() -> String {
         "  tke capture-interactive [--source PATH] [--output PATH]",
         "  tke compare-rollout [--source PATH]",
         "  tke stats [--source PATH]... [--limit N] [--profile NAME] [--command NAME] [--by day|profile|command] [--changed-only] [--refresh] [--top N] [--sort saved|ratio|low-ratio|samples] [--json]",
+        "  tke usage stats [--source PATH]... [--limit N] [--profile NAME] [--command NAME] [--by day|profile|command] [--changed-only] [--refresh] [--top N] [--sort saved|ratio|low-ratio|samples] [--json]",
         "  tke compare-e2e [--source DIR]... [--agent codex|claude]",
         "  tke benchmark-commands [--check]",
         "",
@@ -434,6 +468,7 @@ pub fn usage() -> String {
         "  tke capture-interactive",
         "  tke compare-rollout",
         "  tke stats",
+        "  tke usage stats",
         "  tke stats --json --limit 10",
         "  tke stats --profile pathlist --by command",
         "  tke stats --changed-only --top 8 --sort ratio",
@@ -716,6 +751,24 @@ fn parse_shim_exec(args: Vec<String>) -> Result<Dispatch, AppError> {
         name,
         args: args.into_iter().skip(3).collect(),
     })
+}
+
+fn parse_usage_alias(args: Vec<String>) -> Result<Dispatch, AppError> {
+    match args.get(2).map(String::as_str) {
+        Some("stats") => {
+            let mut translated = vec!["tke".to_owned(), "stats".to_owned()];
+            translated.extend(args.into_iter().skip(3));
+            parse_stats(translated)
+        }
+        Some(other) => Err(AppError::Usage(format!(
+            "unknown usage subcommand `{other}`\n\n{}",
+            usage()
+        ))),
+        None => Err(AppError::Usage(format!(
+            "missing usage subcommand\n\n{}",
+            usage()
+        ))),
+    }
 }
 
 fn parse_stats(args: Vec<String>) -> Result<Dispatch, AppError> {
