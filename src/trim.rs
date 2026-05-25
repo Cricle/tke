@@ -606,41 +606,60 @@ fn extract_build_counts(line: &str, tokens: &[String]) -> Option<BuildCounters> 
     let mut out = BuildCounters::default();
     let mut matched = false;
 
-    if let Some(count) = count_before_token(tokens, "passed")
-        .or_else(|| count_before_sequence(tokens, &["tests", "passed"]))
-    {
+    if let Some(count) = colon_label_count(line, "passed") {
         out.ok = count;
         matched = true;
     }
-    if let Some(count) = count_before_token(tokens, "failed")
-        .or_else(|| count_before_token(tokens, "failures"))
-        .or_else(|| count_before_sequence(tokens, &["tests", "failed"]))
+    if let Some(count) =
+        colon_label_count(line, "failed").or_else(|| colon_label_count(line, "failures"))
     {
         out.fl = count;
         matched = true;
     }
-    if let Some(count) = count_before_token(tokens, "skipped") {
+    if let Some(count) = colon_label_count(line, "skipped") {
         out.sk = count;
         matched = true;
     }
-    if let Some(count) = count_after_sequence(tokens, &["tests", "run"])
-        .or_else(|| count_before_sequence(tokens, &["tests", "completed"]))
-        .or_else(|| count_before_sequence(tokens, &["test", "completed"]))
-        .or_else(|| adjacent_count_for_token(tokens, "total"))
-        .or_else(|| count_after_sequence(tokens, &["out", "of"]))
+    if let Some(count) =
+        colon_label_count(line, "total").or_else(|| colon_label_count(line, "tests run"))
+    {
+        out.tt = count;
+        matched = true;
+    }
+
+    if out.ok == 0
+        && let Some(count) = count_before_token(tokens, "passed")
+            .or_else(|| count_before_sequence(tokens, &["tests", "passed"]))
+    {
+        out.ok = count;
+        matched = true;
+    }
+    if out.fl == 0
+        && let Some(count) = count_before_token(tokens, "failed")
+            .or_else(|| count_before_token(tokens, "failures"))
+            .or_else(|| count_before_sequence(tokens, &["tests", "failed"]))
+    {
+        out.fl = count;
+        matched = true;
+    }
+    if out.sk == 0
+        && let Some(count) = count_before_token(tokens, "skipped")
+    {
+        out.sk = count;
+        matched = true;
+    }
+    if out.tt == 0
+        && let Some(count) = count_after_sequence(tokens, &["tests", "run"])
+            .or_else(|| count_before_sequence(tokens, &["tests", "completed"]))
+            .or_else(|| count_before_sequence(tokens, &["test", "completed"]))
+            .or_else(|| adjacent_count_for_token(tokens, "total"))
+            .or_else(|| count_after_sequence(tokens, &["out", "of"]))
     {
         out.tt = count;
         matched = true;
     }
     if let Some(count) = count_packages_after_install(line, tokens) {
         out.ip = count;
-        matched = true;
-    }
-
-    if let Some(errors) = adjacent_count_for_token(tokens, "errors")
-        && errors > 0
-    {
-        out.fl = out.fl.saturating_add(errors);
         matched = true;
     }
 
@@ -754,6 +773,35 @@ fn count_packages_after_install(line: &str, tokens: &[String]) -> Option<usize> 
         }
     }
     (count > 0).then_some(count)
+}
+
+fn colon_label_count(line: &str, label: &str) -> Option<usize> {
+    let lower = line.to_ascii_lowercase();
+    let label_len = label.len();
+    lower.char_indices().find_map(|(idx, _)| {
+        let end = idx + label_len;
+        let segment = lower.get(idx..end)?;
+        if segment != label {
+            return None;
+        }
+        let before_ok = idx == 0
+            || lower[..idx]
+                .chars()
+                .next_back()
+                .is_none_or(|ch| !ch.is_ascii_alphanumeric());
+        if !before_ok {
+            return None;
+        }
+        let rest = lower.get(end..)?.trim_start();
+        let rest = rest.strip_prefix(':')?.trim_start();
+        let digits = rest
+            .chars()
+            .take_while(|ch| ch.is_ascii_digit())
+            .collect::<String>();
+        (!digits.is_empty())
+            .then(|| digits.parse::<usize>().ok())
+            .flatten()
+    })
 }
 
 pub(crate) fn compact_json_body(text: &str) -> Option<Vec<String>> {

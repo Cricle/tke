@@ -503,6 +503,96 @@ fn build_summary_extracts_test_and_install_counts() {
 }
 
 #[test]
+fn build_summary_prefers_numeric_failed_count_over_status_word() {
+    let lines = [
+        "Running integration tests",
+        "test result: FAILED. 117 passed; 3 failed; 0 ignored; 0 measured",
+        "error: test failed, to rerun pass --test parser",
+    ];
+    let refs = lines.iter().copied().collect::<Vec<_>>();
+    let summary = crate::trim::collect_build_summary("cargo", &refs).expect("summary");
+    assert_eq!(summary.ok, 117);
+    assert_eq!(summary.fl, 3);
+    assert_eq!(summary.tt, 120);
+}
+
+#[test]
+fn build_summary_extracts_ctest_totals() {
+    let lines = [
+        "Test #1: lexer_test ... Passed",
+        "Test #2: parser_test ... Passed",
+        "99% tests passed, 1 tests failed out of 120",
+        "The following tests FAILED:",
+        " 42 - parser_test (Failed)",
+    ];
+    let refs = lines.iter().copied().collect::<Vec<_>>();
+    let summary = crate::trim::collect_build_summary("ctest", &refs).expect("summary");
+    assert_eq!(summary.ok, 99);
+    assert_eq!(summary.fl, 1);
+    assert_eq!(summary.tt, 120);
+    assert!(
+        summary
+            .e
+            .iter()
+            .any(|line| line.contains("1 tests failed out of 120"))
+    );
+}
+
+#[test]
+fn build_summary_extracts_maven_style_counts() {
+    let lines = [
+        "[INFO] BUILD FAILURE",
+        "[ERROR] Tests run: 120, Failures: 1, Errors: 0, Skipped: 4",
+    ];
+    let refs = lines.iter().copied().collect::<Vec<_>>();
+    let summary = crate::trim::collect_build_summary("mvn", &refs).expect("summary");
+    assert_eq!(summary.fl, 1);
+    assert_eq!(summary.sk, 4);
+    assert_eq!(summary.tt, 120);
+}
+
+#[test]
+fn build_summary_extracts_dotnet_style_counts() {
+    let lines = [
+        "Passed TestCase.Parser",
+        "Failed!  - Failed:     3, Passed:   117, Skipped:     2, Total:   122",
+        "error CS1002: ; expected",
+    ];
+    let refs = lines.iter().copied().collect::<Vec<_>>();
+    let summary = crate::trim::collect_build_summary("dotnet", &refs).expect("summary");
+    assert_eq!(summary.ok, 117);
+    assert_eq!(summary.fl, 3);
+    assert_eq!(summary.sk, 2);
+    assert_eq!(summary.tt, 122);
+}
+
+#[test]
+fn build_summary_keeps_zero_failed_run_non_failing() {
+    let lines = [
+        "Running unittests src/lib.rs (target/debug/deps/demo)",
+        "test result: ok. 104 passed; 0 failed; 0 ignored; 0 measured",
+    ];
+    let refs = lines.iter().copied().collect::<Vec<_>>();
+    let summary = crate::trim::collect_build_summary("cargo", &refs).expect("summary");
+    assert_eq!(summary.ok, 104);
+    assert_eq!(summary.fl, 0);
+    assert_eq!(summary.tt, 104);
+}
+
+#[test]
+fn build_summary_counts_installed_packages_once() {
+    let lines = [
+        "Collecting demo-package",
+        "Successfully installed demo-1.0 helper-2.0 toolkit-3.1",
+        "Successfully installed demo-1.0 helper-2.0 toolkit-3.1",
+    ];
+    let refs = lines.iter().copied().collect::<Vec<_>>();
+    let summary = crate::trim::collect_build_summary("pip", &refs).expect("summary");
+    assert_eq!(summary.ip, 3);
+    assert_eq!(summary.e.len(), 1);
+}
+
+#[test]
 fn log_signal_detection_uses_tokens_not_substrings() {
     assert!(is_warning_signal("warning: deprecated fixture used"));
     assert!(!is_warning_signal("forewarning markers are enabled"));
