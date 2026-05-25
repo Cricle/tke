@@ -760,6 +760,14 @@ pub(crate) fn benchmark_specs() -> Vec<BenchmarkSpec> {
             sample: repeated_benchmark_build_log("yarn"),
         },
         BenchmarkSpec {
+            name: "bun_test".to_owned(),
+            command: "bun test".to_owned(),
+            profile: "log".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_bun_1".to_owned(),
+            sample: repeated_benchmark_build_log("bun"),
+        },
+        BenchmarkSpec {
             name: "dotnet_test".to_owned(),
             command: "dotnet test".to_owned(),
             profile: "log".to_owned(),
@@ -814,6 +822,86 @@ pub(crate) fn benchmark_specs() -> Vec<BenchmarkSpec> {
             expected: BenchmarkExpectation::Compress,
             call_id: "bench_node_1".to_owned(),
             sample: repeated_benchmark_build_log("node"),
+        },
+        BenchmarkSpec {
+            name: "pip_install".to_owned(),
+            command: "pip install -r requirements.txt".to_owned(),
+            profile: "log".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_pip_1".to_owned(),
+            sample: repeated_benchmark_build_log("pip"),
+        },
+        BenchmarkSpec {
+            name: "uv_install".to_owned(),
+            command: "uv pip install -r requirements.txt".to_owned(),
+            profile: "log".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_uv_1".to_owned(),
+            sample: repeated_benchmark_build_log("uv"),
+        },
+        BenchmarkSpec {
+            name: "poetry_install".to_owned(),
+            command: "poetry install".to_owned(),
+            profile: "log".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_poetry_1".to_owned(),
+            sample: repeated_benchmark_build_log("poetry"),
+        },
+        BenchmarkSpec {
+            name: "mvn_test".to_owned(),
+            command: "mvn test".to_owned(),
+            profile: "log".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_mvn_1".to_owned(),
+            sample: repeated_benchmark_build_log("mvn"),
+        },
+        BenchmarkSpec {
+            name: "gradle_test".to_owned(),
+            command: "gradle test".to_owned(),
+            profile: "log".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_gradle_1".to_owned(),
+            sample: repeated_benchmark_build_log("gradle"),
+        },
+        BenchmarkSpec {
+            name: "gradlew_build".to_owned(),
+            command: "./gradlew build".to_owned(),
+            profile: "log".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_gradlew_1".to_owned(),
+            sample: repeated_benchmark_build_log("gradle"),
+        },
+        BenchmarkSpec {
+            name: "javac_build".to_owned(),
+            command: "javac Main.java".to_owned(),
+            profile: "log".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_javac_1".to_owned(),
+            sample: repeated_benchmark_build_log("javac"),
+        },
+        BenchmarkSpec {
+            name: "java_run".to_owned(),
+            command: "java -jar app.jar".to_owned(),
+            profile: "log".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_java_1".to_owned(),
+            sample: repeated_benchmark_build_log("java"),
+        },
+        BenchmarkSpec {
+            name: "bundle_test".to_owned(),
+            command: "bundle exec rspec".to_owned(),
+            profile: "log".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_bundle_1".to_owned(),
+            sample: repeated_benchmark_build_log("bundle"),
+        },
+        BenchmarkSpec {
+            name: "composer_test".to_owned(),
+            command: "composer test".to_owned(),
+            profile: "log".to_owned(),
+            expected: BenchmarkExpectation::Compress,
+            call_id: "bench_composer_1".to_owned(),
+            sample: repeated_benchmark_build_log("composer"),
         },
         BenchmarkSpec {
             name: "python_log".to_owned(),
@@ -924,7 +1012,7 @@ pub(crate) fn benchmark_specs() -> Vec<BenchmarkSpec> {
 
 pub(crate) fn benchmark_task_specs() -> Vec<BenchmarkTaskSpec> {
     let savings_answer = "RolloutCompareReport::from_stats computes tokens_saved as raw.approx_tokens - rewritten.approx_tokens and tokens_saved_ratio via ratio(tokens_saved, raw.approx_tokens).";
-    let coverage_answer = "DEFAULT_TOOL_COMMANDS covers cat, sed, rg, grep, git, cargo, pytest, npm, pnpm, yarn, tail, head, dotnet, go, cmake, ctest, make, ninja, node, ls, find, fd, bat, nl, awk, cut, sort, uniq, wc, tree, xargs, jq, curl, python, python3, docker, ps, ss, netstat, systemctl, tr, perl, du, and df.";
+    let coverage_answer = "DEFAULT_TOOL_COMMANDS covers cat, sed, rg, grep, git, cargo, pytest, npm, pnpm, yarn, bun, pip, uv, poetry, mvn, gradle, gradlew, javac, java, bundle, composer, tail, head, dotnet, go, cmake, ctest, make, ninja, node, ls, find, fd, bat, nl, awk, cut, sort, uniq, wc, tree, xargs, jq, curl, python, python3, docker, ps, ss, netstat, systemctl, tr, perl, du, and df.";
     let pipeline_answer = "The selected stage is rg, so the normalized payload preserves sc=rg and sr=search instead of keeping the upstream cat or downstream head stage.";
     let find_pipeline_answer = "The selected stage is find, so the normalized payload preserves sc=find and sr=search and keeps the path list summary instead of the tail stage semantics.";
     let build_pipeline_answer = "The selected stage is cargo, so the normalized payload preserves sc=cargo and sr=build and keeps the log/error summary instead of the tail stage semantics.";

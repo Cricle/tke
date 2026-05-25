@@ -624,9 +624,10 @@ pub(crate) fn classify_stage_role(name: &str) -> StageRole {
         | "stat" => StageRole::Source,
         "sed" | "awk" | "perl" | "cut" | "sort" | "uniq" | "tr" | "jq" => StageRole::Filter,
         "head" | "tail" | "wc" | "du" | "df" => StageRole::Summarize,
-        "cargo" | "pytest" | "npm" | "pnpm" | "yarn" | "dotnet" | "go" | "cmake" | "ctest"
-        | "make" | "ninja" | "node" | "python" | "python3" | "ps" | "ss" | "netstat"
-        | "systemctl" | "psql" | "redis-cli" => StageRole::Build,
+        "cargo" | "pytest" | "npm" | "pnpm" | "yarn" | "bun" | "dotnet" | "go" | "cmake"
+        | "ctest" | "make" | "ninja" | "node" | "python" | "python3" | "pip" | "uv" | "poetry"
+        | "mvn" | "gradle" | "gradlew" | "javac" | "java" | "bundle" | "composer" | "ps" | "ss"
+        | "netstat" | "systemctl" | "psql" | "redis-cli" => StageRole::Build,
         _ => StageRole::Unknown,
     }
 }

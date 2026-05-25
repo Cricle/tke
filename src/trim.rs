@@ -481,13 +481,14 @@ pub(crate) fn collect_build_summary(name: &str, lines: &[&str]) -> Option<BuildS
 
     for line in lines {
         let trimmed = line.trim();
-        if trimmed.starts_with("Compiling ") || trimmed.starts_with("Checking ") {
+        let tokens = ascii_word_tokens(trimmed);
+        if is_build_compile_line(trimmed, &tokens) {
             compiling += 1;
-        } else if trimmed.starts_with("Running ") {
+        } else if is_build_running_line(&tokens) {
             running += 1;
-        } else if finished.is_none() && trimmed.starts_with("Finished ") {
+        } else if finished.is_none() && is_build_finished_line(&tokens) {
             finished = Some(trimmed.to_owned());
-        } else if test_result.is_none() && trimmed.starts_with("test result: ") {
+        } else if test_result.is_none() && is_build_test_result_line(&tokens) {
             test_result = Some(trimmed.to_owned());
         }
     }
@@ -503,6 +504,43 @@ pub(crate) fn collect_build_summary(name: &str, lines: &[&str]) -> Option<BuildS
         fi: finished.map(|value| truncate_ellipsized(&value, 96)),
         tr: test_result.map(|value| truncate_ellipsized(&value, 96)),
     })
+}
+
+fn is_build_compile_line(line: &str, tokens: &[String]) -> bool {
+    if has_ascii_token(tokens, "compiling")
+        || has_ascii_token(tokens, "checking")
+        || has_ascii_token(tokens, "building")
+        || has_ascii_token(tokens, "collecting")
+        || has_ascii_token(tokens, "installing")
+    {
+        return true;
+    }
+    line.as_bytes().first() == Some(&b'>') && has_ascii_token(tokens, "task")
+}
+
+fn is_build_running_line(tokens: &[String]) -> bool {
+    has_ascii_token(tokens, "running")
+        || has_ascii_token(tokens, "executing")
+        || has_token_sequence(tokens, &["test", "run", "for"])
+}
+
+fn is_build_finished_line(tokens: &[String]) -> bool {
+    has_ascii_token(tokens, "finished")
+        || has_token_sequence(tokens, &["build", "success"])
+        || has_token_sequence(tokens, &["build", "successful"])
+        || has_token_sequence(tokens, &["build", "failure"])
+        || has_token_sequence(tokens, &["build", "failed"])
+        || has_token_sequence(tokens, &["successfully", "installed"])
+        || has_token_sequence(tokens, &["successfully", "built"])
+}
+
+fn is_build_test_result_line(tokens: &[String]) -> bool {
+    has_token_sequence(tokens, &["test", "result"])
+        || has_token_sequence(tokens, &["tests", "run"])
+        || has_ascii_token(tokens, "failures")
+        || has_ascii_token(tokens, "failed")
+        || has_token_sequence(tokens, &["not", "ok"])
+        || has_ascii_token(tokens, "passed")
 }
 
 pub(crate) fn compact_json_body(text: &str) -> Option<Vec<String>> {
@@ -661,8 +699,9 @@ pub(crate) fn classify_command(name: &str, args: &[String]) -> CommandKind {
         {
             CommandKind::Generic
         }
-        "cargo" | "pytest" | "npm" | "pnpm" | "yarn" | "dotnet" | "go" | "cmake" | "ctest"
-        | "make" | "ninja" | "node" => CommandKind::Log,
+        "cargo" | "pytest" | "npm" | "pnpm" | "yarn" | "bun" | "dotnet" | "go" | "cmake"
+        | "ctest" | "make" | "ninja" | "node" | "pip" | "uv" | "poetry" | "mvn" | "gradle"
+        | "gradlew" | "javac" | "java" | "bundle" | "composer" => CommandKind::Log,
         _ => CommandKind::Generic,
     }
 }

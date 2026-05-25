@@ -975,6 +975,17 @@ fn default_tool_commands_cover_core_agent_workflows() {
         "npm",
         "pnpm",
         "yarn",
+        "bun",
+        "pip",
+        "uv",
+        "poetry",
+        "mvn",
+        "gradle",
+        "gradlew",
+        "javac",
+        "java",
+        "bundle",
+        "composer",
         "dotnet",
         "go",
         "cmake",
@@ -1159,6 +1170,7 @@ fn stage_roles_cover_default_tool_commands() {
         ("du", "summarize"),
         ("df", "summarize"),
         ("cargo", "build"),
+        ("bun", "build"),
         ("dotnet", "build"),
         ("go", "build"),
         ("cmake", "build"),
@@ -1168,6 +1180,16 @@ fn stage_roles_cover_default_tool_commands() {
         ("node", "build"),
         ("python", "build"),
         ("python3", "build"),
+        ("pip", "build"),
+        ("uv", "build"),
+        ("poetry", "build"),
+        ("mvn", "build"),
+        ("gradle", "build"),
+        ("gradlew", "build"),
+        ("javac", "build"),
+        ("java", "build"),
+        ("bundle", "build"),
+        ("composer", "build"),
         ("ps", "build"),
         ("ss", "build"),
         ("netstat", "build"),
@@ -1188,6 +1210,7 @@ fn stage_roles_cover_default_tool_commands() {
 #[test]
 fn classify_common_build_and_test_commands_as_log() {
     for (name, args) in [
+        ("bun", vec!["test".to_owned()]),
         ("dotnet", vec!["test".to_owned()]),
         ("go", vec!["test".to_owned(), "./...".to_owned()]),
         ("cmake", vec!["--build".to_owned(), "build".to_owned()]),
@@ -1198,6 +1221,31 @@ fn classify_common_build_and_test_commands_as_log() {
             vec!["-C".to_owned(), "build".to_owned(), "test".to_owned()],
         ),
         ("node", vec!["--test".to_owned()]),
+        (
+            "pip",
+            vec![
+                "install".to_owned(),
+                "-r".to_owned(),
+                "requirements.txt".to_owned(),
+            ],
+        ),
+        (
+            "uv",
+            vec![
+                "pip".to_owned(),
+                "install".to_owned(),
+                "-r".to_owned(),
+                "requirements.txt".to_owned(),
+            ],
+        ),
+        ("poetry", vec!["install".to_owned()]),
+        ("mvn", vec!["test".to_owned()]),
+        ("gradle", vec!["test".to_owned()]),
+        ("gradlew", vec!["build".to_owned()]),
+        ("javac", vec!["Main.java".to_owned()]),
+        ("java", vec!["-jar".to_owned(), "app.jar".to_owned()]),
+        ("bundle", vec!["exec".to_owned(), "rspec".to_owned()]),
+        ("composer", vec!["test".to_owned()]),
     ] {
         assert!(
             matches!(classify_command(name, &args), CommandKind::Log),
@@ -3687,6 +3735,7 @@ fn benchmark_report_contains_expected_cases() {
         "npm_test",
         "pnpm_test",
         "yarn_test",
+        "bun_test",
         "dotnet_test",
         "go_test",
         "cmake_build",
@@ -3694,6 +3743,16 @@ fn benchmark_report_contains_expected_cases() {
         "make_build",
         "ninja_build",
         "node_test",
+        "pip_install",
+        "uv_install",
+        "poetry_install",
+        "mvn_test",
+        "gradle_test",
+        "gradlew_build",
+        "javac_build",
+        "java_run",
+        "bundle_test",
+        "composer_test",
         "python_log",
         "python3_log",
         "ps_table",
@@ -3922,6 +3981,56 @@ fn log_profiles_preserve_failure_and_warning_semantics() {
                 "error: Expected value to be truthy",
             ],
         ),
+        (
+            "mvn",
+            vec!["test".to_owned()],
+            "mvn test",
+            format!(
+                "{}\n[INFO] BUILD FAILURE\n[ERROR] Tests run: 120, Failures: 1, Errors: 0, Skipped: 0\n",
+                repeated_lines("[INFO] Building parser 1.0.0", 120)
+            ),
+            vec![
+                "[INFO] BUILD FAILURE",
+                "[ERROR] Tests run: 120, Failures: 1, Errors: 0, Skipped: 0",
+            ],
+        ),
+        (
+            "gradle",
+            vec!["test".to_owned()],
+            "gradle test",
+            format!(
+                "{}\nBUILD FAILED in 12s\n1 test completed, 1 failed\n",
+                repeated_lines("> Task :compileJava", 120)
+            ),
+            vec!["BUILD FAILED in 12s", "1 test completed, 1 failed"],
+        ),
+        (
+            "pip",
+            vec![
+                "install".to_owned(),
+                "-r".to_owned(),
+                "requirements.txt".to_owned(),
+            ],
+            "pip install -r requirements.txt",
+            format!(
+                "{}\nSuccessfully installed demo-1.0 helper-2.0\nwarning: Retrying (Retry(total=4, connect=None))\n",
+                repeated_lines("Collecting demo-package", 120)
+            ),
+            vec![
+                "Successfully installed demo-1.0 helper-2.0",
+                "warning: Retrying",
+            ],
+        ),
+        (
+            "bun",
+            vec!["test".to_owned()],
+            "bun test",
+            format!(
+                "{}\n1 fail\nerror: script \"test\" exited with code 1\n",
+                repeated_lines("pass parser handles literals", 120)
+            ),
+            vec!["1 fail", "error: script \"test\" exited with code 1"],
+        ),
     ] {
         let normalized = normalize_text(name, &args, "stdout", CommandKind::Log, &output, &cfg)
             .expect("normalize");
@@ -4107,6 +4216,38 @@ fn benchmark_specs_cover_default_tool_commands() {
                 commands.iter().any(|cmd| cmd.starts_with("yarn ")),
                 "{tool}"
             ),
+            "bun" => assert!(commands.iter().any(|cmd| cmd.starts_with("bun ")), "{tool}"),
+            "pip" => assert!(commands.iter().any(|cmd| cmd.starts_with("pip ")), "{tool}"),
+            "uv" => assert!(commands.iter().any(|cmd| cmd.starts_with("uv ")), "{tool}"),
+            "poetry" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("poetry ")),
+                "{tool}"
+            ),
+            "mvn" => assert!(commands.iter().any(|cmd| cmd.starts_with("mvn ")), "{tool}"),
+            "gradle" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("gradle ")),
+                "{tool}"
+            ),
+            "gradlew" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("./gradlew ")),
+                "{tool}"
+            ),
+            "javac" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("javac ")),
+                "{tool}"
+            ),
+            "java" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("java ")),
+                "{tool}"
+            ),
+            "bundle" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("bundle ")),
+                "{tool}"
+            ),
+            "composer" => assert!(
+                commands.iter().any(|cmd| cmd.starts_with("composer ")),
+                "{tool}"
+            ),
             "tail" => assert!(
                 commands.iter().any(|cmd| cmd.starts_with("tail ")),
                 "{tool}"
@@ -4211,7 +4352,7 @@ fn default_tool_commands_have_expected_command_kinds() {
             "git" => vec!["diff".to_owned()],
             "cargo" => vec!["build".to_owned()],
             "pytest" => vec!["-q".to_owned()],
-            "npm" | "pnpm" | "yarn" => vec!["test".to_owned()],
+            "npm" | "pnpm" | "yarn" | "bun" => vec!["test".to_owned()],
             "dotnet" => vec!["test".to_owned()],
             "go" => vec!["test".to_owned(), "./...".to_owned()],
             "cmake" => vec!["--build".to_owned(), "build".to_owned()],
@@ -4219,6 +4360,25 @@ fn default_tool_commands_have_expected_command_kinds() {
             "make" => vec!["test".to_owned()],
             "ninja" => vec!["-C".to_owned(), "build".to_owned(), "test".to_owned()],
             "node" => vec!["--test".to_owned()],
+            "pip" => vec![
+                "install".to_owned(),
+                "-r".to_owned(),
+                "requirements.txt".to_owned(),
+            ],
+            "uv" => vec![
+                "pip".to_owned(),
+                "install".to_owned(),
+                "-r".to_owned(),
+                "requirements.txt".to_owned(),
+            ],
+            "poetry" => vec!["install".to_owned()],
+            "mvn" => vec!["test".to_owned()],
+            "gradle" => vec!["test".to_owned()],
+            "gradlew" => vec!["build".to_owned()],
+            "javac" => vec!["Main.java".to_owned()],
+            "java" => vec!["-jar".to_owned(), "app.jar".to_owned()],
+            "bundle" => vec!["exec".to_owned(), "rspec".to_owned()],
+            "composer" => vec!["test".to_owned()],
             "ls" => vec!["src".to_owned()],
             "find" => vec!["src".to_owned()],
             "fd" => vec![".".to_owned(), "src".to_owned()],
@@ -4265,9 +4425,10 @@ fn default_tool_commands_have_expected_command_kinds() {
                 assert!(matches!(kind, CommandKind::Search), "{tool}");
             }
             "git" => assert!(matches!(kind, CommandKind::Diff), "{tool}"),
-            "cargo" | "pytest" | "npm" | "pnpm" | "yarn" | "dotnet" | "go" | "cmake" | "ctest"
-            | "make" | "ninja" | "node" | "python" | "python3" | "docker" | "ps" | "ss"
-            | "netstat" | "systemctl" | "psql" | "du" | "df" => {
+            "cargo" | "pytest" | "npm" | "pnpm" | "yarn" | "bun" | "dotnet" | "go" | "cmake"
+            | "ctest" | "make" | "ninja" | "node" | "pip" | "uv" | "poetry" | "mvn" | "gradle"
+            | "gradlew" | "javac" | "java" | "bundle" | "composer" | "python" | "python3"
+            | "docker" | "ps" | "ss" | "netstat" | "systemctl" | "psql" | "du" | "df" => {
                 assert!(matches!(kind, CommandKind::Log), "{tool}");
             }
             "sort" | "uniq" | "wc" | "xargs" | "jq" | "curl" => {
