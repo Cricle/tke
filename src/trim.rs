@@ -248,6 +248,11 @@ pub(crate) fn collect_table_summary(
     lines: &[&str],
     terms: &[String],
 ) -> Option<TableSummary> {
+    if name == "du"
+        && let Some(summary) = collect_du_summary(lines)
+    {
+        return Some(summary);
+    }
     let layout = detect_table_layout(lines)?;
     let selected_cols = select_table_columns(&layout.headers);
     if selected_cols.is_empty() {
@@ -502,7 +507,11 @@ pub(crate) fn collect_build_summary(name: &str, lines: &[&str]) -> Option<BuildS
 
 pub(crate) fn compact_json_body(text: &str) -> Option<Vec<String>> {
     let value = serde_json::from_str::<serde_json::Value>(text).ok()?;
-    Some(vec![serde_json::to_string(&value).ok()?])
+    let compact = serde_json::to_string(&value).ok()?;
+    if compact.len() <= 240 {
+        return Some(vec![compact]);
+    }
+    Some(compact_json_preview(&value, 6))
 }
 
 pub(crate) fn match_terms(name: &str, args: &[String]) -> Vec<String> {
@@ -1122,7 +1131,7 @@ fn looks_like_stacktrace(lines: &[&str]) -> bool {
 }
 
 fn looks_like_table(lines: &[&str]) -> bool {
-    detect_table_layout(lines).is_some()
+    detect_table_layout(lines).is_some() || looks_like_du_listing(lines)
 }
 
 fn looks_like_path_list(lines: &[&str]) -> bool {
@@ -1183,6 +1192,154 @@ fn detect_table_layout(lines: &[&str]) -> Option<TableLayout> {
         }
     }
     None
+}
+
+fn looks_like_du_listing(lines: &[&str]) -> bool {
+    let mut matched = 0usize;
+    for line in lines.iter().take(128) {
+        if parse_du_row(line).is_some() {
+            matched += 1;
+        } else if !line.trim().is_empty() {
+            return false;
+        }
+    }
+    matched >= 4
+}
+
+fn collect_du_summary(lines: &[&str]) -> Option<TableSummary> {
+    let rows = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, line)| {
+            let (size, path) = parse_du_row(line)?;
+            Some(TableRow {
+                i: idx,
+                v: vec![size, path],
+            })
+        })
+        .collect::<Vec<_>>();
+    if rows.len() < 4 {
+        return None;
+    }
+
+    let selected = select_du_rows(&rows);
+    if selected.is_empty() {
+        return None;
+    }
+
+    Some(TableSummary {
+        c: vec!["Size".to_owned(), "Path".to_owned()],
+        r: selected.into_iter().map(|idx| rows[idx].clone()).collect(),
+        rc: rows.len(),
+        hc: 2,
+    })
+}
+
+fn parse_du_row(line: &str) -> Option<(String, String)> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let mut parts = trimmed.splitn(2, char::is_whitespace);
+    let size = parts.next()?.trim();
+    let path = parts.next()?.trim();
+    if size.is_empty() || path.is_empty() || !looks_like_du_size(size) {
+        return None;
+    }
+    Some((size.to_owned(), path.to_owned()))
+}
+
+fn looks_like_du_size(raw: &str) -> bool {
+    let mut chars = raw.chars();
+    let mut saw_digit = false;
+    while let Some(ch) = chars.next() {
+        if ch.is_ascii_digit() || ch == '.' {
+            saw_digit = true;
+            continue;
+        }
+        if !saw_digit {
+            return false;
+        }
+        return chars.next().is_none() && matches!(ch, 'B' | 'K' | 'M' | 'G' | 'T' | 'P');
+    }
+    saw_digit
+}
+
+fn select_du_rows(rows: &[TableRow]) -> Vec<usize> {
+    let mut selected = Vec::new();
+    let cap = 6usize;
+    for idx in 0..usize::min(rows.len(), 3) {
+        push_unique_index(&mut selected, idx, cap);
+    }
+    if rows.len() > 3 {
+        push_unique_index(&mut selected, rows.len() - 1, cap);
+    }
+
+    let mut ranked = rows
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, row)| {
+            row.v
+                .first()
+                .and_then(|value| parse_human_size(value))
+                .map(|score| (idx, score))
+        })
+        .collect::<Vec<_>>();
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    for (idx, _) in ranked.into_iter().take(2) {
+        push_unique_index(&mut selected, idx, cap);
+    }
+
+    selected.sort_unstable();
+    selected
+}
+
+fn parse_human_size(raw: &str) -> Option<f64> {
+    let trimmed = raw.trim();
+    let unit = trimmed.chars().last()?;
+    let scale = match unit {
+        'B' => 1.0,
+        'K' => 1024.0,
+        'M' => 1024.0 * 1024.0,
+        'G' => 1024.0 * 1024.0 * 1024.0,
+        'T' => 1024.0 * 1024.0 * 1024.0 * 1024.0,
+        'P' => 1024.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0,
+        _ => return trimmed.parse::<f64>().ok(),
+    };
+    let number = &trimmed[..trimmed.len().saturating_sub(1)];
+    Some(number.parse::<f64>().ok()? * scale)
+}
+
+fn compact_json_preview(value: &serde_json::Value, limit: usize) -> Vec<String> {
+    match value {
+        serde_json::Value::Object(map) => map
+            .iter()
+            .take(limit)
+            .map(|(key, value)| {
+                format!(
+                    "{}={}",
+                    key,
+                    truncate_ellipsized(&compact_json_scalar(value), 72)
+                )
+            })
+            .collect(),
+        serde_json::Value::Array(items) => items
+            .iter()
+            .take(limit)
+            .map(|value| truncate_ellipsized(&compact_json_scalar(value), 72))
+            .collect(),
+        _ => vec![truncate_ellipsized(&compact_json_scalar(value), 120)],
+    }
+}
+
+fn compact_json_scalar(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::Null => "null".to_owned(),
+        serde_json::Value::Bool(value) => value.to_string(),
+        serde_json::Value::Number(value) => value.to_string(),
+        serde_json::Value::String(value) => value.clone(),
+        _ => serde_json::to_string(value).unwrap_or_default(),
+    }
 }
 
 fn split_table_fields(line: &str, max_fields: usize) -> Vec<String> {
@@ -1689,7 +1846,7 @@ pub(crate) struct TableSummary {
     pub(crate) hc: usize,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 pub(crate) struct TableRow {
     pub(crate) i: usize,
     pub(crate) v: Vec<String>,

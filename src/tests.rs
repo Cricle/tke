@@ -11,7 +11,10 @@ use crate::rewrite::{
     live_pipeline_should_passthrough, looks_like_stderr_only_exec_output, parse_command_execution,
     parse_live_shell_pipeline, rewrite_command_item_fields,
 };
-use crate::rollout_io::{InteractiveTracker, capture_interactive};
+use crate::rollout_io::{
+    InteractiveTracker, UsageStatsFilter, UsageStatsGroupBy, UsageStatsSortBy,
+    build_usage_stats_report, capture_interactive,
+};
 use crate::rollout_stats::{
     collect_rollout_output_stats, collect_rollout_output_stats_detailed, rollout_string_haystack,
 };
@@ -2216,6 +2219,9 @@ fn parse_stats_dispatch() {
             limit,
             filter,
             group_by,
+            changed_only,
+            top,
+            sort_by,
             json,
         } => {
             assert_eq!(sources, vec![PathBuf::from("/tmp/rollouts")]);
@@ -2224,6 +2230,12 @@ fn parse_stats_dispatch() {
             assert!(matches!(
                 group_by,
                 crate::rollout_io::UsageStatsGroupBy::Day
+            ));
+            assert!(!changed_only);
+            assert_eq!(top, 10);
+            assert!(matches!(
+                sort_by,
+                crate::rollout_io::UsageStatsSortBy::Saved
             ));
             assert!(json);
         }
@@ -2247,7 +2259,12 @@ fn parse_stats_dispatch_with_profile_and_group() {
     .expect("dispatch");
     match dispatch {
         Dispatch::Stats {
-            filter, group_by, ..
+            filter,
+            group_by,
+            changed_only,
+            top,
+            sort_by,
+            ..
         } => {
             match filter {
                 crate::rollout_io::UsageStatsFilter::Profile(value) => {
@@ -2258,6 +2275,54 @@ fn parse_stats_dispatch_with_profile_and_group() {
             assert!(matches!(
                 group_by,
                 crate::rollout_io::UsageStatsGroupBy::Command
+            ));
+            assert!(!changed_only);
+            assert_eq!(top, 10);
+            assert!(matches!(
+                sort_by,
+                crate::rollout_io::UsageStatsSortBy::Saved
+            ));
+        }
+        other => panic!("unexpected dispatch: {other:?}"),
+    }
+}
+
+#[test]
+fn parse_stats_dispatch_with_changed_only_top_and_sort() {
+    let dispatch = parse_dispatch(
+        "tke",
+        vec![
+            "tke".to_owned(),
+            "stats".to_owned(),
+            "--command".to_owned(),
+            "cargo".to_owned(),
+            "--changed-only".to_owned(),
+            "--top".to_owned(),
+            "7".to_owned(),
+            "--sort".to_owned(),
+            "ratio".to_owned(),
+        ],
+    )
+    .expect("dispatch");
+    match dispatch {
+        Dispatch::Stats {
+            filter,
+            changed_only,
+            top,
+            sort_by,
+            ..
+        } => {
+            match filter {
+                crate::rollout_io::UsageStatsFilter::Command(value) => {
+                    assert_eq!(value, "cargo");
+                }
+                other => panic!("unexpected filter: {other:?}"),
+            }
+            assert!(changed_only);
+            assert_eq!(top, 7);
+            assert!(matches!(
+                sort_by,
+                crate::rollout_io::UsageStatsSortBy::Ratio
             ));
         }
         other => panic!("unexpected dispatch: {other:?}"),
@@ -2296,6 +2361,66 @@ fn detailed_rollout_stats_track_profile_breakdown() {
     assert!(stats.breakdown.by_profile.contains_key("pathlist"));
     assert!(stats.breakdown.by_command.contains_key("git"));
     assert!(stats.breakdown.by_command.contains_key("find"));
+}
+
+#[test]
+fn usage_stats_report_includes_top_profiles_and_commands() {
+    let base = temp_test_dir("stats-report");
+    let sessions = base.join(".codex/sessions/2026/05/25");
+    fs::create_dir_all(&sessions).expect("mkdir");
+    let rollout = sessions.join("demo.jsonl");
+    fs::write(
+        &rollout,
+        [
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "id": "item_1",
+                    "type": "command_execution",
+                    "command": "find src -type f",
+                    "aggregated_output": repeated_lines("/root/project/src/lib.rs", 60)
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "id": "item_2",
+                    "type": "command_execution",
+                    "command": "cargo test",
+                    "aggregated_output": repeated_lines("error: build failed", 40)
+                }
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write rollout");
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let report = build_usage_stats_report(
+        vec![base.join(".codex/sessions")],
+        Some(10),
+        &UsageStatsFilter::None,
+        UsageStatsGroupBy::Day,
+        false,
+        5,
+        UsageStatsSortBy::Saved,
+        &cfg,
+    )
+    .expect("report");
+    let value = serde_json::to_value(report).expect("json");
+    assert_eq!(value["samples"], 1);
+    assert!(
+        value["top_profiles"]
+            .as_array()
+            .is_some_and(|rows| !rows.is_empty())
+    );
+    assert!(
+        value["top_commands"]
+            .as_array()
+            .is_some_and(|rows| !rows.is_empty())
+    );
 }
 
 #[test]
@@ -4068,6 +4193,67 @@ fn frequent_command_families_preserve_semantic_fragments() {
             assert!(haystack.contains(fragment), "{name} missing `{fragment}`");
         }
     }
+}
+
+#[test]
+fn du_output_compresses_as_table_summary() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = (0..24)
+        .map(|idx| format!("{:>4}M\t/root/project/module_{idx:02}", 8 + idx))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let normalized = normalize_text(
+        "du",
+        &["-sh".to_owned(), "/root/project/*".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "table");
+    assert_eq!(value["tb"]["c"][0], "Size");
+    assert_eq!(value["tb"]["c"][1], "Path");
+    assert_eq!(value["tb"]["rc"], 24);
+}
+
+#[test]
+fn large_json_uses_preview_body_lines() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = serde_json::json!({
+        "success": true,
+        "message": "生成市场技术分析师报告",
+        "progress": 87,
+        "current_step_name": "市场技术分析",
+        "current_step_description": "生成市场技术分析师报告",
+        "data": {
+            "symbols": ["AAA", "BBB", "CCC", "DDD", "EEE", "FFF", "GGG", "HHH"],
+            "summary": "这是一个很长的说明字段，用来验证大 JSON 会走 preview 而不是整条紧凑串。"
+        }
+    })
+    .to_string();
+    let normalized = normalize_text(
+        "jq",
+        &[".".to_owned(), "/tmp/demo.json".to_owned()],
+        "stdout",
+        CommandKind::Generic,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "json");
+    assert!(value["b"].is_array());
+    assert!(
+        value["b"]
+            .as_array()
+            .map(|rows| rows.len())
+            .unwrap_or_default()
+            > 1
+    );
 }
 
 #[test]

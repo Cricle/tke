@@ -64,6 +64,7 @@ pub struct UsageStatsReport {
     v: u8,
     roots: Vec<String>,
     filters: UsageStatsFiltersReport,
+    top: usize,
     samples: usize,
     changed_samples: usize,
     raw_tokens: usize,
@@ -76,6 +77,8 @@ pub struct UsageStatsReport {
     bytes_saved_ratio: f64,
     days: Vec<UsageStatsDayReport>,
     groups: Vec<UsageStatsGroupReport>,
+    top_profiles: Vec<UsageStatsGroupReport>,
+    top_commands: Vec<UsageStatsGroupReport>,
 }
 
 #[derive(Serialize)]
@@ -109,6 +112,8 @@ pub struct UsageStatsFiltersReport {
     kind: String,
     value: Option<String>,
     trend: String,
+    changed_only: bool,
+    sort: String,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -124,6 +129,23 @@ impl UsageStatsGroupBy {
             Self::Day => "day",
             Self::Profile => "profile",
             Self::Command => "command",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum UsageStatsSortBy {
+    Saved,
+    Ratio,
+    Samples,
+}
+
+impl UsageStatsSortBy {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Saved => "saved",
+            Self::Ratio => "ratio",
+            Self::Samples => "samples",
         }
     }
 }
@@ -157,10 +179,22 @@ pub fn usage_stats(
     limit: Option<usize>,
     filter: UsageStatsFilter,
     group_by: UsageStatsGroupBy,
+    changed_only: bool,
+    top: usize,
+    sort_by: UsageStatsSortBy,
     json: bool,
     config: &Config,
 ) -> Result<(), AppError> {
-    let report = build_usage_stats_report(sources, limit, &filter, group_by, config)?;
+    let report = build_usage_stats_report(
+        sources,
+        limit,
+        &filter,
+        group_by,
+        changed_only,
+        top,
+        sort_by,
+        config,
+    )?;
     if json {
         println!("{}", serde_json::to_string(&report)?);
     } else {
@@ -174,6 +208,9 @@ pub fn build_usage_stats_report(
     limit: Option<usize>,
     filter: &UsageStatsFilter,
     group_by: UsageStatsGroupBy,
+    changed_only: bool,
+    top: usize,
+    sort_by: UsageStatsSortBy,
     config: &Config,
 ) -> Result<UsageStatsReport, AppError> {
     let roots = if sources.is_empty() {
@@ -207,6 +244,9 @@ pub fn build_usage_stats_report(
             rewritten_stats,
         );
         let report = filter_rollout_report(report, filter);
+        if changed_only && !report.changed {
+            continue;
+        }
         if report.changed {
             changed_samples += 1;
         }
@@ -229,7 +269,10 @@ pub fn build_usage_stats_report(
             kind: filter.kind().to_owned(),
             value: filter.value(),
             trend: group_by.as_str().to_owned(),
+            changed_only,
+            sort: sort_by.as_str().to_owned(),
         },
+        top,
         samples: reports.len(),
         changed_samples,
         raw_tokens,
@@ -241,7 +284,9 @@ pub fn build_usage_stats_report(
         bytes_saved,
         bytes_saved_ratio: ratio(bytes_saved, raw_bytes),
         days: daily_usage_rows(&reports),
-        groups: usage_group_rows(&reports, &filter, group_by),
+        groups: usage_group_rows(&reports, filter, group_by, top, sort_by),
+        top_profiles: usage_group_rows(&reports, filter, UsageStatsGroupBy::Profile, top, sort_by),
+        top_commands: usage_group_rows(&reports, filter, UsageStatsGroupBy::Command, top, sort_by),
     })
 }
 
@@ -419,10 +464,13 @@ fn print_usage_stats_report(report: &UsageStatsReport) -> Result<(), AppError> {
         writeln!(out)?;
         writeln!(
             out,
-            "Filter: kind={} value={} trend={}",
+            "Filter: kind={} value={} trend={} changed_only={} sort={} top={}",
             report.filters.kind,
             report.filters.value.as_deref().unwrap_or("-"),
-            report.filters.trend
+            report.filters.trend,
+            report.filters.changed_only,
+            report.filters.sort,
+            report.top
         )?;
     }
     writeln!(out)?;
@@ -480,6 +528,31 @@ fn print_usage_stats_report(report: &UsageStatsReport) -> Result<(), AppError> {
                 row.bytes_saved,
                 row.bytes_saved_ratio * 100.0
             )?;
+        }
+    }
+    if report.filters.trend == "day" {
+        for (label, groups) in [
+            ("Top profiles", &report.top_profiles),
+            ("Top commands", &report.top_commands),
+        ] {
+            if groups.is_empty() {
+                continue;
+            }
+            writeln!(out)?;
+            writeln!(out, "{label}:")?;
+            for row in groups {
+                writeln!(
+                    out,
+                    "  {}  samples={} changed={} tokens_saved={} ({:.1}%) bytes_saved={} ({:.1}%)",
+                    row.key,
+                    row.samples,
+                    row.changed_samples,
+                    row.tokens_saved,
+                    row.tokens_saved_ratio * 100.0,
+                    row.bytes_saved,
+                    row.bytes_saved_ratio * 100.0
+                )?;
+            }
         }
     }
     Ok(())
@@ -585,6 +658,8 @@ fn usage_group_rows(
     reports: &[RolloutCompareReport],
     filter: &UsageStatsFilter,
     group_by: UsageStatsGroupBy,
+    top: usize,
+    sort_by: UsageStatsSortBy,
 ) -> Vec<UsageStatsGroupReport> {
     let mut grouped = BTreeMap::<String, (usize, usize, usize, usize, usize, usize)>::new();
     for item in reports {
@@ -610,7 +685,7 @@ fn usage_group_rows(
         }
     }
 
-    grouped
+    let mut rows = grouped
         .into_iter()
         .map(
             |(
@@ -648,7 +723,32 @@ fn usage_group_rows(
                 row.tokens_saved != 0 || row.bytes_saved != 0
             }
         })
-        .collect()
+        .collect::<Vec<_>>();
+    sort_usage_groups(&mut rows, sort_by);
+    if !matches!(group_by, UsageStatsGroupBy::Day) && rows.len() > top {
+        rows.truncate(top);
+    }
+    rows
+}
+
+fn sort_usage_groups(rows: &mut [UsageStatsGroupReport], sort_by: UsageStatsSortBy) {
+    rows.sort_by(|a, b| match sort_by {
+        UsageStatsSortBy::Saved => b
+            .tokens_saved
+            .cmp(&a.tokens_saved)
+            .then_with(|| b.bytes_saved.cmp(&a.bytes_saved))
+            .then_with(|| a.key.cmp(&b.key)),
+        UsageStatsSortBy::Ratio => b
+            .tokens_saved_ratio
+            .total_cmp(&a.tokens_saved_ratio)
+            .then_with(|| b.tokens_saved.cmp(&a.tokens_saved))
+            .then_with(|| a.key.cmp(&b.key)),
+        UsageStatsSortBy::Samples => b
+            .samples
+            .cmp(&a.samples)
+            .then_with(|| b.tokens_saved.cmp(&a.tokens_saved))
+            .then_with(|| a.key.cmp(&b.key)),
+    });
 }
 
 fn report_record_rows(

@@ -1,6 +1,6 @@
 use crate::benchmark::build_benchmark_report;
 use crate::e2e_report::compare_e2e;
-use crate::rollout_io::{UsageStatsFilter, UsageStatsGroupBy};
+use crate::rollout_io::{UsageStatsFilter, UsageStatsGroupBy, UsageStatsSortBy};
 use crate::shim::{create_shims, passthrough, run_agent_command, run_tool_command};
 use crate::trim::{
     ShellKind, base_name, candidate_config_path, csv_list, default_head_lines, default_json_prefix,
@@ -294,6 +294,9 @@ pub enum Dispatch {
         limit: Option<usize>,
         filter: UsageStatsFilter,
         group_by: UsageStatsGroupBy,
+        changed_only: bool,
+        top: usize,
+        sort_by: UsageStatsSortBy,
         json: bool,
     },
     CompareE2e {
@@ -373,7 +376,7 @@ pub fn usage() -> String {
         "  tke deactivate",
         "  tke capture-interactive [--source PATH] [--output PATH]",
         "  tke compare-rollout [--source PATH]",
-        "  tke stats [--source PATH]... [--limit N] [--profile NAME] [--command NAME] [--by day|profile|command] [--json]",
+        "  tke stats [--source PATH]... [--limit N] [--profile NAME] [--command NAME] [--by day|profile|command] [--changed-only] [--top N] [--sort saved|ratio|samples] [--json]",
         "  tke compare-e2e [--source DIR]... [--agent codex|claude]",
         "  tke benchmark-commands [--check]",
         "",
@@ -392,6 +395,7 @@ pub fn usage() -> String {
         "  tke stats",
         "  tke stats --json --limit 10",
         "  tke stats --profile pathlist --by command",
+        "  tke stats --changed-only --top 8 --sort ratio",
         "  tke compare-e2e",
         "  tke benchmark-commands",
     ]
@@ -676,6 +680,9 @@ fn parse_stats(args: Vec<String>) -> Result<Dispatch, AppError> {
     let mut limit = None;
     let mut filter = UsageStatsFilter::None;
     let mut group_by = UsageStatsGroupBy::Day;
+    let mut changed_only = false;
+    let mut top = 10usize;
+    let mut sort_by = UsageStatsSortBy::Saved;
     let mut json = false;
     let mut iter = args.into_iter().skip(2);
     while let Some(arg) = iter.next() {
@@ -723,6 +730,31 @@ fn parse_stats(args: Vec<String>) -> Result<Dispatch, AppError> {
                     }
                 };
             }
+            "--changed-only" => changed_only = true,
+            "--top" => {
+                let value = iter.next().ok_or_else(|| {
+                    AppError::Usage(format!("missing value for --top\n\n{}", usage()))
+                })?;
+                top = value.parse::<usize>().map_err(|_| {
+                    AppError::Usage(format!("invalid --top `{value}`\n\n{}", usage()))
+                })?;
+            }
+            "--sort" => {
+                let value = iter.next().ok_or_else(|| {
+                    AppError::Usage(format!("missing value for --sort\n\n{}", usage()))
+                })?;
+                sort_by = match value.as_str() {
+                    "saved" => UsageStatsSortBy::Saved,
+                    "ratio" => UsageStatsSortBy::Ratio,
+                    "samples" => UsageStatsSortBy::Samples,
+                    _ => {
+                        return Err(AppError::Usage(format!(
+                            "invalid --sort `{value}`\n\n{}",
+                            usage()
+                        )));
+                    }
+                };
+            }
             "--json" => json = true,
             other => {
                 return Err(AppError::Usage(format!(
@@ -737,6 +769,9 @@ fn parse_stats(args: Vec<String>) -> Result<Dispatch, AppError> {
         limit,
         filter,
         group_by,
+        changed_only,
+        top,
+        sort_by,
         json,
     })
 }

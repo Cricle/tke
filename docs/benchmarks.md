@@ -15,7 +15,7 @@ Generated from:
 | `cat_code` | file | 743 | 161 | 582 | 78.3% |
 | `sed_code` | file | 743 | 164 | 579 | 77.9% |
 | `bat_code` | file | 743 | 165 | 578 | 77.8% |
-| `nl_code` | file | 1058 | 189 | 869 | 82.1% |
+| `nl_code` | file | 1058 | 34 | 1024 | 96.8% |
 | `rg_code` | search | 2257 | 226 | 2031 | 90.0% |
 | `grep_code` | search | 2257 | 228 | 2029 | 89.9% |
 | `find_paths` | pathlist | 8151 | 93 | 8058 | 98.9% |
@@ -36,13 +36,13 @@ Profile averages:
 | Profile | Cases | Average token savings |
 | --- | --- | --- |
 | diff | 1 | 93.7% |
-| file | 11 | 77.4% |
+| file | 11 | 78.7% |
 | generic | 1 | 0.0% |
-| json | 2 | 33.9% |
+| json | 2 | 98.8% |
 | log | 14 | 75.3% |
 | pathlist | 6 | 96.7% |
 | search | 2 | 89.9% |
-| table | 8 | 59.4% |
+| table | 8 | 67.4% |
 
 Built-in rollout/task benchmarks:
 
@@ -94,7 +94,7 @@ This section is generated from the current benchmark and E2E artifacts. The clai
 
 | Evidence area | `tke` result | `rtk` result in this repo | Why this matters |
 | --- | --- | --- | --- |
-| Built-in local compression benchmarks | `43/34` cases, `65971` tokens saved, `80.6%` | No equivalent repo-local tool-output benchmark runner in this repo | `tke` can be measured locally and repeatedly without depending on agent compliance |
+| Built-in local compression benchmarks | `44/34` cases, `75039` tokens saved, `91.4%` | No equivalent repo-local tool-output benchmark runner in this repo | `tke` can be measured locally and repeatedly without depending on agent compliance |
 | Built-in rollout/task traces | `39` traces, `273057` tokens saved, `88.9%` | RTK participates only through the fairness/synthetic harness subset wired here | `tke` has broader measured coverage inside the repo |
 | Codex real E2E | `4/4` pass, `6257` tool tokens saved | `0/2` pass, `11` token delta | Current real Codex evidence favors `tke` clearly |
 | Structured output surface | `pathlist`, `search`, `diff`, `log`, `table`, and `file` profiles emit inspectable `__TKE__{...}` summaries | No equivalent repo-local structured envelope | `tke` gives a concrete artifact that tooling can compare and audit |
@@ -104,7 +104,7 @@ Current built-in totals:
 
 | Scope | Cases | Tokens saved | Savings ratio |
 | --- | --- | --- | --- |
-| Default compress benchmarks | 43 | 65971 | 80.6% |
+| Default compress benchmarks | 44 | 75039 | 91.4% |
 | Built-in rollout/task traces | 39 | 273057 | 88.9% |
 
 Per-profile compression totals:
@@ -112,12 +112,12 @@ Per-profile compression totals:
 | Profile | Cases | Tokens saved | Savings ratio |
 | --- | --- | --- | --- |
 | `diff` | 1 | 3459 | 93.7% |
-| `file` | 11 | 6582 | 77.5% |
-| `json` | 2 | 4560 | 33.9% |
+| `file` | 11 | 6737 | 79.4% |
+| `json` | 2 | 13302 | 98.8% |
 | `log` | 14 | 8275 | 75.3% |
 | `pathlist` | 6 | 36439 | 98.6% |
 | `search` | 2 | 4060 | 89.9% |
-| `table` | 7 | 2596 | 69.6% |
+| `table` | 8 | 2767 | 69.3% |
 
 Claude-oriented stable synthetic summary:
 
