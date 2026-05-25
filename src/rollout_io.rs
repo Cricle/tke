@@ -73,7 +73,18 @@ pub struct UsageStatsReport {
     rewritten_bytes: usize,
     bytes_saved: isize,
     bytes_saved_ratio: f64,
-    reports: Vec<RolloutCompareReport>,
+    days: Vec<UsageStatsDayReport>,
+}
+
+#[derive(Serialize)]
+pub struct UsageStatsDayReport {
+    day: String,
+    samples: usize,
+    changed_samples: usize,
+    tokens_saved: isize,
+    tokens_saved_ratio: f64,
+    bytes_saved: isize,
+    bytes_saved_ratio: f64,
 }
 
 pub fn usage_stats(
@@ -154,7 +165,7 @@ pub fn build_usage_stats_report(
         rewritten_bytes,
         bytes_saved,
         bytes_saved_ratio: ratio(bytes_saved, raw_bytes),
-        reports,
+        days: daily_usage_rows(&reports),
     })
 }
 
@@ -351,94 +362,67 @@ fn print_usage_stats_report(report: &UsageStatsReport) -> Result<(), AppError> {
         report.bytes_saved_ratio * 100.0
     )?;
 
-    if let Some(best) = report.reports.iter().find(|item| item.tokens_saved > 0) {
-        writeln!(out)?;
-        writeln!(out, "Latest effective savings:")?;
-        writeln!(out, "  Source: {}", best.source)?;
-        writeln!(
-            out,
-            "  Tokens: {} -> {}  saved {} ({:.1}%)",
-            best.raw_tokens,
-            best.rewritten_tokens,
-            best.tokens_saved,
-            best.tokens_saved_ratio * 100.0
-        )?;
-        writeln!(
-            out,
-            "  Bytes:  {} -> {}  saved {} ({:.1}%)",
-            best.raw_bytes,
-            best.rewritten_bytes,
-            best.bytes_saved,
-            best.bytes_saved_ratio * 100.0
-        )?;
-    }
-
-    let daily = daily_usage_rows(&report.reports);
-    if !daily.is_empty() {
+    if !report.days.is_empty() {
         writeln!(out)?;
         writeln!(out, "By day:")?;
-        for row in daily {
+        for row in &report.days {
             writeln!(
                 out,
-                "  {}  samples={} changed={} tokens_saved={} ({:.1}%)",
+                "  {}  samples={} changed={} tokens_saved={} ({:.1}%) bytes_saved={} ({:.1}%)",
                 row.day,
                 row.samples,
-                row.changed,
+                row.changed_samples,
                 row.tokens_saved,
-                row.tokens_saved_ratio * 100.0
-            )?;
-        }
-    }
-
-    if !report.reports.is_empty() {
-        writeln!(out)?;
-        writeln!(out, "Recent samples:")?;
-        for item in &report.reports {
-            writeln!(
-                out,
-                "  - changed={} tokens_saved={} ({:.1}%) source={}",
-                item.changed,
-                item.tokens_saved,
-                item.tokens_saved_ratio * 100.0,
-                item.source
+                row.tokens_saved_ratio * 100.0,
+                row.bytes_saved,
+                row.bytes_saved_ratio * 100.0
             )?;
         }
     }
     Ok(())
 }
 
-struct DailyUsageRow {
-    day: String,
-    samples: usize,
-    changed: usize,
-    tokens_saved: isize,
-    tokens_saved_ratio: f64,
-}
-
-fn daily_usage_rows(reports: &[RolloutCompareReport]) -> Vec<DailyUsageRow> {
-    let mut grouped = BTreeMap::<String, (usize, usize, usize, usize)>::new();
+fn daily_usage_rows(reports: &[RolloutCompareReport]) -> Vec<UsageStatsDayReport> {
+    let mut grouped = BTreeMap::<String, (usize, usize, usize, usize, usize, usize)>::new();
     for item in reports {
         let day = rollout_day(&item.source);
-        let entry = grouped.entry(day).or_insert((0, 0, 0, 0));
+        let entry = grouped.entry(day).or_insert((0, 0, 0, 0, 0, 0));
         entry.0 += 1;
         if item.changed {
             entry.1 += 1;
         }
         entry.2 += item.raw_tokens;
         entry.3 += item.rewritten_tokens;
+        entry.4 += item.raw_bytes;
+        entry.5 += item.rewritten_bytes;
     }
     grouped
         .into_iter()
-        .map(|(day, (samples, changed, raw_tokens, rewritten_tokens))| {
-            let tokens_saved = raw_tokens as isize - rewritten_tokens as isize;
-            DailyUsageRow {
+        .map(
+            |(
                 day,
-                samples,
-                changed,
-                tokens_saved,
-                tokens_saved_ratio: ratio(tokens_saved, raw_tokens),
-            }
-        })
+                (
+                    samples,
+                    changed_samples,
+                    raw_tokens,
+                    rewritten_tokens,
+                    raw_bytes,
+                    rewritten_bytes,
+                ),
+            )| {
+                let tokens_saved = raw_tokens as isize - rewritten_tokens as isize;
+                let bytes_saved = raw_bytes as isize - rewritten_bytes as isize;
+                UsageStatsDayReport {
+                    day,
+                    samples,
+                    changed_samples,
+                    tokens_saved,
+                    tokens_saved_ratio: ratio(tokens_saved, raw_tokens),
+                    bytes_saved,
+                    bytes_saved_ratio: ratio(bytes_saved, raw_bytes),
+                }
+            },
+        )
         .collect::<Vec<_>>()
 }
 

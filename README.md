@@ -124,11 +124,16 @@ and prints a human-readable summary with:
 - total bytes saved and tokens saved
 - overall savings ratios
 - how many real rollout samples changed
-- the latest effective savings sample
 - per-day savings summary
-- recent rollout sample lines
 
 If you want machine-readable output, add `--json`.
+
+If you want a single-rollout detailed report instead of aggregate stats, use:
+
+```bash
+tke compare-rollout
+tke compare-rollout --source /path/to/rollout.jsonl
+```
 
 Examples:
 

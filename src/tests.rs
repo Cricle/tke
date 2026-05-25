@@ -109,6 +109,31 @@ fn match_terms_include_errors_and_args() {
 }
 
 #[test]
+fn compact_args_handles_unicode_boundaries() {
+    let args = vec![
+        "decision_view|core_research_call|recommendation|执行动作|一页纸摘要|IC主席版|reader_summary|summary"
+            .to_owned(),
+    ];
+    let compact = crate::trim::compact_args(&args);
+    assert_eq!(compact.len(), 1);
+    assert!(compact[0].ends_with("..."));
+}
+
+#[test]
+fn collect_log_summary_handles_unicode_boundaries() {
+    let lines = vec![
+        "{\"success\":true,\"data\":{\"current_step_description\":\"生成市场技术分析师报告\",\"current_step_name\":\"市场技术分析\",\"elapsed_time\":17,\"error_message\":null,\"estimated_total_time\":100,\"message\":\"市场技术分析中\",\"progress\":87,\"remaining_time\":13}}",
+    ];
+    let refs = lines.iter().copied().collect::<Vec<_>>();
+    let summary = crate::log_profile::collect_log_summary(&refs);
+    assert!(summary.fail + summary.warn >= 1);
+    assert!(
+        summary.ff.as_deref().is_some() || summary.fw.as_deref().is_some(),
+        "expected a safely truncated sample"
+    );
+}
+
+#[test]
 fn read_stream_payload_reads_normal_input() {
     let mut reader = Cursor::new(b"hello\nworld".to_vec());
     let payload = read_stream_payload(&mut reader).expect("payload");

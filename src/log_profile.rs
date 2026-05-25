@@ -1,6 +1,6 @@
 use crate::trim::{
     LogSummary, MatchChunk, ProfileLimits, RepeatedRun, is_failure_signal_line, is_log_signal,
-    is_warning_signal, push_chunk,
+    is_warning_signal, push_chunk, truncate_ellipsized,
 };
 
 pub(crate) fn collect_log_chunks(
@@ -134,9 +134,5 @@ fn canonicalize_log_line(line: &str) -> String {
 
 fn truncate_for_sample(line: &str) -> String {
     const MAX: usize = 72;
-    if line.len() <= MAX {
-        line.to_owned()
-    } else {
-        format!("{}...", &line[..MAX])
-    }
+    truncate_ellipsized(line, MAX)
 }

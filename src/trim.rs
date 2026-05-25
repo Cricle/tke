@@ -383,12 +383,25 @@ pub(crate) fn compact_args(args: &[String]) -> Vec<String> {
         .take(6)
         .map(|arg| {
             if arg.len() > 80 {
-                format!("{}...", &arg[..80])
+                truncate_ellipsized(arg, 80)
             } else {
                 arg.clone()
             }
         })
         .collect()
+}
+
+pub(crate) fn truncate_ellipsized(text: &str, max_bytes: usize) -> String {
+    if text.len() <= max_bytes {
+        return text.to_owned();
+    }
+    let cutoff = text
+        .char_indices()
+        .map(|(idx, _)| idx)
+        .take_while(|idx| *idx <= max_bytes)
+        .last()
+        .unwrap_or(0);
+    format!("{}...", &text[..cutoff])
 }
 
 pub(crate) fn read_stream_payload<R: Read>(reader: &mut R) -> Result<Option<Vec<u8>>, AppError> {
