@@ -4,9 +4,10 @@ use crate::benchmark::estimate_text_tokens;
 use crate::rewrite::{LivePipelineDecision, detect_linux_parent_pipeline, live_pipeline_decision};
 use crate::rollout_io::InteractiveTracker;
 use crate::trim::{
-    CommandKind, TrimEnvelope, TrimProfile, TrimStats, classify_command, collect_diff_summary,
-    collect_kept_ranges, collect_path_list_kept_ranges, collect_path_list_summary,
-    collect_profile_chunks, collect_table_kept_ranges, collect_table_summary, compact_args,
+    CommandKind, TrimEnvelope, TrimProfile, TrimStats, classify_command, collect_build_summary,
+    collect_diff_summary, collect_git_status_summary, collect_kept_ranges,
+    collect_path_list_kept_ranges, collect_path_list_summary, collect_profile_chunks,
+    collect_table_kept_ranges, collect_table_summary, compact_args, compact_json_body,
     compute_omitted_ranges, create_single_shim, exit_code, match_terms, merge_ranges,
     profile_limits, read_stdin_if_piped, real_path_string, select_profile, should_force_trim,
     take_head, take_tail,
@@ -783,7 +784,7 @@ pub(crate) fn maybe_normalize_text(
     selected_stage: Option<(&str, &str)>,
 ) -> Result<Option<String>, AppError> {
     let lines = text.lines().collect::<Vec<_>>();
-    let profile = select_profile(kind, &lines);
+    let profile = select_profile(name, args, kind, &lines);
     let forced = should_force_trim(profile, text.len(), lines.len(), config);
     if !forced {
         return Ok(None);
@@ -822,7 +823,7 @@ pub(crate) fn normalize_text_with_stage(
     let lines: Vec<&str> = text.lines().collect();
     let total_bytes = text.len();
     let total_lines = lines.len();
-    let profile = select_profile(kind, &lines);
+    let profile = select_profile(name, args, kind, &lines);
     let forced = should_force_trim(profile, total_bytes, total_lines, config);
     let terms = match_terms(name, args);
 
@@ -858,6 +859,21 @@ pub(crate) fn normalize_text_with_stage(
     } else {
         None
     };
+    let git_status = if forced && profile == TrimProfile::GitStatus {
+        collect_git_status_summary(&lines)
+    } else {
+        None
+    };
+    let build_summary = if forced && matches!(profile, TrimProfile::Log) {
+        collect_build_summary(name, &lines)
+    } else {
+        None
+    };
+    let json_body = if forced && profile == TrimProfile::Json {
+        compact_json_body(text)
+    } else {
+        None
+    };
     let (head, tail, matches, kept_ranges, emitted_lines) = if let Some(table) = &table {
         let kept = merge_ranges(collect_table_kept_ranges(table));
         let emitted = kept.iter().map(|(start, end)| end - start).sum();
@@ -866,6 +882,8 @@ pub(crate) fn normalize_text_with_stage(
         let kept = merge_ranges(collect_path_list_kept_ranges(pathlist));
         let emitted = kept.iter().map(|(start, end)| end - start).sum();
         (Vec::new(), Vec::new(), Vec::new(), kept, emitted)
+    } else if profile == TrimProfile::GitStatus || profile == TrimProfile::Json {
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new(), 0)
     } else {
         let head = take_head(&lines, limits.head_lines);
         let tail = take_tail(&lines, limits.tail_lines);
@@ -934,7 +952,9 @@ pub(crate) fn normalize_text_with_stage(
         pl: pathlist,
         lg: log_summary,
         df: diff_summary,
-        b: body,
+        gs: git_status,
+        bd: build_summary,
+        b: json_body.or(body),
     };
     Ok(serde_json::to_string(&envelope)?)
 }

@@ -1,7 +1,7 @@
 use crate::adapter::rewrite_agent_transcript;
 use crate::app::{AppError, Config};
 use crate::benchmark::{RolloutCompareReport, estimate_text_tokens};
-use crate::rollout_stats::collect_rollout_output_stats;
+use crate::rollout_stats::collect_rollout_output_stats_detailed;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
@@ -190,8 +190,8 @@ fn compare_rollout_pair(
     rewritten_text: &str,
     config: &Config,
 ) -> RolloutCompareReport {
-    let raw_stats = collect_rollout_output_stats(raw_text, config);
-    let rewritten_stats = collect_rollout_output_stats(rewritten_text, config);
+    let raw_stats = collect_rollout_output_stats_detailed(raw_text, config);
+    let rewritten_stats = collect_rollout_output_stats_detailed(rewritten_text, config);
     RolloutCompareReport::from_stats(source, changed, raw_stats, rewritten_stats)
 }
 

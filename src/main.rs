@@ -57,8 +57,10 @@ fn run() -> Result<(), AppError> {
         Dispatch::Stats {
             sources,
             limit,
+            filter,
+            group_by,
             json,
-        } => usage_stats(sources, limit, json, &config),
+        } => usage_stats(sources, limit, filter, group_by, json, &config),
         Dispatch::CompareE2e { sources, agent } => compare_e2e_command(sources, agent, &config),
         Dispatch::BenchmarkCommands { check } => benchmark_commands(&config, check),
         Dispatch::Shim { name, args } | Dispatch::ShimExec { name, args } => {

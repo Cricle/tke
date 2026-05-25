@@ -1,5 +1,6 @@
 use crate::benchmark::build_benchmark_report;
 use crate::e2e_report::compare_e2e;
+use crate::rollout_io::{UsageStatsFilter, UsageStatsGroupBy};
 use crate::shim::{create_shims, passthrough, run_agent_command, run_tool_command};
 use crate::trim::{
     ShellKind, base_name, candidate_config_path, csv_list, default_head_lines, default_json_prefix,
@@ -250,6 +251,8 @@ pub enum Dispatch {
     Stats {
         sources: Vec<PathBuf>,
         limit: Option<usize>,
+        filter: UsageStatsFilter,
+        group_by: UsageStatsGroupBy,
         json: bool,
     },
     CompareE2e {
@@ -329,7 +332,7 @@ pub fn usage() -> String {
         "  tke deactivate",
         "  tke capture-interactive [--source PATH] [--output PATH]",
         "  tke compare-rollout [--source PATH]",
-        "  tke stats [--source PATH]... [--limit N] [--json]",
+        "  tke stats [--source PATH]... [--limit N] [--profile NAME] [--command NAME] [--by day|profile|command] [--json]",
         "  tke compare-e2e [--source DIR]... [--agent codex|claude]",
         "  tke benchmark-commands [--check]",
         "",
@@ -347,6 +350,7 @@ pub fn usage() -> String {
         "  tke compare-rollout",
         "  tke stats",
         "  tke stats --json --limit 10",
+        "  tke stats --profile pathlist --by command",
         "  tke compare-e2e",
         "  tke benchmark-commands",
     ]
@@ -629,6 +633,8 @@ fn parse_shim_exec(args: Vec<String>) -> Result<Dispatch, AppError> {
 fn parse_stats(args: Vec<String>) -> Result<Dispatch, AppError> {
     let mut sources = Vec::new();
     let mut limit = None;
+    let mut filter = UsageStatsFilter::None;
+    let mut group_by = UsageStatsGroupBy::Day;
     let mut json = false;
     let mut iter = args.into_iter().skip(2);
     while let Some(arg) = iter.next() {
@@ -648,6 +654,34 @@ fn parse_stats(args: Vec<String>) -> Result<Dispatch, AppError> {
                 })?;
                 limit = Some(parsed);
             }
+            "--profile" => {
+                let value = iter.next().ok_or_else(|| {
+                    AppError::Usage(format!("missing value for --profile\n\n{}", usage()))
+                })?;
+                filter = UsageStatsFilter::Profile(value);
+            }
+            "--command" => {
+                let value = iter.next().ok_or_else(|| {
+                    AppError::Usage(format!("missing value for --command\n\n{}", usage()))
+                })?;
+                filter = UsageStatsFilter::Command(value);
+            }
+            "--by" => {
+                let value = iter.next().ok_or_else(|| {
+                    AppError::Usage(format!("missing value for --by\n\n{}", usage()))
+                })?;
+                group_by = match value.as_str() {
+                    "day" => UsageStatsGroupBy::Day,
+                    "profile" => UsageStatsGroupBy::Profile,
+                    "command" => UsageStatsGroupBy::Command,
+                    _ => {
+                        return Err(AppError::Usage(format!(
+                            "invalid --by `{value}`\n\n{}",
+                            usage()
+                        )));
+                    }
+                };
+            }
             "--json" => json = true,
             other => {
                 return Err(AppError::Usage(format!(
@@ -660,6 +694,8 @@ fn parse_stats(args: Vec<String>) -> Result<Dispatch, AppError> {
     Ok(Dispatch::Stats {
         sources,
         limit,
+        filter,
+        group_by,
         json,
     })
 }

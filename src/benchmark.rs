@@ -1,13 +1,15 @@
 use crate::adapter::rewrite_agent_transcript;
 use crate::app::{AppError, Config};
-use crate::rollout_stats::RolloutOutputStats;
+use crate::rollout_stats::{RolloutOutputStats, RolloutOutputStatsDetailed};
 use crate::trim::{BenchmarkExpectation, BenchmarkSpec, BenchmarkTaskSpec, BenchmarkTaskStep};
 use serde::Serialize;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub(crate) use crate::rollout_stats::{collect_rollout_output_stats, rollout_string_haystack};
+pub(crate) use crate::rollout_stats::{
+    collect_rollout_output_stats_detailed, rollout_string_haystack,
+};
 
 #[derive(Serialize)]
 pub(crate) struct RolloutCompareReport {
@@ -24,33 +26,42 @@ pub(crate) struct RolloutCompareReport {
     pub(crate) tokens_saved: isize,
     pub(crate) bytes_saved_ratio: f64,
     pub(crate) tokens_saved_ratio: f64,
+    #[serde(skip_serializing)]
+    pub(crate) raw_detail: RolloutOutputStatsDetailed,
+    #[serde(skip_serializing)]
+    pub(crate) rewritten_detail: RolloutOutputStatsDetailed,
 }
 
 impl RolloutCompareReport {
     pub(crate) fn from_stats(
         source: &Path,
         changed: bool,
-        raw: RolloutOutputStats,
-        rewritten: RolloutOutputStats,
+        raw: RolloutOutputStatsDetailed,
+        rewritten: RolloutOutputStatsDetailed,
     ) -> Self {
-        let bytes_saved = raw.bytes as isize - rewritten.bytes as isize;
-        let tokens_saved = raw.approx_tokens as isize - rewritten.approx_tokens as isize;
-        let bytes_saved_ratio = ratio(bytes_saved, raw.bytes);
-        let tokens_saved_ratio = ratio(tokens_saved, raw.approx_tokens);
+        let raw_total: RolloutOutputStats = raw.total;
+        let rewritten_total: RolloutOutputStats = rewritten.total;
+        let bytes_saved = raw_total.bytes as isize - rewritten_total.bytes as isize;
+        let tokens_saved =
+            raw_total.approx_tokens as isize - rewritten_total.approx_tokens as isize;
+        let bytes_saved_ratio = ratio(bytes_saved, raw_total.bytes);
+        let tokens_saved_ratio = ratio(tokens_saved, raw_total.approx_tokens);
         Self {
             v: 1,
             source: source.display().to_string(),
             changed,
-            raw_fields: raw.fields,
-            raw_bytes: raw.bytes,
-            raw_tokens: raw.approx_tokens,
-            rewritten_fields: rewritten.fields,
-            rewritten_bytes: rewritten.bytes,
-            rewritten_tokens: rewritten.approx_tokens,
+            raw_fields: raw_total.fields,
+            raw_bytes: raw_total.bytes,
+            raw_tokens: raw_total.approx_tokens,
+            rewritten_fields: rewritten_total.fields,
+            rewritten_bytes: rewritten_total.bytes,
+            rewritten_tokens: rewritten_total.approx_tokens,
             bytes_saved,
             tokens_saved,
             bytes_saved_ratio,
             tokens_saved_ratio,
+            raw_detail: raw,
+            rewritten_detail: rewritten,
         }
     }
 }
@@ -145,9 +156,9 @@ fn benchmark_case_report(
     let payload = spec.sample;
     let jsonl = build_exec_rollout(&spec.command, &payload, &spec.call_id);
     let rewritten = rewrite_agent_transcript(&jsonl, config)?;
-    let raw_stats = collect_rollout_output_stats(&jsonl, config);
+    let raw_stats = collect_rollout_output_stats_detailed(&jsonl, config);
     let rewritten_text = rewritten.as_deref().unwrap_or(&jsonl);
-    let rewritten_stats = collect_rollout_output_stats(rewritten_text, config);
+    let rewritten_stats = collect_rollout_output_stats_detailed(rewritten_text, config);
     let report = RolloutCompareReport::from_stats(
         Path::new(&format!("/tmp/{}.jsonl", spec.name)),
         rewritten.is_some(),
@@ -176,9 +187,9 @@ fn benchmark_task_report(
     config: &Config,
 ) -> Result<BenchmarkTaskReport, AppError> {
     let rewritten = rewrite_agent_transcript(&spec.rollout, config)?;
-    let raw_stats = collect_rollout_output_stats(&spec.rollout, config);
+    let raw_stats = collect_rollout_output_stats_detailed(&spec.rollout, config);
     let rewritten_text = rewritten.as_deref().unwrap_or(&spec.rollout);
-    let rewritten_stats = collect_rollout_output_stats(rewritten_text, config);
+    let rewritten_stats = collect_rollout_output_stats_detailed(rewritten_text, config);
     let report = RolloutCompareReport::from_stats(
         Path::new(&format!("/tmp/{}.jsonl", spec.name)),
         rewritten.is_some(),
@@ -218,9 +229,9 @@ fn benchmark_corpus_reports(config: &Config) -> Result<Vec<CorpusCaseReport>, Ap
         }
         let raw = fs::read_to_string(&source)?;
         let rewritten = rewrite_agent_transcript(&raw, config)?;
-        let raw_stats = collect_rollout_output_stats(&raw, config);
+        let raw_stats = collect_rollout_output_stats_detailed(&raw, config);
         let rewritten_text = rewritten.as_deref().unwrap_or(&raw);
-        let rewritten_stats = collect_rollout_output_stats(rewritten_text, config);
+        let rewritten_stats = collect_rollout_output_stats_detailed(rewritten_text, config);
         let report = RolloutCompareReport::from_stats(
             &source,
             rewritten.is_some(),

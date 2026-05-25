@@ -1,6 +1,6 @@
 use crate::adapter::rewrite_agent_transcript;
 use crate::benchmark::RolloutCompareReport;
-use crate::rollout_stats::collect_rollout_output_stats;
+use crate::rollout_stats::collect_rollout_output_stats_detailed;
 use crate::trim::now_millis;
 use crate::{AppError, Config};
 use serde::Serialize;
@@ -50,9 +50,9 @@ pub fn compare_rollout(source: Option<PathBuf>, config: &Config) -> Result<(), A
 
     let raw = fs::read_to_string(&source)?;
     let rewritten = rewrite_agent_transcript(&raw, config)?;
-    let raw_stats = collect_rollout_output_stats(&raw, config);
+    let raw_stats = collect_rollout_output_stats_detailed(&raw, config);
     let rewritten_text = rewritten.as_deref().unwrap_or(&raw);
-    let rewritten_stats = collect_rollout_output_stats(rewritten_text, config);
+    let rewritten_stats = collect_rollout_output_stats_detailed(rewritten_text, config);
     let report =
         RolloutCompareReport::from_stats(&source, rewritten.is_some(), raw_stats, rewritten_stats);
     println!("{}", serde_json::to_string(&report)?);
@@ -63,6 +63,7 @@ pub fn compare_rollout(source: Option<PathBuf>, config: &Config) -> Result<(), A
 pub struct UsageStatsReport {
     v: u8,
     roots: Vec<String>,
+    filters: UsageStatsFiltersReport,
     samples: usize,
     changed_samples: usize,
     raw_tokens: usize,
@@ -74,6 +75,7 @@ pub struct UsageStatsReport {
     bytes_saved: isize,
     bytes_saved_ratio: f64,
     days: Vec<UsageStatsDayReport>,
+    groups: Vec<UsageStatsGroupReport>,
 }
 
 #[derive(Serialize)]
@@ -87,13 +89,78 @@ pub struct UsageStatsDayReport {
     bytes_saved_ratio: f64,
 }
 
+#[derive(Serialize)]
+pub struct UsageStatsGroupReport {
+    key: String,
+    samples: usize,
+    changed_samples: usize,
+    raw_tokens: usize,
+    rewritten_tokens: usize,
+    tokens_saved: isize,
+    tokens_saved_ratio: f64,
+    raw_bytes: usize,
+    rewritten_bytes: usize,
+    bytes_saved: isize,
+    bytes_saved_ratio: f64,
+}
+
+#[derive(Serialize)]
+pub struct UsageStatsFiltersReport {
+    kind: String,
+    value: Option<String>,
+    trend: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum UsageStatsGroupBy {
+    Day,
+    Profile,
+    Command,
+}
+
+impl UsageStatsGroupBy {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Day => "day",
+            Self::Profile => "profile",
+            Self::Command => "command",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum UsageStatsFilter {
+    None,
+    Profile(String),
+    Command(String),
+}
+
+impl UsageStatsFilter {
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Profile(_) => "profile",
+            Self::Command(_) => "command",
+        }
+    }
+
+    fn value(&self) -> Option<String> {
+        match self {
+            Self::None => None,
+            Self::Profile(value) | Self::Command(value) => Some(value.clone()),
+        }
+    }
+}
+
 pub fn usage_stats(
     sources: Vec<PathBuf>,
     limit: Option<usize>,
+    filter: UsageStatsFilter,
+    group_by: UsageStatsGroupBy,
     json: bool,
     config: &Config,
 ) -> Result<(), AppError> {
-    let report = build_usage_stats_report(sources, limit, config)?;
+    let report = build_usage_stats_report(sources, limit, &filter, group_by, config)?;
     if json {
         println!("{}", serde_json::to_string(&report)?);
     } else {
@@ -105,6 +172,8 @@ pub fn usage_stats(
 pub fn build_usage_stats_report(
     sources: Vec<PathBuf>,
     limit: Option<usize>,
+    filter: &UsageStatsFilter,
+    group_by: UsageStatsGroupBy,
     config: &Config,
 ) -> Result<UsageStatsReport, AppError> {
     let roots = if sources.is_empty() {
@@ -128,15 +197,16 @@ pub fn build_usage_stats_report(
     for source in &rollouts {
         let raw = fs::read_to_string(source)?;
         let rewritten = rewrite_agent_transcript(&raw, config)?;
-        let raw_stats = collect_rollout_output_stats(&raw, config);
+        let raw_stats = collect_rollout_output_stats_detailed(&raw, config);
         let rewritten_text = rewritten.as_deref().unwrap_or(&raw);
-        let rewritten_stats = collect_rollout_output_stats(rewritten_text, config);
+        let rewritten_stats = collect_rollout_output_stats_detailed(rewritten_text, config);
         let report = RolloutCompareReport::from_stats(
             source,
             rewritten.is_some(),
             raw_stats,
             rewritten_stats,
         );
+        let report = filter_rollout_report(report, filter);
         if report.changed {
             changed_samples += 1;
         }
@@ -155,6 +225,11 @@ pub fn build_usage_stats_report(
             .iter()
             .map(|path| path.display().to_string())
             .collect::<Vec<_>>(),
+        filters: UsageStatsFiltersReport {
+            kind: filter.kind().to_owned(),
+            value: filter.value(),
+            trend: group_by.as_str().to_owned(),
+        },
         samples: reports.len(),
         changed_samples,
         raw_tokens,
@@ -166,6 +241,7 @@ pub fn build_usage_stats_report(
         bytes_saved,
         bytes_saved_ratio: ratio(bytes_saved, raw_bytes),
         days: daily_usage_rows(&reports),
+        groups: usage_group_rows(&reports, group_by),
     })
 }
 
@@ -339,6 +415,16 @@ fn print_usage_stats_report(report: &UsageStatsReport) -> Result<(), AppError> {
     for root in &report.roots {
         writeln!(out, "  - {root}")?;
     }
+    if report.filters.kind != "none" || report.filters.trend != "day" {
+        writeln!(out)?;
+        writeln!(
+            out,
+            "Filter: kind={} value={} trend={}",
+            report.filters.kind,
+            report.filters.value.as_deref().unwrap_or("-"),
+            report.filters.trend
+        )?;
+    }
     writeln!(out)?;
     writeln!(
         out,
@@ -370,6 +456,23 @@ fn print_usage_stats_report(report: &UsageStatsReport) -> Result<(), AppError> {
                 out,
                 "  {}  samples={} changed={} tokens_saved={} ({:.1}%) bytes_saved={} ({:.1}%)",
                 row.day,
+                row.samples,
+                row.changed_samples,
+                row.tokens_saved,
+                row.tokens_saved_ratio * 100.0,
+                row.bytes_saved,
+                row.bytes_saved_ratio * 100.0
+            )?;
+        }
+    }
+    if !report.groups.is_empty() && report.filters.trend != "day" {
+        writeln!(out)?;
+        writeln!(out, "By {}:", report.filters.trend)?;
+        for row in &report.groups {
+            writeln!(
+                out,
+                "  {}  samples={} changed={} tokens_saved={} ({:.1}%) bytes_saved={} ({:.1}%)",
+                row.key,
                 row.samples,
                 row.changed_samples,
                 row.tokens_saved,
@@ -435,4 +538,217 @@ fn rollout_day(source: &str) -> String {
         }
     }
     "unknown".to_owned()
+}
+
+fn filter_rollout_report(
+    mut report: RolloutCompareReport,
+    filter: &UsageStatsFilter,
+) -> RolloutCompareReport {
+    let Some((raw, rewritten)) = select_breakdown_pair(&report, filter) else {
+        return report;
+    };
+    let bytes_saved = raw.bytes as isize - rewritten.bytes as isize;
+    let tokens_saved = raw.approx_tokens as isize - rewritten.approx_tokens as isize;
+    report.changed = tokens_saved != 0 || bytes_saved != 0;
+    report.raw_fields = raw.fields;
+    report.raw_bytes = raw.bytes;
+    report.raw_tokens = raw.approx_tokens;
+    report.rewritten_fields = rewritten.fields;
+    report.rewritten_bytes = rewritten.bytes;
+    report.rewritten_tokens = rewritten.approx_tokens;
+    report.bytes_saved = bytes_saved;
+    report.tokens_saved = tokens_saved;
+    report.bytes_saved_ratio = ratio(bytes_saved, raw.bytes);
+    report.tokens_saved_ratio = ratio(tokens_saved, raw.approx_tokens);
+    report
+}
+
+fn select_breakdown_pair(
+    report: &RolloutCompareReport,
+    filter: &UsageStatsFilter,
+) -> Option<(
+    crate::rollout_stats::RolloutOutputStats,
+    crate::rollout_stats::RolloutOutputStats,
+)> {
+    match filter {
+        UsageStatsFilter::None => Some((report.raw_detail.total, report.rewritten_detail.total)),
+        UsageStatsFilter::Profile(value) => {
+            Some(filtered_pair_stats(report, |profile, _| profile == value))
+        }
+        UsageStatsFilter::Command(value) => {
+            Some(filtered_pair_stats(report, |_, command| command == value))
+        }
+    }
+}
+
+fn usage_group_rows(
+    reports: &[RolloutCompareReport],
+    group_by: UsageStatsGroupBy,
+) -> Vec<UsageStatsGroupReport> {
+    let mut grouped = BTreeMap::<String, (usize, usize, usize, usize, usize, usize)>::new();
+    for item in reports {
+        let rows = match group_by {
+            UsageStatsGroupBy::Day => vec![(
+                rollout_day(&item.source),
+                item.raw_detail.total,
+                item.rewritten_detail.total,
+            )],
+            UsageStatsGroupBy::Profile => report_record_rows(item, true),
+            UsageStatsGroupBy::Command => report_record_rows(item, false),
+        };
+        for (key, raw, rewritten) in rows {
+            let entry = grouped.entry(key).or_insert((0, 0, 0, 0, 0, 0));
+            entry.0 += 1;
+            if raw.approx_tokens != rewritten.approx_tokens || raw.bytes != rewritten.bytes {
+                entry.1 += 1;
+            }
+            entry.2 += raw.approx_tokens;
+            entry.3 += rewritten.approx_tokens;
+            entry.4 += raw.bytes;
+            entry.5 += rewritten.bytes;
+        }
+    }
+
+    grouped
+        .into_iter()
+        .map(
+            |(
+                key,
+                (
+                    samples,
+                    changed_samples,
+                    raw_tokens,
+                    rewritten_tokens,
+                    raw_bytes,
+                    rewritten_bytes,
+                ),
+            )| {
+                let tokens_saved = raw_tokens as isize - rewritten_tokens as isize;
+                let bytes_saved = raw_bytes as isize - rewritten_bytes as isize;
+                UsageStatsGroupReport {
+                    key,
+                    samples,
+                    changed_samples,
+                    raw_tokens,
+                    rewritten_tokens,
+                    tokens_saved,
+                    tokens_saved_ratio: ratio(tokens_saved, raw_tokens),
+                    raw_bytes,
+                    rewritten_bytes,
+                    bytes_saved,
+                    bytes_saved_ratio: ratio(bytes_saved, raw_bytes),
+                }
+            },
+        )
+        .collect()
+}
+
+fn report_record_rows(
+    report: &RolloutCompareReport,
+    by_profile: bool,
+) -> Vec<(
+    String,
+    crate::rollout_stats::RolloutOutputStats,
+    crate::rollout_stats::RolloutOutputStats,
+)> {
+    let mut raw = BTreeMap::<String, crate::rollout_stats::RolloutOutputStats>::new();
+    let mut rewritten = BTreeMap::<String, crate::rollout_stats::RolloutOutputStats>::new();
+    for (key, raw_stats, rewritten_stats) in paired_record_rows(report, by_profile) {
+        let raw_entry = raw.entry(key.clone()).or_default();
+        raw_entry.fields += raw_stats.fields;
+        raw_entry.bytes += raw_stats.bytes;
+        raw_entry.approx_tokens += raw_stats.approx_tokens;
+
+        let rewritten_entry = rewritten.entry(key).or_default();
+        rewritten_entry.fields += rewritten_stats.fields;
+        rewritten_entry.bytes += rewritten_stats.bytes;
+        rewritten_entry.approx_tokens += rewritten_stats.approx_tokens;
+    }
+    let mut keys = raw.keys().cloned().collect::<Vec<_>>();
+    for key in rewritten.keys() {
+        if !keys.iter().any(|existing| existing == key) {
+            keys.push(key.clone());
+        }
+    }
+    if keys.is_empty() {
+        keys.push("unknown".to_owned());
+    }
+    keys.into_iter()
+        .map(|key: String| {
+            (
+                key.clone(),
+                raw.get(&key).copied().unwrap_or_default(),
+                rewritten.get(&key).copied().unwrap_or_default(),
+            )
+        })
+        .collect()
+}
+
+fn filtered_pair_stats(
+    report: &RolloutCompareReport,
+    include: impl Fn(&str, &str) -> bool,
+) -> (
+    crate::rollout_stats::RolloutOutputStats,
+    crate::rollout_stats::RolloutOutputStats,
+) {
+    let mut raw_total = crate::rollout_stats::RolloutOutputStats::default();
+    let mut rewritten_total = crate::rollout_stats::RolloutOutputStats::default();
+    for (profile, command, raw, rewritten) in paired_record_rows_with_meta(report) {
+        if !include(&profile, &command) {
+            continue;
+        }
+        raw_total.fields += raw.fields;
+        raw_total.bytes += raw.bytes;
+        raw_total.approx_tokens += raw.approx_tokens;
+        rewritten_total.fields += rewritten.fields;
+        rewritten_total.bytes += rewritten.bytes;
+        rewritten_total.approx_tokens += rewritten.approx_tokens;
+    }
+    (raw_total, rewritten_total)
+}
+
+fn paired_record_rows(
+    report: &RolloutCompareReport,
+    by_profile: bool,
+) -> Vec<(
+    String,
+    crate::rollout_stats::RolloutOutputStats,
+    crate::rollout_stats::RolloutOutputStats,
+)> {
+    paired_record_rows_with_meta(report)
+        .into_iter()
+        .map(|(profile, command, raw, rewritten)| {
+            (if by_profile { profile } else { command }, raw, rewritten)
+        })
+        .collect()
+}
+
+fn paired_record_rows_with_meta(
+    report: &RolloutCompareReport,
+) -> Vec<(
+    String,
+    String,
+    crate::rollout_stats::RolloutOutputStats,
+    crate::rollout_stats::RolloutOutputStats,
+)> {
+    let mut rows = Vec::new();
+    let count = usize::max(
+        report.raw_detail.records.len(),
+        report.rewritten_detail.records.len(),
+    );
+    for idx in 0..count {
+        let raw = report.raw_detail.records.get(idx);
+        let rewritten = report.rewritten_detail.records.get(idx);
+        let selector = rewritten.or(raw);
+        let Some(selector) = selector else {
+            continue;
+        };
+        rows.push((
+            selector.profile.clone(),
+            selector.command.clone(),
+            raw.map(|record| record.stats).unwrap_or_default(),
+            rewritten.map(|record| record.stats).unwrap_or_default(),
+        ));
+    }
+    rows
 }

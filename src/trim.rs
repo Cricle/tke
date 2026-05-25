@@ -18,6 +18,8 @@ pub(crate) fn collect_profile_chunks(
     match profile {
         TrimProfile::Diff => collect_diff_chunks(lines, terms, limits),
         TrimProfile::Search => crate::search_profile::collect_search_chunks(lines, terms, limits),
+        TrimProfile::GitStatus => Vec::new(),
+        TrimProfile::Json => Vec::new(),
         TrimProfile::PathList => Vec::new(),
         TrimProfile::Log => crate::log_profile::collect_log_chunks(lines, terms, limits),
         TrimProfile::Table => Vec::new(),
@@ -335,10 +337,172 @@ pub(crate) fn collect_diff_summary(lines: &[&str]) -> Option<DiffSummary> {
         files.push(file);
     }
     if files.is_empty() {
+        return collect_diff_stat_summary(lines);
+    }
+    files.truncate(6);
+    Some(DiffSummary { f: files })
+}
+
+fn collect_diff_stat_summary(lines: &[&str]) -> Option<DiffSummary> {
+    let mut files = Vec::new();
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed.is_empty()
+            || trimmed.starts_with(|ch: char| ch.is_ascii_digit())
+            || trimmed.contains(" changed")
+            || trimmed.contains(" insertion")
+            || trimmed.contains(" deletion")
+        {
+            continue;
+        }
+        let Some((path, stat)) = trimmed.split_once('|') else {
+            continue;
+        };
+        let stat = stat.trim();
+        if stat.is_empty() {
+            continue;
+        }
+        let mut add = 0usize;
+        let mut del = 0usize;
+        for ch in stat.chars() {
+            if ch == '+' {
+                add += 1;
+            } else if ch == '-' {
+                del += 1;
+            }
+        }
+        files.push(DiffFileSummary {
+            p: path.trim().to_owned(),
+            add,
+            del,
+        });
+    }
+    if files.is_empty() {
         return None;
     }
     files.truncate(6);
     Some(DiffSummary { f: files })
+}
+
+pub(crate) fn collect_git_status_summary(lines: &[&str]) -> Option<GitStatusSummary> {
+    let mut branch = None;
+    let mut modified = 0usize;
+    let mut added = 0usize;
+    let mut deleted = 0usize;
+    let mut renamed = 0usize;
+    let mut untracked = 0usize;
+    let mut examples = Vec::new();
+
+    for line in lines {
+        if let Some(value) = line.strip_prefix("## ") {
+            if !value.trim().is_empty() {
+                branch = Some(value.trim().to_owned());
+            }
+            continue;
+        }
+
+        let trimmed = line.trim_end();
+        if trimmed.len() < 3 {
+            continue;
+        }
+        let status = &trimmed[..2];
+        let path = trimmed[3..].trim();
+        if path.is_empty() {
+            continue;
+        }
+
+        if status == "??" {
+            untracked += 1;
+            if examples.len() < 6 {
+                examples.push(format!("?? {path}"));
+            }
+            continue;
+        }
+
+        let mut recognized = false;
+        for ch in status.chars() {
+            match ch {
+                'M' => {
+                    modified += 1;
+                    recognized = true;
+                }
+                'A' => {
+                    added += 1;
+                    recognized = true;
+                }
+                'D' => {
+                    deleted += 1;
+                    recognized = true;
+                }
+                'R' => {
+                    renamed += 1;
+                    recognized = true;
+                }
+                ' ' | '.' => {}
+                _ => {}
+            }
+        }
+        if recognized && examples.len() < 6 {
+            examples.push(format!("{status} {path}"));
+        }
+    }
+
+    if branch.is_none()
+        && modified == 0
+        && added == 0
+        && deleted == 0
+        && renamed == 0
+        && untracked == 0
+    {
+        return None;
+    }
+
+    Some(GitStatusSummary {
+        br: branch,
+        m: modified,
+        a: added,
+        d: deleted,
+        r: renamed,
+        u: untracked,
+        e: examples,
+    })
+}
+
+pub(crate) fn collect_build_summary(name: &str, lines: &[&str]) -> Option<BuildSummary> {
+    let mut compiling = 0usize;
+    let mut running = 0usize;
+    let mut finished = None;
+    let mut test_result = None;
+
+    for line in lines {
+        let trimmed = line.trim();
+        if trimmed.starts_with("Compiling ") || trimmed.starts_with("Checking ") {
+            compiling += 1;
+        } else if trimmed.starts_with("Running ") {
+            running += 1;
+        } else if finished.is_none() && trimmed.starts_with("Finished ") {
+            finished = Some(trimmed.to_owned());
+        } else if test_result.is_none() && trimmed.starts_with("test result: ") {
+            test_result = Some(trimmed.to_owned());
+        }
+    }
+
+    if compiling == 0 && running == 0 && finished.is_none() && test_result.is_none() {
+        return None;
+    }
+
+    Some(BuildSummary {
+        n: name.to_owned(),
+        cp: compiling,
+        rn: running,
+        fi: finished.map(|value| truncate_ellipsized(&value, 96)),
+        tr: test_result.map(|value| truncate_ellipsized(&value, 96)),
+    })
+}
+
+pub(crate) fn compact_json_body(text: &str) -> Option<Vec<String>> {
+    let value = serde_json::from_str::<serde_json::Value>(text).ok()?;
+    Some(vec![serde_json::to_string(&value).ok()?])
 }
 
 pub(crate) fn match_terms(name: &str, args: &[String]) -> Vec<String> {
@@ -465,6 +629,9 @@ pub(crate) fn classify_command(name: &str, args: &[String]) -> CommandKind {
         "rg" | "grep" | "find" | "fd" | "tree" | "ls" => CommandKind::Search,
         "sort" | "uniq" | "wc" | "xargs" => CommandKind::Generic,
         "git" if args.first().map(String::as_str) == Some("diff") => CommandKind::Diff,
+        "git" if matches!(args.first().map(String::as_str), Some("status" | "show")) => {
+            CommandKind::Log
+        }
         "cargo" | "pytest" | "npm" | "pnpm" | "yarn" | "dotnet" | "go" | "cmake" | "ctest"
         | "make" | "ninja" | "node" => CommandKind::Log,
         _ => CommandKind::Generic,
@@ -763,6 +930,8 @@ pub(crate) enum TrimProfile {
     File,
     Search,
     Diff,
+    GitStatus,
+    Json,
     PathList,
     Log,
     Table,
@@ -776,6 +945,8 @@ impl TrimProfile {
             Self::File => "file",
             Self::Search => "search",
             Self::Diff => "diff",
+            Self::GitStatus => "gitstatus",
+            Self::Json => "json",
             Self::PathList => "pathlist",
             Self::Log => "log",
             Self::Table => "table",
@@ -793,7 +964,21 @@ pub(crate) struct ProfileLimits {
     pub(crate) max_matches: usize,
 }
 
-pub(crate) fn select_profile(kind: CommandKind, lines: &[&str]) -> TrimProfile {
+pub(crate) fn select_profile(
+    name: &str,
+    args: &[String],
+    kind: CommandKind,
+    lines: &[&str],
+) -> TrimProfile {
+    if name == "git"
+        && args.first().map(String::as_str) == Some("status")
+        && collect_git_status_summary(lines).is_some()
+    {
+        return TrimProfile::GitStatus;
+    }
+    if looks_like_json_document(lines) {
+        return TrimProfile::Json;
+    }
     if looks_like_diff(lines) {
         return TrimProfile::Diff;
     }
@@ -828,6 +1013,18 @@ pub(crate) fn profile_limits(profile: TrimProfile, config: &Config) -> ProfileLi
             tail_lines: usize::min(config.tail_lines, 8),
             match_context: 1,
             max_matches: usize::max(config.max_matches, 8),
+        },
+        TrimProfile::GitStatus => ProfileLimits {
+            head_lines: 0,
+            tail_lines: 0,
+            match_context: 0,
+            max_matches: 0,
+        },
+        TrimProfile::Json => ProfileLimits {
+            head_lines: 0,
+            tail_lines: 0,
+            match_context: 0,
+            max_matches: 0,
         },
         TrimProfile::Search => ProfileLimits {
             head_lines: usize::min(config.head_lines, 6),
@@ -881,6 +1078,14 @@ pub(crate) fn should_force_trim(
     config: &Config,
 ) -> bool {
     match profile {
+        TrimProfile::GitStatus => {
+            total_bytes >= usize::min(config.min_trim_bytes, 160)
+                || total_lines >= usize::min(config.max_body_lines, 4)
+        }
+        TrimProfile::Json => {
+            total_bytes >= usize::min(config.min_trim_bytes, 256)
+                || total_lines >= usize::min(config.max_body_lines, 8)
+        }
         TrimProfile::Table => {
             total_bytes >= usize::min(config.min_trim_bytes, 1024)
                 || total_lines >= usize::min(config.max_body_lines, 12)
@@ -919,6 +1124,23 @@ fn looks_like_table(lines: &[&str]) -> bool {
 
 fn looks_like_path_list(lines: &[&str]) -> bool {
     crate::path_profile::looks_like_path_list(lines)
+}
+
+fn looks_like_json_document(lines: &[&str]) -> bool {
+    if lines.is_empty() {
+        return false;
+    }
+    let text = lines.join("\n");
+    let trimmed = text.trim();
+    if trimmed.len() < 2 {
+        return false;
+    }
+    if !((trimmed.starts_with('{') && trimmed.ends_with('}'))
+        || (trimmed.starts_with('[') && trimmed.ends_with(']')))
+    {
+        return false;
+    }
+    serde_json::from_str::<serde_json::Value>(trimmed).is_ok()
 }
 
 fn detect_table_layout(lines: &[&str]) -> Option<TableLayout> {
@@ -1435,6 +1657,10 @@ pub(crate) struct TrimEnvelope {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) df: Option<DiffSummary>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) gs: Option<GitStatusSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) bd: Option<BuildSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) b: Option<Vec<String>>,
 }
 
@@ -1522,6 +1748,37 @@ pub(crate) struct DiffFileSummary {
     pub(crate) add: usize,
     #[serde(skip_serializing_if = "is_zero")]
     pub(crate) del: usize,
+}
+
+#[derive(Serialize)]
+pub(crate) struct GitStatusSummary {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) br: Option<String>,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub(crate) m: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub(crate) a: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub(crate) d: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub(crate) r: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub(crate) u: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) e: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub(crate) struct BuildSummary {
+    pub(crate) n: String,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub(crate) cp: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub(crate) rn: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) fi: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) tr: Option<String>,
 }
 
 fn is_zero(value: &usize) -> bool {

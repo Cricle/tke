@@ -89,7 +89,7 @@ tke tty [--shim-dir PATH] <command> [args ...]
 tke deactivate
 tke capture-interactive [--source PATH] [--output PATH]
 tke compare-rollout [--source PATH]
-tke stats [--source PATH]... [--limit N]
+tke stats [--source PATH]... [--limit N] [--profile NAME] [--command NAME] [--by day|profile|command]
 tke compare-e2e [--source DIR]... [--agent codex|claude]
 tke benchmark-commands [--check]
 ```
@@ -128,6 +128,17 @@ and prints a human-readable summary with:
 
 If you want machine-readable output, add `--json`.
 
+If you want to focus the summary on one real command family or one normalized profile, use:
+
+```bash
+tke stats --profile pathlist
+tke stats --profile log --by command
+tke stats --command cargo --by day
+tke stats --command git --by profile
+```
+
+That still stays aggregate by default. It does not dump per-rollout detail; it changes which real usage slices are included in the totals and the trend rows.
+
 If you want a single-rollout detailed report instead of aggregate stats, use:
 
 ```bash
@@ -141,6 +152,8 @@ Examples:
 tke stats
 tke stats --limit 20
 tke stats --json --limit 20
+tke stats --profile pathlist --by command
+tke stats --command cargo --by day
 tke stats --source ~/.codex/sessions --source ./.tke/interactive
 ```
 

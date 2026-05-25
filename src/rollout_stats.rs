@@ -1,5 +1,11 @@
 use crate::app::Config;
+use crate::rewrite::{
+    extract_exec_command_output, parse_command_execution, parse_exec_command_args,
+};
+use crate::trim::{classify_command, select_profile};
 use serde_json::{Map, Value};
+use std::collections::BTreeMap;
+use std::collections::HashMap;
 
 #[derive(Default, Clone, Copy)]
 pub(crate) struct RolloutOutputStats {
@@ -8,22 +14,60 @@ pub(crate) struct RolloutOutputStats {
     pub(crate) approx_tokens: usize,
 }
 
+#[derive(Default, Clone)]
+pub(crate) struct RolloutOutputBreakdown {
+    pub(crate) by_profile: BTreeMap<String, RolloutOutputStats>,
+    pub(crate) by_command: BTreeMap<String, RolloutOutputStats>,
+}
+
+#[derive(Default, Clone)]
+pub(crate) struct RolloutOutputStatsDetailed {
+    pub(crate) total: RolloutOutputStats,
+    pub(crate) breakdown: RolloutOutputBreakdown,
+    pub(crate) records: Vec<OutputRecord>,
+}
+
+#[derive(Clone)]
+pub(crate) struct OutputRecord {
+    pub(crate) profile: String,
+    pub(crate) command: String,
+    pub(crate) stats: RolloutOutputStats,
+}
+
+#[cfg(test)]
 pub(crate) fn collect_rollout_output_stats(text: &str, config: &Config) -> RolloutOutputStats {
-    let mut stats = RolloutOutputStats::default();
+    collect_rollout_output_stats_detailed(text, config).total
+}
+
+pub(crate) fn collect_rollout_output_stats_detailed(
+    text: &str,
+    config: &Config,
+) -> RolloutOutputStatsDetailed {
+    let mut stats = RolloutOutputStatsDetailed::default();
+    let mut exec_commands = HashMap::<String, String>::new();
     for line in text.lines() {
         let Ok(value) = serde_json::from_str::<Value>(line) else {
             continue;
         };
+        if let Some((call_id, command)) = extract_exec_command_call(&value) {
+            exec_commands.insert(call_id, command);
+        }
         if let Some(item) = value.get("item") {
             collect_value_output_stats(
                 item,
                 &["aggregated_output", "stdout", "stderr", "output"],
+                item.get("command").and_then(Value::as_str),
                 config,
                 &mut stats,
             );
         }
         if let Some(payload) = value.get("payload") {
-            collect_value_output_stats(payload, &["output"], config, &mut stats);
+            let command = payload
+                .get("call_id")
+                .and_then(Value::as_str)
+                .and_then(|call_id| exec_commands.get(call_id))
+                .map(String::as_str);
+            collect_value_output_stats(payload, &["output"], command, config, &mut stats);
         }
         if let Some(message) = value.get("message") {
             collect_message_output_stats(message, config, &mut stats);
@@ -92,8 +136,9 @@ fn collect_pathlist_expansions(map: &Map<String, Value>, out: &mut String) {
 fn collect_value_output_stats(
     value: &Value,
     fields: &[&str],
+    command: Option<&str>,
     config: &Config,
-    stats: &mut RolloutOutputStats,
+    stats: &mut RolloutOutputStatsDetailed,
 ) {
     let Some(obj) = value.as_object() else {
         return;
@@ -105,13 +150,22 @@ fn collect_value_output_stats(
         if text.is_empty() {
             continue;
         }
-        stats.fields += 1;
-        stats.bytes += text.len();
-        stats.approx_tokens += approx_token_count(text, config);
+        let token_count = approx_token_count(text, config);
+        stats.total.fields += 1;
+        stats.total.bytes += text.len();
+        stats.total.approx_tokens += token_count;
+        if let Some(record) = infer_output_record(text, command, config) {
+            add_breakdown_stats(&mut stats.breakdown, &record);
+            stats.records.push(record);
+        }
     }
 }
 
-fn collect_message_output_stats(value: &Value, config: &Config, stats: &mut RolloutOutputStats) {
+fn collect_message_output_stats(
+    value: &Value,
+    config: &Config,
+    stats: &mut RolloutOutputStatsDetailed,
+) {
     let Some(content) = value.get("content").and_then(|v| v.as_array()) else {
         return;
     };
@@ -119,9 +173,10 @@ fn collect_message_output_stats(value: &Value, config: &Config, stats: &mut Roll
         if let Some(text) = block.get("text").and_then(|v| v.as_str())
             && !text.is_empty()
         {
-            stats.fields += 1;
-            stats.bytes += text.len();
-            stats.approx_tokens += approx_token_count(text, config);
+            let token_count = approx_token_count(text, config);
+            stats.total.fields += 1;
+            stats.total.bytes += text.len();
+            stats.total.approx_tokens += token_count;
         }
         if let Some(nested) = block.get("content").and_then(|v| v.as_array()) {
             for item in nested {
@@ -131,19 +186,109 @@ fn collect_message_output_stats(value: &Value, config: &Config, stats: &mut Roll
                 if text.is_empty() {
                     continue;
                 }
-                stats.fields += 1;
-                stats.bytes += text.len();
-                stats.approx_tokens += approx_token_count(text, config);
+                let token_count = approx_token_count(text, config);
+                stats.total.fields += 1;
+                stats.total.bytes += text.len();
+                stats.total.approx_tokens += token_count;
             }
         }
         if let Some(text) = block.get("content").and_then(|v| v.as_str())
             && !text.is_empty()
         {
-            stats.fields += 1;
-            stats.bytes += text.len();
-            stats.approx_tokens += approx_token_count(text, config);
+            let token_count = approx_token_count(text, config);
+            stats.total.fields += 1;
+            stats.total.bytes += text.len();
+            stats.total.approx_tokens += token_count;
         }
     }
+}
+
+fn add_breakdown_stats(breakdown: &mut RolloutOutputBreakdown, record: &OutputRecord) {
+    add_stat_row(
+        breakdown
+            .by_profile
+            .entry(record.profile.clone())
+            .or_default(),
+        record.stats.bytes,
+        record.stats.approx_tokens,
+    );
+    add_stat_row(
+        breakdown
+            .by_command
+            .entry(record.command.clone())
+            .or_default(),
+        record.stats.bytes,
+        record.stats.approx_tokens,
+    );
+}
+
+fn add_stat_row(stats: &mut RolloutOutputStats, bytes: usize, approx_tokens: usize) {
+    stats.fields += 1;
+    stats.bytes += bytes;
+    stats.approx_tokens += approx_tokens;
+}
+
+fn extract_exec_command_call(value: &Value) -> Option<(String, String)> {
+    let payload = value.get("payload")?.as_object()?;
+    if payload.get("type").and_then(Value::as_str) != Some("function_call") {
+        return None;
+    }
+    if payload.get("name").and_then(Value::as_str) != Some("exec_command") {
+        return None;
+    }
+    let call_id = payload.get("call_id").and_then(Value::as_str)?.to_owned();
+    let command = parse_exec_command_args(payload.get("arguments")?.as_str()?)?;
+    Some((call_id, command))
+}
+
+fn infer_output_record(text: &str, command: Option<&str>, config: &Config) -> Option<OutputRecord> {
+    if let Some(raw) = text.strip_prefix(&config.json_prefix)
+        && let Ok(value) = serde_json::from_str::<Value>(raw)
+    {
+        let profile = value
+            .get("p")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("unknown");
+        let command = value
+            .get("sc")
+            .or_else(|| value.get("cmd"))
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("unknown");
+        return Some(OutputRecord {
+            profile: profile.to_owned(),
+            command: command.to_owned(),
+            stats: RolloutOutputStats {
+                fields: 1,
+                bytes: text.len(),
+                approx_tokens: count_json_tokens(&value),
+            },
+        });
+    }
+
+    let command = command?;
+    let parsed = parse_command_execution(command);
+    if !parsed.has_stages() {
+        return None;
+    }
+    let stage = parsed.selected_stage();
+    if stage.name.is_empty() {
+        return None;
+    }
+    let analysis_text = extract_exec_command_output(text).unwrap_or(text);
+    let lines = analysis_text.lines().collect::<Vec<_>>();
+    let kind = classify_command(&stage.name, &stage.args);
+    let profile = select_profile(&stage.name, &stage.args, kind, &lines);
+    Some(OutputRecord {
+        profile: profile.as_str().to_owned(),
+        command: stage.name,
+        stats: RolloutOutputStats {
+            fields: 1,
+            bytes: text.len(),
+            approx_tokens: crate::benchmark::estimate_text_tokens(text),
+        },
+    })
 }
 
 fn approx_token_count(text: &str, config: &Config) -> usize {

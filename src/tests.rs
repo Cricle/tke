@@ -12,7 +12,9 @@ use crate::rewrite::{
     parse_live_shell_pipeline, rewrite_command_item_fields,
 };
 use crate::rollout_io::{InteractiveTracker, capture_interactive};
-use crate::rollout_stats::{collect_rollout_output_stats, rollout_string_haystack};
+use crate::rollout_stats::{
+    collect_rollout_output_stats, collect_rollout_output_stats_detailed, rollout_string_haystack,
+};
 use crate::shim::{maybe_normalize_text, normalize_text, normalize_text_with_stage};
 use crate::trim::{
     CommandKind, ShellKind, candidate_command_names, classify_command, create_windows_cmd_shim,
@@ -622,10 +624,10 @@ fn compare_rollout_reports_savings_for_realish_ps_output() {
     let rewritten = rewrite_codex_jsonl(&jsonl, &cfg)
         .expect("rewrite")
         .expect("changed");
-    let raw_stats = collect_rollout_output_stats(&jsonl, &cfg);
-    let rewritten_stats = collect_rollout_output_stats(&rewritten, &cfg);
-    assert!(rewritten_stats.approx_tokens < raw_stats.approx_tokens);
-    assert!(rewritten_stats.bytes < raw_stats.bytes);
+    let raw_stats = collect_rollout_output_stats_detailed(&jsonl, &cfg);
+    let rewritten_stats = collect_rollout_output_stats_detailed(&rewritten, &cfg);
+    assert!(rewritten_stats.total.approx_tokens < raw_stats.total.approx_tokens);
+    assert!(rewritten_stats.total.bytes < raw_stats.total.bytes);
 }
 
 #[test]
@@ -1187,6 +1189,63 @@ fn pathlist_profile_detected_for_ls_name_output() {
 }
 
 #[test]
+fn git_status_profile_detected_for_status_output() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = [
+        "## main...origin/main",
+        " M src/main.rs",
+        "A  src/lib.rs",
+        " D README.md",
+        "?? docs/new.md",
+    ]
+    .join("\n");
+    let normalized = normalize_text(
+        "git",
+        &[
+            "status".to_owned(),
+            "--short".to_owned(),
+            "--branch".to_owned(),
+        ],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "gitstatus");
+    assert_eq!(value["gs"]["br"], "main...origin/main");
+    assert_eq!(value["gs"]["m"], 1);
+    assert_eq!(value["gs"]["a"], 1);
+    assert_eq!(value["gs"]["d"], 1);
+    assert_eq!(value["gs"]["u"], 1);
+}
+
+#[test]
+fn json_profile_compacts_pretty_json() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = "{\n  \"ok\": true,\n  \"items\": [\n    1,\n    2,\n    3\n  ],\n  \"name\": \"demo\"\n}\n";
+    let normalized = normalize_text(
+        "curl",
+        &["-s".to_owned(), "http://127.0.0.1/demo".to_owned()],
+        "stdout",
+        CommandKind::Generic,
+        text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    assert_eq!(value["p"], "json");
+    let compacted = value["b"][0].as_str().expect("json body");
+    let parsed = value_from_json(compacted);
+    assert_eq!(parsed["ok"], true);
+    assert_eq!(parsed["items"][1], 2);
+    assert_eq!(parsed["name"], "demo");
+}
+
+#[test]
 fn file_profile_prefers_decl_chunks_for_large_code_reads() {
     let mut cfg = Config::default();
     cfg.min_trim_bytes = 1;
@@ -1264,10 +1323,10 @@ fn compare_rollout_reports_savings_for_path_list_output() {
     let rewritten = rewrite_codex_jsonl(&jsonl, &cfg)
         .expect("rewrite")
         .expect("changed");
-    let raw_stats = collect_rollout_output_stats(&jsonl, &cfg);
-    let rewritten_stats = collect_rollout_output_stats(&rewritten, &cfg);
-    assert!(rewritten_stats.approx_tokens < raw_stats.approx_tokens);
-    assert!(rewritten_stats.bytes < raw_stats.bytes);
+    let raw_stats = collect_rollout_output_stats_detailed(&jsonl, &cfg);
+    let rewritten_stats = collect_rollout_output_stats_detailed(&rewritten, &cfg);
+    assert!(rewritten_stats.total.approx_tokens < raw_stats.total.approx_tokens);
+    assert!(rewritten_stats.total.bytes < raw_stats.total.bytes);
 }
 
 #[test]
@@ -1768,8 +1827,8 @@ fn compare_rollout_reports_savings() {
     let rewritten = rewrite_codex_jsonl(&jsonl, &cfg)
         .expect("rewrite")
         .expect("changed");
-    let raw_stats = collect_rollout_output_stats(&jsonl, &cfg);
-    let rewritten_stats = collect_rollout_output_stats(&rewritten, &cfg);
+    let raw_stats = collect_rollout_output_stats_detailed(&jsonl, &cfg);
+    let rewritten_stats = collect_rollout_output_stats_detailed(&rewritten, &cfg);
     let report = RolloutCompareReport::from_stats(
         Path::new("/tmp/demo.jsonl"),
         true,
@@ -2062,14 +2121,88 @@ fn parse_stats_dispatch() {
         Dispatch::Stats {
             sources,
             limit,
+            filter,
+            group_by,
             json,
         } => {
             assert_eq!(sources, vec![PathBuf::from("/tmp/rollouts")]);
             assert_eq!(limit, Some(12));
+            assert!(matches!(filter, crate::rollout_io::UsageStatsFilter::None));
+            assert!(matches!(
+                group_by,
+                crate::rollout_io::UsageStatsGroupBy::Day
+            ));
             assert!(json);
         }
         other => panic!("unexpected dispatch: {other:?}"),
     }
+}
+
+#[test]
+fn parse_stats_dispatch_with_profile_and_group() {
+    let dispatch = parse_dispatch(
+        "tke",
+        vec![
+            "tke".to_owned(),
+            "stats".to_owned(),
+            "--profile".to_owned(),
+            "pathlist".to_owned(),
+            "--by".to_owned(),
+            "command".to_owned(),
+        ],
+    )
+    .expect("dispatch");
+    match dispatch {
+        Dispatch::Stats {
+            filter, group_by, ..
+        } => {
+            match filter {
+                crate::rollout_io::UsageStatsFilter::Profile(value) => {
+                    assert_eq!(value, "pathlist");
+                }
+                other => panic!("unexpected filter: {other:?}"),
+            }
+            assert!(matches!(
+                group_by,
+                crate::rollout_io::UsageStatsGroupBy::Command
+            ));
+        }
+        other => panic!("unexpected dispatch: {other:?}"),
+    }
+}
+
+#[test]
+fn detailed_rollout_stats_track_profile_breakdown() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let jsonl = [
+        serde_json::json!({
+            "type": "item.completed",
+            "item": {
+                "id": "item_1",
+                "type": "command_execution",
+                "command": "git status --short --branch",
+                "aggregated_output": "__TKE__{\"v\":1,\"cmd\":\"git\",\"p\":\"gitstatus\",\"gs\":{\"br\":\"main\",\"m\":1}}"
+            }
+        })
+        .to_string(),
+        serde_json::json!({
+            "type": "item.completed",
+            "item": {
+                "id": "item_2",
+                "type": "command_execution",
+                "command": "find src -type f",
+                "aggregated_output": "__TKE__{\"v\":1,\"cmd\":\"find\",\"sc\":\"find\",\"p\":\"pathlist\",\"c\":17,\"pl\":{\"d\":\"src\"}}"
+            }
+        })
+        .to_string(),
+    ]
+    .join("\n");
+    let stats = collect_rollout_output_stats_detailed(&jsonl, &cfg);
+    assert!(stats.breakdown.by_profile.contains_key("gitstatus"));
+    assert!(stats.breakdown.by_profile.contains_key("pathlist"));
+    assert!(stats.breakdown.by_command.contains_key("git"));
+    assert!(stats.breakdown.by_command.contains_key("find"));
 }
 
 #[test]

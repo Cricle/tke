@@ -374,6 +374,10 @@ impl ParsedCommand {
         self.stages.last().cloned().unwrap_or_default()
     }
 
+    pub(crate) fn has_stages(&self) -> bool {
+        !self.stages.is_empty()
+    }
+
     fn has_unique_stage_name(&self, name: &str) -> bool {
         self.stages
             .iter()
