@@ -433,6 +433,7 @@ fn log_profile_emits_failure_and_warning_counts() {
     assert_eq!(value["lg"]["warn"], 1);
     assert_eq!(value["lg"]["ff"], "error: build failed");
     assert_eq!(value["lg"]["fw"], "warning: deprecated item used");
+    assert_eq!(value["bd"]["n"], "cargo");
 }
 
 #[test]
@@ -459,6 +460,46 @@ fn log_profile_does_not_treat_zero_failed_summary_as_failure() {
     assert_eq!(value["lg"]["warn"], 1);
     assert!(value["lg"]["ff"].is_null());
     assert_eq!(value["lg"]["fw"], "warning: deprecated fixture used");
+}
+
+#[test]
+fn build_summary_extracts_test_and_install_counts() {
+    let cargo_lines = [
+        "Compiling demo v0.1.0",
+        "Running unittests src/lib.rs (target/debug/deps/demo)",
+        "test result: FAILED. 117 passed; 3 failed; 0 ignored; 0 measured",
+        "error: test failed, to rerun pass --lib",
+    ];
+    let cargo_refs = cargo_lines.iter().copied().collect::<Vec<_>>();
+    let cargo = crate::trim::collect_build_summary("cargo", &cargo_refs).expect("cargo summary");
+    assert_eq!(cargo.n, "cargo");
+    assert_eq!(cargo.cp, 1);
+    assert_eq!(cargo.rn, 1);
+    assert_eq!(cargo.ok, 117);
+    assert_eq!(cargo.fl, 3);
+    assert_eq!(cargo.tt, 120);
+    assert!(
+        cargo
+            .tr
+            .as_deref()
+            .is_some_and(|line| line.contains("117 passed"))
+    );
+
+    let pip_lines = [
+        "Collecting demo-package",
+        "Collecting helper-package",
+        "Successfully installed demo-1.0 helper-2.0 toolkit-3.1",
+        "warning: Retrying (Retry(total=4, connect=None))",
+    ];
+    let pip_refs = pip_lines.iter().copied().collect::<Vec<_>>();
+    let pip = crate::trim::collect_build_summary("pip", &pip_refs).expect("pip summary");
+    assert_eq!(pip.n, "pip");
+    assert_eq!(pip.ip, 3);
+    assert!(
+        pip.e
+            .iter()
+            .any(|line| line.contains("Successfully installed demo-1.0 helper-2.0 toolkit-3.1"))
+    );
 }
 
 #[test]
@@ -4062,6 +4103,7 @@ fn log_profiles_preserve_failure_and_warning_semantics() {
             .expect("normalize");
         let value = value_from_json(&normalized);
         assert_eq!(value["p"], "log", "{command}");
+        assert_eq!(value["bd"]["n"], name, "{command}");
         let haystack = rollout_string_haystack(&normalized);
         for fragment in required {
             assert!(
