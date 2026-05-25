@@ -885,9 +885,22 @@ pub(crate) fn normalize_text_with_stage(
     } else if profile == TrimProfile::GitStatus || profile == TrimProfile::Json {
         (Vec::new(), Vec::new(), Vec::new(), Vec::new(), 0)
     } else {
-        let head = take_head(&lines, limits.head_lines);
-        let tail = take_tail(&lines, limits.tail_lines);
         let matches = collect_profile_chunks(&lines, &terms, profile, limits);
+        let use_log_chunks_only = forced && profile == TrimProfile::Log;
+        let head = if use_log_chunks_only {
+            Vec::new()
+        } else if total_lines == 0 {
+            Vec::new()
+        } else {
+            take_head(&lines, limits.head_lines)
+        };
+        let tail = if use_log_chunks_only {
+            Vec::new()
+        } else if total_lines == 0 {
+            Vec::new()
+        } else {
+            take_tail(&lines, limits.tail_lines)
+        };
         let kept_ranges = if forced {
             merge_ranges(collect_kept_ranges(total_lines, &head, &tail, &matches))
         } else if total_lines == 0 {

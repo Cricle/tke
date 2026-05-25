@@ -2074,6 +2074,32 @@ fn normalize_build_pipeline_tail_uses_selected_build_profile() {
 }
 
 #[test]
+fn forced_log_profile_prefers_summary_and_signal_chunks_over_head_tail() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let text = repeated_lines("test parser::case ... ok", 120)
+        + "\nwarning: deprecated assertion helper\nerror: test failed, to rerun pass --lib\n";
+    let json = normalize_text(
+        "cargo",
+        &["test".to_owned(), "--".to_owned(), "--nocapture".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&json);
+    assert_eq!(value["p"], "log");
+    assert!(value["h"].as_array().is_none_or(|rows| rows.is_empty()));
+    assert!(value["ta"].as_array().is_none_or(|rows| rows.is_empty()));
+    assert_eq!(value["bd"]["n"], "cargo");
+    assert_eq!(value["lg"]["warn"], 1);
+    assert_eq!(value["lg"]["fail"], 1);
+    let matches = value["m"].as_array().expect("matches");
+    assert!(!matches.is_empty());
+}
+
+#[test]
 fn codex_event_replay_preserves_selected_search_stage() {
     let mut cfg = Config::default();
     cfg.min_trim_bytes = 1;
