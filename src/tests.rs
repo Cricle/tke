@@ -1908,6 +1908,34 @@ fn parse_run_dispatch() {
 }
 
 #[test]
+fn parse_tty_dispatch() {
+    let dispatch = parse_dispatch(
+        "tke",
+        vec![
+            "tke".to_owned(),
+            "tty".to_owned(),
+            "--shim-dir".to_owned(),
+            "/tmp/tke-shims".to_owned(),
+            "codex".to_owned(),
+            "--no-alt-screen".to_owned(),
+        ],
+    )
+    .expect("dispatch");
+    match dispatch {
+        Dispatch::Tty {
+            name,
+            args,
+            shim_dir,
+        } => {
+            assert_eq!(name, "codex");
+            assert_eq!(args, vec!["--no-alt-screen"]);
+            assert_eq!(shim_dir, Some(PathBuf::from("/tmp/tke-shims")));
+        }
+        other => panic!("unexpected dispatch: {other:?}"),
+    }
+}
+
+#[test]
 fn parse_agent_alias_dispatch() {
     let dispatch = parse_dispatch(
         "tke",
@@ -1988,6 +2016,35 @@ fn parse_benchmark_commands_dispatch() {
         dispatch,
         Dispatch::BenchmarkCommands { check: false }
     ));
+}
+
+#[test]
+fn parse_stats_dispatch() {
+    let dispatch = parse_dispatch(
+        "tke",
+        vec![
+            "tke".to_owned(),
+            "stats".to_owned(),
+            "--source".to_owned(),
+            "/tmp/rollouts".to_owned(),
+            "--limit".to_owned(),
+            "12".to_owned(),
+            "--json".to_owned(),
+        ],
+    )
+    .expect("dispatch");
+    match dispatch {
+        Dispatch::Stats {
+            sources,
+            limit,
+            json,
+        } => {
+            assert_eq!(sources, vec![PathBuf::from("/tmp/rollouts")]);
+            assert_eq!(limit, Some(12));
+            assert!(json);
+        }
+        other => panic!("unexpected dispatch: {other:?}"),
+    }
 }
 
 #[test]

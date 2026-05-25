@@ -18,7 +18,8 @@ pub use app::{
     print_activate, print_deactivate, run_shim, run_wrapped, usage,
 };
 pub use release::install_self;
-pub use rollout_io::{capture_interactive, compare_rollout};
+pub use rollout_io::{capture_interactive, compare_rollout, usage_stats};
+pub use shim::run_tty_wrapped;
 pub use trim::ShellKind;
 
 #[cfg(test)]

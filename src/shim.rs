@@ -11,12 +11,22 @@ use crate::trim::{
     profile_limits, read_stdin_if_piped, real_path_string, select_profile, should_force_trim,
     take_head, take_tail,
 };
+use nix::pty::{ForkptyResult, Winsize, forkpty};
+use nix::sys::signal::{Signal, kill};
+use nix::sys::termios::{SetArg, Termios, cfmakeraw, tcgetattr, tcsetattr};
+use nix::sys::wait::{WaitStatus, waitpid};
+use nix::unistd::{Pid, execve, read as nix_read, write as nix_write};
 use std::collections::BTreeSet;
 use std::env;
+use std::ffi::CString;
 use std::ffi::OsString;
-use std::io::{self, IsTerminal, Write};
+use std::fs::{File, OpenOptions};
+use std::io::{self, IsTerminal, Read, Write};
+use std::os::fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::path::Path;
 use std::process::{Command, Stdio};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -97,6 +107,19 @@ pub(crate) fn run_agent_command(
         return Ok(code);
     }
 
+    if should_bridge_agent_with_pty(name, &stdin_payload) {
+        let tracker = if name == "codex" {
+            Some(InteractiveTracker::start()?)
+        } else {
+            None
+        };
+        let code = passthrough_with_native_pty(real_cmd, args, Some(envs), true)?;
+        if let Some(tracker) = tracker {
+            tracker.finish(config)?;
+        }
+        return Ok(code);
+    }
+
     if force_passthrough {
         return passthrough(real_cmd, args, Some(envs), stdin_payload, true);
     }
@@ -125,6 +148,10 @@ pub(crate) fn run_agent_command(
         config,
     )?;
     Ok(exit_code(output.status))
+}
+
+fn should_bridge_agent_with_pty(name: &str, stdin_payload: &Option<Vec<u8>>) -> bool {
+    cfg!(target_os = "linux") && name == "codex" && stdin_payload.is_none()
 }
 
 fn should_passthrough_agent_output(name: &str) -> bool {
@@ -292,6 +319,355 @@ pub(crate) fn passthrough(
     }
     let status = child.wait()?;
     Ok(exit_code(status))
+}
+
+fn passthrough_with_native_pty(
+    real_cmd: &Path,
+    args: &[String],
+    extra_envs: Option<Vec<(String, Option<OsString>)>>,
+    keep_shim_path: bool,
+) -> Result<i32, AppError> {
+    let terminal = ParentTerminal::capture();
+    let mut command_env = std::env::vars_os().collect::<Vec<_>>();
+    if !keep_shim_path {
+        command_env.retain(|(key, _)| key != "PATH");
+        command_env.push(("PATH".into(), real_path_string().into()));
+    }
+    if let Some(envs) = extra_envs {
+        for (key, value) in envs {
+            command_env.retain(|(existing, _)| existing != &std::ffi::OsString::from(&key));
+            if let Some(v) = value {
+                command_env.push((key.into(), v));
+            }
+        }
+    }
+
+    let c_path = CString::new(real_cmd.as_os_str().to_string_lossy().as_bytes())
+        .map_err(|_| AppError::Usage("command path contains interior NUL byte".to_owned()))?;
+    let mut c_args = Vec::with_capacity(args.len() + 1);
+    c_args.push(c_path.clone());
+    for arg in args {
+        c_args.push(
+            CString::new(arg.as_bytes()).map_err(|_| {
+                AppError::Usage("command arg contains interior NUL byte".to_owned())
+            })?,
+        );
+    }
+    let argv = c_args.iter().map(|arg| arg.as_c_str()).collect::<Vec<_>>();
+    let c_env = command_env
+        .into_iter()
+        .map(|(key, value)| {
+            let mut joined = key.into_encoded_bytes();
+            joined.push(b'=');
+            joined.extend(value.into_encoded_bytes());
+            CString::new(joined)
+                .map_err(|_| AppError::Usage("environment contains interior NUL byte".to_owned()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let envp = c_env
+        .iter()
+        .map(|entry| entry.as_c_str())
+        .collect::<Vec<_>>();
+
+    // SAFETY: forkpty follows the libc fork contract. We only call execve in the child.
+    let fork = unsafe { forkpty(terminal.winsize.as_ref(), terminal.termios.as_ref())? };
+    match fork {
+        ForkptyResult::Child => {
+            let _ = execve(c_path.as_c_str(), &argv, &envp);
+            std::process::exit(127);
+        }
+        ForkptyResult::Parent { child, master } => relay_native_pty(child, master, terminal),
+    }
+}
+
+fn wait_for_child(child: Pid) -> Result<i32, AppError> {
+    loop {
+        match waitpid(child, None)? {
+            WaitStatus::Exited(_, code) => return Ok(code),
+            WaitStatus::Signaled(_, signal, _) => return Ok(128 + signal as i32),
+            WaitStatus::StillAlive | WaitStatus::Continued(_) | WaitStatus::Stopped(_, _) => {}
+            WaitStatus::PtraceEvent(_, _, _) | WaitStatus::PtraceSyscall(_) => {}
+        }
+    }
+}
+
+struct ParentTerminal {
+    control_fd: Option<RawFd>,
+    termios: Option<Termios>,
+    winsize: Option<Winsize>,
+    input: TerminalInput,
+}
+
+enum TerminalInput {
+    Stdin,
+    Tty(File),
+}
+
+impl ParentTerminal {
+    fn capture() -> Self {
+        let input = if io::stdin().is_terminal() {
+            TerminalInput::Stdin
+        } else {
+            match OpenOptions::new().read(true).write(true).open("/dev/tty") {
+                Ok(file) => TerminalInput::Tty(file),
+                Err(_) => TerminalInput::Stdin,
+            }
+        };
+
+        let (control_fd, termios, winsize) = match &input {
+            TerminalInput::Tty(file) => {
+                let fd = file.as_raw_fd();
+                (
+                    Some(fd),
+                    tcgetattr(file).ok(),
+                    read_winsize(fd).or_else(env_winsize),
+                )
+            }
+            TerminalInput::Stdin => capture_standard_terminal(),
+        };
+
+        if control_fd.is_none() {
+            if let Some((fd, termios, winsize)) =
+                capture_terminal_from_fd(1).or_else(|| capture_terminal_from_fd(2))
+            {
+                return Self {
+                    control_fd: Some(fd),
+                    termios,
+                    winsize: winsize.or_else(env_winsize),
+                    input,
+                };
+            }
+        }
+
+        Self {
+            control_fd,
+            termios,
+            winsize,
+            input,
+        }
+    }
+
+    fn raw_mode_guard(&self) -> Result<Option<RawTerminalGuard>, AppError> {
+        let Some(fd) = self.control_fd else {
+            return Ok(None);
+        };
+        let Some(original) = self.termios.clone() else {
+            return Ok(None);
+        };
+        let mut raw = original.clone();
+        cfmakeraw(&mut raw);
+        tcsetattr(borrow_fd(fd), SetArg::TCSANOW, &raw)?;
+        Ok(Some(RawTerminalGuard { fd, original }))
+    }
+}
+
+struct RawTerminalGuard {
+    fd: RawFd,
+    original: Termios,
+}
+
+impl Drop for RawTerminalGuard {
+    fn drop(&mut self) {
+        let _ = tcsetattr(borrow_fd(self.fd), SetArg::TCSANOW, &self.original);
+    }
+}
+
+fn capture_standard_terminal() -> (Option<RawFd>, Option<Termios>, Option<Winsize>) {
+    capture_terminal_from_fd(0)
+        .or_else(|| capture_terminal_from_fd(1))
+        .or_else(|| capture_terminal_from_fd(2))
+        .map(|(fd, termios, winsize)| (Some(fd), termios, winsize.or_else(env_winsize)))
+        .unwrap_or((None, None, env_winsize()))
+}
+
+fn capture_terminal_from_fd(fd: RawFd) -> Option<(RawFd, Option<Termios>, Option<Winsize>)> {
+    let termios = tcgetattr(borrow_fd(fd)).ok()?;
+    let winsize = read_winsize(fd);
+    Some((fd, Some(termios), winsize))
+}
+
+fn read_winsize(fd: RawFd) -> Option<Winsize> {
+    let mut winsize = Winsize {
+        ws_row: 0,
+        ws_col: 0,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
+    // SAFETY: `winsize` is valid for writes and `fd` is only borrowed for the ioctl duration.
+    let rc = unsafe { nix::libc::ioctl(fd, nix::libc::TIOCGWINSZ, &mut winsize) };
+    if rc == 0 && winsize.ws_row > 0 && winsize.ws_col > 0 {
+        Some(winsize)
+    } else {
+        None
+    }
+}
+
+fn env_winsize() -> Option<Winsize> {
+    let rows = env::var("LINES").ok()?.parse::<u16>().ok()?;
+    let cols = env::var("COLUMNS").ok()?.parse::<u16>().ok()?;
+    if rows == 0 || cols == 0 {
+        return None;
+    }
+    Some(Winsize {
+        ws_row: rows,
+        ws_col: cols,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    })
+}
+
+fn borrow_fd(fd: RawFd) -> BorrowedFd<'static> {
+    // SAFETY: the caller only passes process-owned terminal fds that remain valid for the call.
+    unsafe { BorrowedFd::borrow_raw(fd) }
+}
+
+fn relay_native_pty(
+    child: Pid,
+    master: OwnedFd,
+    terminal: ParentTerminal,
+) -> Result<i32, AppError> {
+    let _raw_guard = terminal.raw_mode_guard()?;
+    let master = Arc::new(master);
+    let stdin_master = Arc::clone(&master);
+    let stdout_master = Arc::clone(&master);
+    let resize_master = Arc::clone(&master);
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let resize_shutdown = Arc::clone(&shutdown);
+
+    let resize_thread = terminal.control_fd.map(|control_fd| {
+        let child = child;
+        thread::spawn(move || -> Result<(), AppError> {
+            let mut last = read_winsize(control_fd);
+            while !resize_shutdown.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_millis(100));
+                let current = read_winsize(control_fd);
+                if current.is_some() && current != last {
+                    if let Some(winsize) = current {
+                        apply_winsize(resize_master.as_raw_fd(), &winsize)?;
+                        let _ = kill(child, Signal::SIGWINCH);
+                        last = Some(winsize);
+                    }
+                }
+            }
+            Ok(())
+        })
+    });
+
+    let stdin_thread = thread::spawn(move || -> Result<(), AppError> {
+        let mut buf = [0_u8; 4096];
+        match terminal.input {
+            TerminalInput::Stdin => {
+                let mut stdin = io::stdin();
+                loop {
+                    let read = stdin.read(&mut buf)?;
+                    if read == 0 {
+                        break;
+                    }
+                    write_fd_all(&stdin_master, &buf[..read])?;
+                }
+            }
+            TerminalInput::Tty(mut file) => loop {
+                let read = file.read(&mut buf)?;
+                if read == 0 {
+                    break;
+                }
+                write_fd_all(&stdin_master, &buf[..read])?;
+            },
+        }
+        Ok(())
+    });
+
+    let stdout_thread = thread::spawn(move || -> Result<(), AppError> {
+        let mut stdout = io::stdout();
+        let mut buf = [0_u8; 4096];
+        loop {
+            let read = match nix_read(&*stdout_master, &mut buf) {
+                Ok(read) => read,
+                Err(nix::errno::Errno::EIO) => break,
+                Err(err) => return Err(err.into()),
+            };
+            if read == 0 {
+                break;
+            }
+            write_all_resilient(&mut stdout, &buf[..read])?;
+            stdout.flush()?;
+        }
+        Ok(())
+    });
+
+    let status = wait_for_child(child);
+    shutdown.store(true, Ordering::Relaxed);
+    let _ = stdout_thread.join();
+    if let Some(resize_thread) = resize_thread {
+        let _ = resize_thread.join();
+    }
+    drop(stdin_thread);
+    status
+}
+
+fn write_fd_all(fd: &OwnedFd, mut bytes: &[u8]) -> Result<(), AppError> {
+    while !bytes.is_empty() {
+        let written = nix_write(fd, bytes)?;
+        bytes = &bytes[written..];
+    }
+    Ok(())
+}
+
+fn apply_winsize(fd: RawFd, winsize: &Winsize) -> Result<(), AppError> {
+    // SAFETY: `winsize` points to a valid struct for the duration of the ioctl call.
+    let rc = unsafe { nix::libc::ioctl(fd, nix::libc::TIOCSWINSZ, winsize) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error().into())
+    }
+}
+
+pub fn run_tty_wrapped(
+    name: &str,
+    args: &[String],
+    shim_dir: Option<std::path::PathBuf>,
+    config: &Config,
+) -> Result<i32, AppError> {
+    let cwd = env::current_dir()?;
+    let shim_dir = shim_dir.unwrap_or_else(|| cwd.join(".tke").join("shims"));
+    std::fs::create_dir_all(&shim_dir)?;
+
+    let mut agents = config.agent_commands.clone();
+    if !agents.iter().any(|agent| agent == name) {
+        agents.push(name.to_owned());
+    }
+    create_shims(&shim_dir, &agents, &config.tool_commands)?;
+
+    let shim_dir_abs = std::fs::canonicalize(&shim_dir).unwrap_or(shim_dir);
+    let real_path =
+        env::var("TKE_REAL_PATH").unwrap_or_else(|_| env::var("PATH").unwrap_or_default());
+    let path =
+        env::join_paths(std::iter::once(shim_dir_abs.clone()).chain(env::split_paths(&real_path)))
+            .map_err(|err| AppError::Usage(format!("failed to construct PATH: {err}")))?;
+    let exe = env::current_exe()?;
+    let envs = vec![
+        ("PATH".to_owned(), Some(path)),
+        ("TKE_BIN".to_owned(), Some(exe.into_os_string())),
+        (
+            "TKE_SHIM_DIR".to_owned(),
+            Some(shim_dir_abs.clone().into_os_string()),
+        ),
+        ("TKE_REAL_PATH".to_owned(), Some(OsString::from(real_path))),
+        (
+            "TKE_AGENT_CMDS".to_owned(),
+            Some(OsString::from(config.agent_commands.join(","))),
+        ),
+        (
+            "TKE_TOOL_CMDS".to_owned(),
+            Some(OsString::from(config.tool_commands.join(","))),
+        ),
+    ];
+
+    let target_cmd = crate::trim::resolve_real_command(name)?;
+    let target_args = args.to_vec();
+
+    passthrough_with_native_pty(&target_cmd, &target_args, Some(envs), true)
 }
 
 pub(crate) fn capture_process(

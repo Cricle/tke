@@ -402,6 +402,9 @@ pub(crate) fn read_stream_payload<R: Read>(reader: &mut R) -> Result<Option<Vec<
         }
         Err(err) => return Err(err.into()),
     }
+    if buf.is_empty() {
+        return Ok(None);
+    }
     Ok(Some(buf))
 }
 

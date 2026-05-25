@@ -3,8 +3,11 @@ use crate::benchmark::RolloutCompareReport;
 use crate::rollout_stats::collect_rollout_output_stats;
 use crate::trim::now_millis;
 use crate::{AppError, Config};
+use serde::Serialize;
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -56,6 +59,105 @@ pub fn compare_rollout(source: Option<PathBuf>, config: &Config) -> Result<(), A
     Ok(())
 }
 
+#[derive(Serialize)]
+pub struct UsageStatsReport {
+    v: u8,
+    roots: Vec<String>,
+    samples: usize,
+    changed_samples: usize,
+    raw_tokens: usize,
+    rewritten_tokens: usize,
+    tokens_saved: isize,
+    tokens_saved_ratio: f64,
+    raw_bytes: usize,
+    rewritten_bytes: usize,
+    bytes_saved: isize,
+    bytes_saved_ratio: f64,
+    reports: Vec<RolloutCompareReport>,
+}
+
+pub fn usage_stats(
+    sources: Vec<PathBuf>,
+    limit: Option<usize>,
+    json: bool,
+    config: &Config,
+) -> Result<(), AppError> {
+    let report = build_usage_stats_report(sources, limit, config)?;
+    if json {
+        println!("{}", serde_json::to_string(&report)?);
+    } else {
+        print_usage_stats_report(&report)?;
+    }
+    Ok(())
+}
+
+pub fn build_usage_stats_report(
+    sources: Vec<PathBuf>,
+    limit: Option<usize>,
+    config: &Config,
+) -> Result<UsageStatsReport, AppError> {
+    let roots = if sources.is_empty() {
+        default_stats_roots()
+    } else {
+        sources
+    };
+    let mut rollouts = discover_rollout_paths(&roots)?;
+    rollouts.sort_by(|a, b| rollout_modified_ms(b).cmp(&rollout_modified_ms(a)));
+    if let Some(limit) = limit {
+        rollouts.truncate(limit);
+    }
+
+    let mut reports = Vec::new();
+    let mut changed_samples = 0usize;
+    let mut raw_tokens = 0usize;
+    let mut rewritten_tokens = 0usize;
+    let mut raw_bytes = 0usize;
+    let mut rewritten_bytes = 0usize;
+
+    for source in &rollouts {
+        let raw = fs::read_to_string(source)?;
+        let rewritten = rewrite_agent_transcript(&raw, config)?;
+        let raw_stats = collect_rollout_output_stats(&raw, config);
+        let rewritten_text = rewritten.as_deref().unwrap_or(&raw);
+        let rewritten_stats = collect_rollout_output_stats(rewritten_text, config);
+        let report = RolloutCompareReport::from_stats(
+            source,
+            rewritten.is_some(),
+            raw_stats,
+            rewritten_stats,
+        );
+        if report.changed {
+            changed_samples += 1;
+        }
+        raw_tokens += report.raw_tokens;
+        rewritten_tokens += report.rewritten_tokens;
+        raw_bytes += report.raw_bytes;
+        rewritten_bytes += report.rewritten_bytes;
+        reports.push(report);
+    }
+
+    let tokens_saved = raw_tokens as isize - rewritten_tokens as isize;
+    let bytes_saved = raw_bytes as isize - rewritten_bytes as isize;
+    Ok(UsageStatsReport {
+        v: 1,
+        roots: roots
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>(),
+        samples: reports.len(),
+        changed_samples,
+        raw_tokens,
+        rewritten_tokens,
+        tokens_saved,
+        tokens_saved_ratio: ratio(tokens_saved, raw_tokens),
+        raw_bytes,
+        rewritten_bytes,
+        bytes_saved,
+        bytes_saved_ratio: ratio(bytes_saved, raw_bytes),
+        reports,
+    })
+}
+
 pub struct InteractiveTracker {
     pub(crate) sessions_dir: PathBuf,
     pub(crate) started_at_ms: u128,
@@ -101,6 +203,56 @@ fn interactive_output_dir() -> Option<PathBuf> {
     env::current_dir()
         .ok()
         .map(|cwd| cwd.join(".tke").join("interactive"))
+}
+
+fn default_stats_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Some(sessions) = codex_sessions_dir() {
+        roots.push(sessions);
+    }
+    if let Some(interactive) = interactive_output_dir() {
+        roots.push(interactive);
+    }
+    roots
+}
+
+fn discover_rollout_paths(roots: &[PathBuf]) -> Result<Vec<PathBuf>, AppError> {
+    let mut out = Vec::new();
+    for root in roots {
+        if !root.exists() {
+            continue;
+        }
+        if root.is_file() {
+            if root.extension().and_then(|ext| ext.to_str()) == Some("jsonl") {
+                out.push(root.clone());
+            }
+            continue;
+        }
+        let mut stack = vec![root.clone()];
+        while let Some(path) = stack.pop() {
+            for entry in fs::read_dir(path)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() {
+                    stack.push(path);
+                } else if path.extension().and_then(|ext| ext.to_str()) == Some("jsonl") {
+                    out.push(path);
+                }
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    Ok(out)
+}
+
+fn rollout_modified_ms(path: &Path) -> u128 {
+    fs::metadata(path)
+        .ok()
+        .and_then(|meta| meta.modified().ok())
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis())
+        .unwrap_or(0)
 }
 
 fn find_latest_rollout_after(dir: &Path, started_at_ms: u128) -> Result<Option<PathBuf>, AppError> {
@@ -158,4 +310,145 @@ fn rewrite_rollout_to_output(
     );
     fs::write(output, rewritten)?;
     Ok(())
+}
+
+fn ratio(saved: isize, total: usize) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        saved as f64 / total as f64
+    }
+}
+
+fn print_usage_stats_report(report: &UsageStatsReport) -> Result<(), AppError> {
+    let mut out = std::io::stdout();
+    writeln!(out, "tke usage stats")?;
+    writeln!(out)?;
+    writeln!(out, "Roots:")?;
+    for root in &report.roots {
+        writeln!(out, "  - {root}")?;
+    }
+    writeln!(out)?;
+    writeln!(
+        out,
+        "Samples: {} total, {} changed",
+        report.samples, report.changed_samples
+    )?;
+    writeln!(
+        out,
+        "Tokens: {} -> {}  saved {} ({:.1}%)",
+        report.raw_tokens,
+        report.rewritten_tokens,
+        report.tokens_saved,
+        report.tokens_saved_ratio * 100.0
+    )?;
+    writeln!(
+        out,
+        "Bytes:  {} -> {}  saved {} ({:.1}%)",
+        report.raw_bytes,
+        report.rewritten_bytes,
+        report.bytes_saved,
+        report.bytes_saved_ratio * 100.0
+    )?;
+
+    if let Some(best) = report.reports.iter().find(|item| item.tokens_saved > 0) {
+        writeln!(out)?;
+        writeln!(out, "Latest effective savings:")?;
+        writeln!(out, "  Source: {}", best.source)?;
+        writeln!(
+            out,
+            "  Tokens: {} -> {}  saved {} ({:.1}%)",
+            best.raw_tokens,
+            best.rewritten_tokens,
+            best.tokens_saved,
+            best.tokens_saved_ratio * 100.0
+        )?;
+        writeln!(
+            out,
+            "  Bytes:  {} -> {}  saved {} ({:.1}%)",
+            best.raw_bytes,
+            best.rewritten_bytes,
+            best.bytes_saved,
+            best.bytes_saved_ratio * 100.0
+        )?;
+    }
+
+    let daily = daily_usage_rows(&report.reports);
+    if !daily.is_empty() {
+        writeln!(out)?;
+        writeln!(out, "By day:")?;
+        for row in daily {
+            writeln!(
+                out,
+                "  {}  samples={} changed={} tokens_saved={} ({:.1}%)",
+                row.day,
+                row.samples,
+                row.changed,
+                row.tokens_saved,
+                row.tokens_saved_ratio * 100.0
+            )?;
+        }
+    }
+
+    if !report.reports.is_empty() {
+        writeln!(out)?;
+        writeln!(out, "Recent samples:")?;
+        for item in &report.reports {
+            writeln!(
+                out,
+                "  - changed={} tokens_saved={} ({:.1}%) source={}",
+                item.changed,
+                item.tokens_saved,
+                item.tokens_saved_ratio * 100.0,
+                item.source
+            )?;
+        }
+    }
+    Ok(())
+}
+
+struct DailyUsageRow {
+    day: String,
+    samples: usize,
+    changed: usize,
+    tokens_saved: isize,
+    tokens_saved_ratio: f64,
+}
+
+fn daily_usage_rows(reports: &[RolloutCompareReport]) -> Vec<DailyUsageRow> {
+    let mut grouped = BTreeMap::<String, (usize, usize, usize, usize)>::new();
+    for item in reports {
+        let day = rollout_day(&item.source);
+        let entry = grouped.entry(day).or_insert((0, 0, 0, 0));
+        entry.0 += 1;
+        if item.changed {
+            entry.1 += 1;
+        }
+        entry.2 += item.raw_tokens;
+        entry.3 += item.rewritten_tokens;
+    }
+    grouped
+        .into_iter()
+        .map(|(day, (samples, changed, raw_tokens, rewritten_tokens))| {
+            let tokens_saved = raw_tokens as isize - rewritten_tokens as isize;
+            DailyUsageRow {
+                day,
+                samples,
+                changed,
+                tokens_saved,
+                tokens_saved_ratio: ratio(tokens_saved, raw_tokens),
+            }
+        })
+        .collect::<Vec<_>>()
+}
+
+fn rollout_day(source: &str) -> String {
+    let normalized = source.replace('\\', "/");
+    let parts = normalized.split('/').collect::<Vec<_>>();
+    for idx in 0..parts.len() {
+        if parts[idx] == "sessions" && idx + 3 < parts.len() {
+            return format!("{}-{}-{}", parts[idx + 1], parts[idx + 2], parts[idx + 3]);
+        }
+    }
+    "unknown".to_owned()
 }

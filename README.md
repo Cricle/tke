@@ -39,6 +39,7 @@ That means `tke` works at the tool-output layer, not only at the final-answer la
 cargo build --release
 ./target/release/tke install
 tke codex
+tke stats
 ```
 
 For one-shot use, put the agent name directly after `tke`. It creates the shim env and launches the agent in one command.
@@ -84,9 +85,12 @@ tke <agent> [args ...]
 tke install [--bin-dir PATH]
 tke activate [--shim-dir PATH] [agent ...]
 tke run [--shim-dir PATH] <agent> [args ...]
+tke tty [--shim-dir PATH] <command> [args ...]
 tke deactivate
 tke capture-interactive [--source PATH] [--output PATH]
 tke compare-rollout [--source PATH]
+tke stats [--source PATH]... [--limit N]
+tke compare-e2e [--source DIR]... [--agent codex|claude]
 tke benchmark-commands [--check]
 ```
 
@@ -108,6 +112,32 @@ tke claude
 `capture-interactive` rewrites a saved `codex` rollout JSONL into machine-readable form. By default it reads the latest rollout under `CODEX_HOME/sessions` or `~/.codex/sessions` and writes the mirrored file into `.tke/interactive/` in the current project.
 
 `compare-rollout` reads a raw `codex` rollout, computes the rewritten in-memory version, and prints a JSON report with byte and approximate token savings. This is the fastest way to measure how much `tke` is cutting down tool output for real sessions.
+
+`stats` is the main user-facing savings summary for real usage. By default it scans:
+
+- `CODEX_HOME/sessions` or `~/.codex/sessions`
+- `.tke/interactive/`
+
+and prints a human-readable summary with:
+
+- total raw vs rewritten bytes and approximate tokens
+- total bytes saved and tokens saved
+- overall savings ratios
+- how many real rollout samples changed
+- the latest effective savings sample
+- per-day savings summary
+- recent rollout sample lines
+
+If you want machine-readable output, add `--json`.
+
+Examples:
+
+```bash
+tke stats
+tke stats --limit 20
+tke stats --json --limit 20
+tke stats --source ~/.codex/sessions --source ./.tke/interactive
+```
 
 `compare-e2e` scans real E2E artifacts under `.tmp-claude-e2e` and `.tmp-codex-e2e` by default, groups them by case name, and treats `raw` as the baseline against one or more variants such as `tke`, `rtk-hook`, `rtk-codex-rules`, or `rtk-direct`. The JSON report includes:
 
@@ -133,6 +163,25 @@ tke compare-e2e --agent claude
 tke compare-e2e --source .tmp-claude-e2e --source .tmp-codex-e2e
 bash scripts/codex_real_suite.sh /root/github/tke
 ```
+
+## Native PTY Attach
+
+If your current host process has `bash` but does not have a real interactive TTY, commands like `tke codex` may still fail because the agent checks whether `stdin` is a terminal.
+
+For those environments, use:
+
+```bash
+tke tty codex
+```
+
+`tke tty <command>` uses a native Linux PTY attach path so the wrapped command sees a real terminal rather than a plain pipe. This path is system-level rather than agent-specific, so it also works for other terminal-bound programs:
+
+```bash
+tke tty bash
+tke tty claude
+```
+
+This is a compatibility path for hosts where `stdin` is not a real TTY. It is useful for getting terminal-bound commands to run, but it should not be treated as a guaranteed full-fidelity replacement for a native local terminal UI.
 
 `benchmark-commands` runs a built-in benchmark suite for the default high-frequency command families that `tke` optimizes, including code reading, search, path discovery, table/list output, diff, and build/test logs. It also includes fixed "real codex task" rollout benchmarks that simulate multi-step agent work on the same objective, and scans local rollout corpus files such as `.tmp-*.jsonl` and `.tke/interactive/*.jsonl`. The output is a JSON summary of byte and approximate token savings.
 

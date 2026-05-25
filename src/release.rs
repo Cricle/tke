@@ -10,7 +10,7 @@ pub fn install_self(bin_dir: Option<PathBuf>) -> Result<(), AppError> {
 
     let exe_name = if cfg!(windows) { "tke.exe" } else { "tke" };
     let dest = dest_dir.join(exe_name);
-    fs::copy(&exe, &dest)?;
+    install_binary_atomically(&exe, &dest)?;
 
     install_short_alias(&dest_dir, &dest)?;
 
@@ -23,6 +23,31 @@ pub fn install_self(bin_dir: Option<PathBuf>) -> Result<(), AppError> {
     });
     println!("{}", serde_json::to_string(&report)?);
     Ok(())
+}
+
+fn install_binary_atomically(src: &Path, dest: &Path) -> Result<(), AppError> {
+    let pid = std::process::id();
+    let tmp_name = format!(
+        ".{}.install-{pid}.tmp",
+        dest.file_name().unwrap().to_string_lossy()
+    );
+    let tmp = dest.with_file_name(tmp_name);
+    fs::copy(src, &tmp)?;
+
+    #[cfg(windows)]
+    {
+        if dest.exists() {
+            fs::remove_file(dest)?;
+        }
+    }
+
+    match fs::rename(&tmp, dest) {
+        Ok(_) => Ok(()),
+        Err(err) => {
+            let _ = fs::remove_file(&tmp);
+            Err(err.into())
+        }
+    }
 }
 
 fn default_user_bin_dir() -> PathBuf {

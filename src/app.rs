@@ -7,6 +7,7 @@ use crate::trim::{
     default_output_trim, default_show_stats, default_tail_lines, detect_shell_kind, parse_usize,
     read_stdin_if_piped, render_activate_script, render_deactivate_script, resolve_real_command,
 };
+use nix::errno::Errno;
 use serde::Deserialize;
 use std::env;
 use std::ffi::OsString;
@@ -43,6 +44,12 @@ impl From<io::Error> for AppError {
 impl From<serde_json::Error> for AppError {
     fn from(value: serde_json::Error) -> Self {
         Self::Json(value)
+    }
+}
+
+impl From<Errno> for AppError {
+    fn from(value: Errno) -> Self {
+        Self::Io(io::Error::from_raw_os_error(value as i32))
     }
 }
 
@@ -227,6 +234,11 @@ pub enum Dispatch {
         args: Vec<String>,
         shim_dir: Option<PathBuf>,
     },
+    Tty {
+        name: String,
+        args: Vec<String>,
+        shim_dir: Option<PathBuf>,
+    },
     Deactivate,
     CaptureInteractive {
         source: Option<PathBuf>,
@@ -234,6 +246,11 @@ pub enum Dispatch {
     },
     CompareRollout {
         source: Option<PathBuf>,
+    },
+    Stats {
+        sources: Vec<PathBuf>,
+        limit: Option<usize>,
+        json: bool,
     },
     CompareE2e {
         sources: Vec<PathBuf>,
@@ -283,9 +300,11 @@ pub fn parse_dispatch(argv0: &str, args: Vec<String>) -> Result<Dispatch, AppErr
         Some("install") => parse_install(args),
         Some("activate") | Some("env") => parse_activate(args),
         Some("run") => parse_run(args),
+        Some("tty") => parse_tty(args),
         Some("deactivate") => Ok(Dispatch::Deactivate),
         Some("capture-interactive") => parse_capture_interactive(args),
         Some("compare-rollout") => parse_compare_rollout(args),
+        Some("stats") => parse_stats(args),
         Some("compare-e2e") => parse_compare_e2e(args),
         Some("benchmark-commands") => parse_benchmark_commands(args),
         Some("shim") => parse_shim_exec(args),
@@ -306,9 +325,11 @@ pub fn usage() -> String {
         "  tke activate [--shim-dir PATH] [--shell SHELL] [agent ...]",
         "  tke env [--shim-dir PATH] [--shell SHELL] [agent ...]",
         "  tke run [--shim-dir PATH] <agent> [args ...]",
+        "  tke tty [--shim-dir PATH] <command> [args ...]",
         "  tke deactivate",
         "  tke capture-interactive [--source PATH] [--output PATH]",
         "  tke compare-rollout [--source PATH]",
+        "  tke stats [--source PATH]... [--limit N] [--json]",
         "  tke compare-e2e [--source DIR]... [--agent codex|claude]",
         "  tke benchmark-commands [--check]",
         "",
@@ -320,9 +341,12 @@ pub fn usage() -> String {
         "  eval \"$(tke activate codex claude)\"",
         "  tke run codex",
         "  tke run codex exec --json 'Reply with exactly OK.'",
+        "  tke tty codex",
         "  eval \"$(tke activate --shim-dir ./.tke/shims codex)\"",
         "  tke capture-interactive",
         "  tke compare-rollout",
+        "  tke stats",
+        "  tke stats --json --limit 10",
         "  tke compare-e2e",
         "  tke benchmark-commands",
     ]
@@ -515,6 +539,31 @@ fn parse_run(args: Vec<String>) -> Result<Dispatch, AppError> {
     )))
 }
 
+fn parse_tty(args: Vec<String>) -> Result<Dispatch, AppError> {
+    let mut shim_dir = None;
+    let mut iter = args.into_iter().skip(2);
+    while let Some(arg) = iter.next() {
+        if arg == "--shim-dir" {
+            let value = iter.next().ok_or_else(|| {
+                AppError::Usage(format!("missing value for --shim-dir\n\n{}", usage()))
+            })?;
+            shim_dir = Some(PathBuf::from(value));
+            continue;
+        }
+        let name = arg;
+        let args = iter.collect();
+        return Ok(Dispatch::Tty {
+            name,
+            args,
+            shim_dir,
+        });
+    }
+    Err(AppError::Usage(format!(
+        "missing command name for tty\n\n{}",
+        usage()
+    )))
+}
+
 fn parse_capture_interactive(args: Vec<String>) -> Result<Dispatch, AppError> {
     let mut source = None;
     let mut output = None;
@@ -574,6 +623,44 @@ fn parse_shim_exec(args: Vec<String>) -> Result<Dispatch, AppError> {
     Ok(Dispatch::ShimExec {
         name,
         args: args.into_iter().skip(3).collect(),
+    })
+}
+
+fn parse_stats(args: Vec<String>) -> Result<Dispatch, AppError> {
+    let mut sources = Vec::new();
+    let mut limit = None;
+    let mut json = false;
+    let mut iter = args.into_iter().skip(2);
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            "--source" => {
+                let value = iter.next().ok_or_else(|| {
+                    AppError::Usage(format!("missing value for --source\n\n{}", usage()))
+                })?;
+                sources.push(PathBuf::from(value));
+            }
+            "--limit" => {
+                let value = iter.next().ok_or_else(|| {
+                    AppError::Usage(format!("missing value for --limit\n\n{}", usage()))
+                })?;
+                let parsed = value.parse::<usize>().map_err(|_| {
+                    AppError::Usage(format!("invalid --limit `{value}`\n\n{}", usage()))
+                })?;
+                limit = Some(parsed);
+            }
+            "--json" => json = true,
+            other => {
+                return Err(AppError::Usage(format!(
+                    "unknown stats arg `{other}`\n\n{}",
+                    usage()
+                )));
+            }
+        }
+    }
+    Ok(Dispatch::Stats {
+        sources,
+        limit,
+        json,
     })
 }
 

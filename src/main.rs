@@ -3,7 +3,7 @@ use std::process;
 use tke::{
     AppError, Config, Dispatch, benchmark_commands, capture_interactive, compare_e2e_command,
     compare_rollout, install_self, parse_dispatch, print_activate, print_deactivate, run_shim,
-    run_wrapped, usage,
+    run_tty_wrapped, run_wrapped, usage, usage_stats,
 };
 
 fn main() {
@@ -38,6 +38,14 @@ fn run() -> Result<(), AppError> {
             let code = run_wrapped(&name, &args, shim_dir, &config)?;
             process::exit(code);
         }
+        Dispatch::Tty {
+            name,
+            args,
+            shim_dir,
+        } => {
+            let code = run_tty_wrapped(&name, &args, shim_dir, &config)?;
+            process::exit(code);
+        }
         Dispatch::Deactivate => {
             print_deactivate();
             Ok(())
@@ -46,6 +54,11 @@ fn run() -> Result<(), AppError> {
             capture_interactive(source, output, &config)
         }
         Dispatch::CompareRollout { source } => compare_rollout(source, &config),
+        Dispatch::Stats {
+            sources,
+            limit,
+            json,
+        } => usage_stats(sources, limit, json, &config),
         Dispatch::CompareE2e { sources, agent } => compare_e2e_command(sources, agent, &config),
         Dispatch::BenchmarkCommands { check } => benchmark_commands(&config, check),
         Dispatch::Shim { name, args } | Dispatch::ShimExec { name, args } => {
