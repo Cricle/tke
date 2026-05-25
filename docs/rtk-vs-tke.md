@@ -108,7 +108,7 @@ The current gap is not just aggregate token savings. `tke` now exposes explicit 
 | --- | --- | --- |
 | `pathlist` | Shared-directory compaction with `pl.d`, `pl.f`, `pl.l`, compact examples, and bucketed rows | No equivalent repo-local structured pathlist summary |
 | `search` | Grouped file-level search chunks with full first hit and compact `:line:text` followups | No equivalent repo-local grouped search summary |
-| `log` | Lightweight `lg.fail`, `lg.warn`, `lg.ff`, `lg.fw` fields plus repeated-line folding | No equivalent repo-local structured log summary |
+| `log` | Lightweight `lg.fail`, `lg.warn`, `lg.ff`, `lg.fw` fields plus repeated-line folding and `bd.ok/fl/sk/tt/ip` build-family counts | No equivalent repo-local structured log summary |
 | `diff` | Lightweight `df` file summaries with per-file `p`, `add`, and `del` counts | No equivalent repo-local structured diff summary |
 
 These summaries are emitted as part of the normal `__TKE__{...}` envelope rather than as benchmark-only side data. In this repo that matters because:
@@ -155,7 +155,7 @@ Interpretation:
 - `rtk-hook` is currently the stable fairness path for Claude.
 - `tke` on Claude currently prioritizes compatibility by default and should not yet be treated as equally mature live compression.
 - Even so, the underlying `tke` local compression primitives are broader and more inspectable than the current RTK fairness path, because they operate on normalized tool output rather than only on agent integration behavior.
-- In the current seventeen-scenario stable synthetic Claude-oriented traces, `tke` saves `125937` tokens total at `88.7%`, while `rtk-hook` saves `127089` at `88.9%`; both preserve all required semantic fragments in those controlled cases, and the complex scenario deltas are listed directly in [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:151).
+- In the current seventeen-scenario stable synthetic Claude-oriented traces, `tke` saves `125184` tokens total at `88.2%`, while `rtk-hook` saves `126356` at `88.4%`; both preserve all required semantic fragments in those controlled cases, and the complex scenario deltas are listed directly in [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:151).
 
 ## Important Fairness Cases
 

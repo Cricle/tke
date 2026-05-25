@@ -123,30 +123,30 @@ Claude-oriented stable synthetic summary:
 
 | Path | Raw tokens | Rewritten tokens | Tokens saved | Savings | Fragments kept |
 | --- | --- | --- | --- | --- | --- |
-| `tke` | 141904 | 15967 | 125937 | 88.7% | `218/218` |
-| `rtk-hook` | 142941 | 15852 | 127089 | 88.9% | `221/221` |
+| `tke` | 141904 | 16720 | 125184 | 88.2% | `218/218` |
+| `rtk-hook` | 142941 | 16585 | 126356 | 88.4% | `221/221` |
 
 Task-mode comparison for Claude-oriented stable synthetic traces:
 
 | Scenario | TKE task savings | RTK hook task savings | TKE fragments kept | RTK hook fragments kept |
 | --- | --- | --- | --- | --- |
 | find/pathlist | `8032` (98.4%) | `8032` (98.4%) | `4/4` | `6/6` |
-| search | `1864` (77.2%) | `1721` (80.5%) | `3/3` | `4/4` |
+| search | `1838` (76.1%) | `1721` (80.5%) | `3/3` | `4/4` |
 | diff | `3433` (92.8%) | `3433` (92.9%) | `6/6` | `6/6` |
-| build/log | `876` (76.8%) | `876` (77.2%) | `5/5` | `5/5` |
-| complex/triage | `14011` (93.6%) | `14011` (93.6%) | `11/11` | `11/11` |
-| complex/code-trace | `6637` (86.4%) | `6637` (86.4%) | `11/11` | `11/11` |
-| complex/stacktrace | `1959` (70.8%) | `2030` (71.1%) | `9/9` | `9/9` |
-| complex/stacktrace-diff | `5484` (83.8%) | `5555` (83.8%) | `12/12` | `12/12` |
-| complex/root-cause | `9793` (89.6%) | `9898` (89.6%) | `13/13` | `13/13` |
-| answer-consistency | `9451` (90.3%) | `9556` (90.4%) | `15/15` | `15/15` |
-| candidate-root-cause | `10051` (88.8%) | `10178` (89.1%) | `20/20` | `20/20` |
-| misleading-signal | `9450` (89.8%) | `9582` (89.9%) | `20/20` | `20/20` |
-| cross-file-causality | `13314` (90.8%) | `13440` (90.8%) | `19/19` | `19/19` |
-| negative-evidence | `5556` (80.6%) | `5661` (80.8%) | `17/17` | `17/17` |
-| temporal-causality | `12533` (90.2%) | `12638` (90.3%) | `19/19` | `19/19` |
-| symbol-collision | `4612` (82.8%) | `4718` (83.0%) | `15/15` | `15/15` |
-| reversal | `8881` (86.7%) | `9123` (87.0%) | `19/19` | `19/19` |
+| build/log | `850` (74.5%) | `850` (74.9%) | `5/5` | `5/5` |
+| complex/triage | `13985` (93.4%) | `13985` (93.4%) | `11/11` | `11/11` |
+| complex/code-trace | `6611` (86.1%) | `6611` (86.1%) | `11/11` | `11/11` |
+| complex/stacktrace | `1933` (69.8%) | `2004` (70.2%) | `9/9` | `9/9` |
+| complex/stacktrace-diff | `5458` (83.4%) | `5529` (83.4%) | `12/12` | `12/12` |
+| complex/root-cause | `9767` (89.3%) | `9872` (89.3%) | `13/13` | `13/13` |
+| answer-consistency | `9425` (90.1%) | `9530` (90.1%) | `15/15` | `15/15` |
+| candidate-root-cause | `9999` (88.3%) | `10126` (88.6%) | `20/20` | `20/20` |
+| misleading-signal | `9215` (87.5%) | `9341` (87.7%) | `20/20` | `20/20` |
+| cross-file-causality | `13262` (90.4%) | `13388` (90.5%) | `19/19` | `19/19` |
+| negative-evidence | `5504` (79.8%) | `5609` (80.1%) | `17/17` | `17/17` |
+| temporal-causality | `12481` (89.8%) | `12586` (89.9%) | `19/19` | `19/19` |
+| symbol-collision | `4562` (81.9%) | `4668` (82.2%) | `15/15` | `15/15` |
+| reversal | `8829` (86.2%) | `9071` (86.5%) | `19/19` | `19/19` |
 
 Scenario deltas and practical verdicts:
 
@@ -155,17 +155,17 @@ Positive deltas mean `rtk-hook` saved more than `tke`. `near-tie` means both pat
 | Scenario | Token delta (RTK-TKE) | Ratio delta (RTK-TKE) | Fragment status | Practical verdict |
 | --- | --- | --- | --- | --- |
 | find/pathlist | `+0` | `+0.1 pp` | `both full` | `near-tie` |
-| search | `-143` | `+3.4 pp` | `both full` | `mixed` |
+| search | `-117` | `+4.5 pp` | `both full` | `mixed` |
 | diff | `+0` | `+0.1 pp` | `both full` | `near-tie` |
 | build/log | `+0` | `+0.4 pp` | `both full` | `near-tie` |
 | complex/triage | `+0` | `+0.0 pp` | `both full` | `near-tie` |
 | complex/code-trace | `+0` | `+0.0 pp` | `both full` | `near-tie` |
-| complex/stacktrace | `+71` | `+0.3 pp` | `both full` | `near-tie` |
+| complex/stacktrace | `+71` | `+0.4 pp` | `both full` | `near-tie` |
 | complex/stacktrace-diff | `+71` | `-0.0 pp` | `both full` | `near-tie` |
 | complex/root-cause | `+105` | `+0.0 pp` | `both full` | `near-tie` |
 | answer-consistency | `+105` | `+0.1 pp` | `both full` | `near-tie` |
 | candidate-root-cause | `+127` | `+0.3 pp` | `both full` | `near-tie` |
-| misleading-signal | `+132` | `+0.2 pp` | `both full` | `near-tie` |
+| misleading-signal | `+126` | `+0.1 pp` | `both full` | `near-tie` |
 | cross-file-causality | `+126` | `+0.0 pp` | `both full` | `near-tie` |
 | negative-evidence | `+105` | `+0.2 pp` | `both full` | `near-tie` |
 | temporal-causality | `+105` | `+0.1 pp` | `both full` | `near-tie` |
@@ -180,7 +180,7 @@ The current local comparison is broader than raw token totals alone. `tke` now e
 | --- | --- | --- |
 | `pathlist` | `pl.d` shared dir, compact `pl.f`/`pl.l`, examples | No equivalent repo-local structured summary |
 | `search` | Grouped file chunks with full first hit and compact followups | No equivalent repo-local structured summary |
-| `log` | `lg.fail`, `lg.warn`, `lg.first_fail`, `lg.first_warn` | No equivalent repo-local structured summary |
+| `log` | `lg.fail`, `lg.warn`, `lg.first_fail`, `lg.first_warn`, plus `bd.ok/fl/sk/tt/ip` build-family counts | No equivalent repo-local structured summary |
 | `diff` | `df.f[].p/add/del` per-file summaries | No equivalent repo-local structured summary |
 
 ## Codex Real E2E
@@ -227,8 +227,8 @@ Accuracy and compression scorecard:
 
 | Scope | Path | Cases | Accuracy | Compression rate | Semantic retention | Token outcome |
 | --- | --- | --- | --- | --- | --- | --- |
-| `Claude synthetic` | `tke` | 17 | `n/a` | 88.7% | `218/218` | 125937 |
-| `Claude synthetic` | `rtk-hook` | 17 | `n/a` | 88.9% | `221/221` | 127089 |
+| `Claude synthetic` | `tke` | 17 | `n/a` | 88.2% | `218/218` | 125184 |
+| `Claude synthetic` | `rtk-hook` | 17 | `n/a` | 88.4% | `221/221` | 126356 |
 | `codex` | `rtk-codex-rules` | 2 | 0.0% | `n/a` | `pass=0 fail=2 gateway=0 ungraded=0` | 11 |
 | `claude` | `rtk-hook` | 3 | 100.0% | `n/a` | `pass=3 fail=0 gateway=0 ungraded=0` | -1 |
 

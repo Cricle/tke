@@ -55,6 +55,103 @@ fn repeated_lines(prefix: &str, count: usize) -> String {
     crate::benchmark::repeated_lines(prefix, count)
 }
 
+fn write_codex_e2e_sample(path: &Path, tool_output: &str, result: &str) {
+    fs::write(
+        path,
+        [
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "command_execution",
+                    "aggregated_output": tool_output
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "item.completed",
+                "item": {
+                    "type": "agent_message",
+                    "text": result
+                }
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write codex e2e sample");
+}
+
+fn write_claude_e2e_sample(path: &Path, tool_output: &str, result: &str) {
+    fs::write(
+        path,
+        [
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_tool",
+                            "content": tool_output
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": result
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write claude e2e sample");
+}
+
+fn write_claude_e2e_gateway_sample(path: &Path, tool_output: &str, result: &str) {
+    fs::write(
+        path,
+        [
+            serde_json::json!({
+                "type": "user",
+                "message": {
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_tool",
+                            "content": tool_output
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "error",
+                "error": {
+                    "message": "origin gateway timeout"
+                }
+            })
+            .to_string(),
+            serde_json::json!({
+                "type": "result",
+                "result": result
+            })
+            .to_string(),
+        ]
+        .join("\n"),
+    )
+    .expect("write claude e2e gateway sample");
+}
+
+fn e2e_case_status(case: &crate::e2e_report::E2eCaseReport, mode: &str) -> String {
+    case.variants
+        .iter()
+        .find(|variant| variant.mode == mode)
+        .map(|variant| variant.sample.correctness.status.clone())
+        .unwrap_or_else(|| "missing".to_owned())
+}
+
 #[test]
 fn whitelist_paths_match_path_boundaries_not_arbitrary_substrings() {
     let mut cfg = Config::default();
@@ -590,6 +687,52 @@ fn build_summary_counts_installed_packages_once() {
     let summary = crate::trim::collect_build_summary("pip", &refs).expect("summary");
     assert_eq!(summary.ip, 3);
     assert_eq!(summary.e.len(), 1);
+}
+
+#[test]
+fn build_summary_extracts_pytest_style_counts() {
+    let lines = [
+        "FAILED tests/test_parser.py::test_invalid_input - AssertionError: expected boom",
+        "2 passed, 1 failed, 1 skipped, 4 total",
+    ];
+    let refs = lines.iter().copied().collect::<Vec<_>>();
+    let summary = crate::trim::collect_build_summary("pytest", &refs).expect("summary");
+    assert_eq!(summary.ok, 2);
+    assert_eq!(summary.fl, 1);
+    assert_eq!(summary.sk, 1);
+    assert_eq!(summary.tt, 4);
+}
+
+#[test]
+fn build_summary_extracts_gradle_completed_and_failed_counts() {
+    let lines = ["BUILD FAILED in 12s", "1 test completed, 1 failed"];
+    let refs = lines.iter().copied().collect::<Vec<_>>();
+    let summary = crate::trim::collect_build_summary("gradle", &refs).expect("summary");
+    assert_eq!(summary.fl, 1);
+    assert_eq!(summary.tt, 1);
+    assert!(
+        summary
+            .e
+            .iter()
+            .any(|line| line.contains("1 test completed, 1 failed"))
+    );
+}
+
+#[test]
+fn build_summary_does_not_treat_node_case_index_as_failure_count() {
+    let lines = [
+        "not ok 12 - parser handles invalid input",
+        "error: Expected value to be truthy",
+    ];
+    let refs = lines.iter().copied().collect::<Vec<_>>();
+    let summary = crate::trim::collect_build_summary("node", &refs).expect("summary");
+    assert_eq!(summary.fl, 0);
+    assert!(
+        summary
+            .e
+            .iter()
+            .any(|line| line.contains("not ok 12 - parser handles invalid input"))
+    );
 }
 
 #[test]
@@ -4205,6 +4348,72 @@ fn log_profiles_preserve_failure_and_warning_semantics() {
 }
 
 #[test]
+fn build_summary_serializes_family_specific_counts() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+
+    for (name, args, output, expected) in [
+        (
+            "cargo",
+            vec!["test".to_owned()],
+            [
+                "Compiling demo v0.1.0",
+                "Running unittests src/lib.rs (target/debug/deps/demo)",
+                "test result: FAILED. 117 passed; 3 failed; 0 ignored; 0 measured",
+                "error: test failed, to rerun pass --lib",
+            ]
+            .join("\n"),
+            serde_json::json!({"ok": 117, "fl": 3, "tt": 120, "cp": 1, "rn": 1}),
+        ),
+        (
+            "pytest",
+            vec!["-q".to_owned()],
+            [
+                "FAILED tests/test_parser.py::test_invalid_input - AssertionError: expected boom",
+                "2 passed, 1 failed, 1 skipped, 4 total",
+            ]
+            .join("\n"),
+            serde_json::json!({"ok": 2, "fl": 1, "sk": 1, "tt": 4}),
+        ),
+        (
+            "dotnet",
+            vec!["test".to_owned()],
+            [
+                "Passed TestCase.Parser",
+                "Failed!  - Failed:     3, Passed:   117, Skipped:     2, Total:   122",
+                "error CS1002: ; expected",
+            ]
+            .join("\n"),
+            serde_json::json!({"ok": 117, "fl": 3, "sk": 2, "tt": 122}),
+        ),
+        (
+            "pip",
+            vec![
+                "install".to_owned(),
+                "-r".to_owned(),
+                "requirements.txt".to_owned(),
+            ],
+            [
+                "Collecting demo-package",
+                "Successfully installed demo-1.0 helper-2.0 toolkit-3.1",
+                "warning: Retrying (Retry(total=4, connect=None))",
+            ]
+            .join("\n"),
+            serde_json::json!({"ip": 3, "tt": 3}),
+        ),
+    ] {
+        let normalized = normalize_text(name, &args, "stdout", CommandKind::Log, &output, &cfg)
+            .expect("normalize");
+        let value = value_from_json(&normalized);
+        let bd = value["bd"].as_object().expect("build summary");
+        let expected = expected.as_object().expect("expected object");
+        for (key, expected_value) in expected {
+            assert_eq!(bd.get(key), Some(expected_value), "{name} key={key}");
+        }
+    }
+}
+
+#[test]
 fn compressed_search_and_file_outputs_preserve_semantic_answer_fragments() {
     let mut cfg = Config::default();
     cfg.min_trim_bytes = 1;
@@ -6124,6 +6333,434 @@ fn claude_benchmark_task_report_shows_positive_savings() {
             task.tokens_saved,
             task.bytes_saved
         );
+    }
+}
+
+fn claude_synthetic_task_pairs() -> [(&'static str, &'static str, &'static str); 17] {
+    [
+        (
+            "find/pathlist",
+            "claude_bash_trace_selected_find_stage",
+            "claude_rtk_hook_trace_selected_find_stage",
+        ),
+        (
+            "search",
+            "claude_bash_trace_selected_search_stage",
+            "claude_rtk_hook_trace_selected_search_stage",
+        ),
+        (
+            "diff",
+            "claude_bash_trace_selected_diff_stage",
+            "claude_rtk_hook_trace_selected_diff_stage",
+        ),
+        (
+            "build/log",
+            "claude_bash_trace_selected_build_stage",
+            "claude_rtk_hook_trace_selected_build_stage",
+        ),
+        (
+            "complex/triage",
+            "claude_bash_trace_complex_triage_task",
+            "claude_rtk_hook_trace_complex_triage_task",
+        ),
+        (
+            "complex/code-trace",
+            "claude_bash_trace_complex_code_trace_task",
+            "claude_rtk_hook_trace_complex_code_trace_task",
+        ),
+        (
+            "complex/stacktrace",
+            "claude_bash_trace_complex_stacktrace_task",
+            "claude_rtk_hook_trace_complex_stacktrace_task",
+        ),
+        (
+            "complex/stacktrace-diff",
+            "claude_bash_trace_complex_stacktrace_diff_task",
+            "claude_rtk_hook_trace_complex_stacktrace_diff_task",
+        ),
+        (
+            "complex/root-cause",
+            "claude_bash_trace_complex_root_cause_task",
+            "claude_rtk_hook_trace_complex_root_cause_task",
+        ),
+        (
+            "answer-consistency",
+            "claude_bash_trace_answer_consistency_task",
+            "claude_rtk_hook_trace_answer_consistency_task",
+        ),
+        (
+            "candidate-root-cause",
+            "claude_bash_trace_candidate_root_cause_task",
+            "claude_rtk_hook_trace_candidate_root_cause_task",
+        ),
+        (
+            "misleading-signal",
+            "claude_bash_trace_misleading_signal_task",
+            "claude_rtk_hook_trace_misleading_signal_task",
+        ),
+        (
+            "cross-file-causality",
+            "claude_bash_trace_cross_file_causality_task",
+            "claude_rtk_hook_trace_cross_file_causality_task",
+        ),
+        (
+            "negative-evidence",
+            "claude_bash_trace_negative_evidence_task",
+            "claude_rtk_hook_trace_negative_evidence_task",
+        ),
+        (
+            "temporal-causality",
+            "claude_bash_trace_temporal_causality_task",
+            "claude_rtk_hook_trace_temporal_causality_task",
+        ),
+        (
+            "symbol-collision",
+            "claude_bash_trace_symbol_collision_task",
+            "claude_rtk_hook_trace_symbol_collision_task",
+        ),
+        (
+            "reversal",
+            "claude_bash_trace_reversal_task",
+            "claude_rtk_hook_trace_reversal_task",
+        ),
+    ]
+}
+
+#[test]
+fn benchmark_docs_match_claude_synthetic_totals_and_rows() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let report = build_benchmark_report(&cfg).expect("benchmark");
+    let docs = fs::read_to_string("docs/benchmarks.md").expect("benchmarks doc");
+    let vs_doc = fs::read_to_string("docs/rtk-vs-tke.md").expect("rtk vs tke doc");
+
+    let tke_tasks = report
+        .tasks
+        .iter()
+        .filter(|task| task.name.starts_with("claude_bash_trace_"))
+        .collect::<Vec<_>>();
+    let rtk_tasks = report
+        .tasks
+        .iter()
+        .filter(|task| task.name.starts_with("claude_rtk_hook_trace_"))
+        .collect::<Vec<_>>();
+
+    assert_eq!(tke_tasks.len(), 17);
+    assert_eq!(rtk_tasks.len(), 17);
+
+    let summarize = |tasks: &[&crate::benchmark::BenchmarkTaskReport]| {
+        let raw_tokens = tasks.iter().map(|task| task.raw_tokens).sum::<usize>();
+        let rewritten_tokens = tasks
+            .iter()
+            .map(|task| task.rewritten_tokens)
+            .sum::<usize>();
+        let saved = tasks.iter().map(|task| task.tokens_saved).sum::<isize>();
+        let required = tasks
+            .iter()
+            .map(|task| task.required_fragments.len())
+            .sum::<usize>();
+        let kept = tasks
+            .iter()
+            .map(|task| task.preserved_fragments.len())
+            .sum::<usize>();
+        let savings = if raw_tokens == 0 {
+            0.0
+        } else {
+            saved as f64 / raw_tokens as f64 * 100.0
+        };
+        (raw_tokens, rewritten_tokens, saved, savings, kept, required)
+    };
+
+    let (tke_raw, tke_rewritten, tke_saved, tke_savings, tke_kept, tke_required) =
+        summarize(&tke_tasks);
+    let (rtk_raw, rtk_rewritten, rtk_saved, rtk_savings, rtk_kept, rtk_required) =
+        summarize(&rtk_tasks);
+
+    let tke_row = format!(
+        "| `tke` | {tke_raw} | {tke_rewritten} | {tke_saved} | {:.1}% | `{tke_kept}/{tke_required}` |",
+        tke_savings
+    );
+    let rtk_row = format!(
+        "| `rtk-hook` | {rtk_raw} | {rtk_rewritten} | {rtk_saved} | {:.1}% | `{rtk_kept}/{rtk_required}` |",
+        rtk_savings
+    );
+    assert!(docs.contains(&tke_row), "{tke_row}");
+    assert!(docs.contains(&rtk_row), "{rtk_row}");
+
+    let vs_sentence = format!(
+        "`tke` saves `{tke_saved}` tokens total at `{:.1}%`, while `rtk-hook` saves `{rtk_saved}` at `{:.1}%`",
+        tke_savings, rtk_savings
+    );
+    assert!(vs_doc.contains(&vs_sentence), "{vs_sentence}");
+}
+
+#[test]
+fn benchmark_docs_match_claude_scenario_delta_rows() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let report = build_benchmark_report(&cfg).expect("benchmark");
+    let docs = fs::read_to_string("docs/benchmarks.md").expect("benchmarks doc");
+
+    for (label, tke_name, rtk_name) in claude_synthetic_task_pairs() {
+        let tke = report
+            .tasks
+            .iter()
+            .find(|task| task.name == tke_name)
+            .expect("tke task");
+        let rtk = report
+            .tasks
+            .iter()
+            .find(|task| task.name == rtk_name)
+            .expect("rtk task");
+        let token_delta = rtk.tokens_saved - tke.tokens_saved;
+        let ratio_delta = (rtk.tokens_saved_ratio - tke.tokens_saved_ratio) * 100.0;
+        let full_tke = tke.preserved_fragments.len() == tke.required_fragments.len();
+        let full_rtk = rtk.preserved_fragments.len() == rtk.required_fragments.len();
+        let near_tie = full_tke
+            && full_rtk
+            && ((token_delta.abs() <= 250)
+                || ((token_delta.abs() as f64)
+                    <= 0.02 * (tke.tokens_saved.abs().max(rtk.tokens_saved.abs()) as f64)))
+            && ratio_delta.abs() <= 0.5;
+        let verdict = if near_tie { "near-tie" } else { "mixed" };
+        let status = if full_tke && full_rtk {
+            "both full"
+        } else {
+            "not-both-full"
+        };
+        let row = format!(
+            "| {label} | `{:+}` | `{:+.1} pp` | `{status}` | `{verdict}` |",
+            token_delta, ratio_delta
+        );
+        assert!(docs.contains(&row), "{row}");
+    }
+}
+
+#[test]
+fn rtk_docs_lock_fair_compare_aggregate_rows() {
+    let benchmarks = fs::read_to_string("docs/benchmarks.md").expect("benchmarks doc");
+    let vs_doc = fs::read_to_string("docs/rtk-vs-tke.md").expect("rtk vs tke doc");
+
+    for row in [
+        "| `rtk-codex-rules` | 2 | 0 | 2 | 0 | 0 | 11 |",
+        "| `rtk-hook` | 4 | 3 | 0 | 1 | 0 | -1 |",
+        "| `fairfind` | `rtk-codex-rules` | fail | 0 | `wrong_and_not_saved` |",
+        "| `fairrg` | `rtk-codex-rules` | fail | 11 | `saved_but_wrong` |",
+        "| `fairbuild` | `rtk-hook` | pass | -1 | `correct_but_not_saved` |",
+        "| `fairfind` | `rtk-hook` | pass | 0 | `correct_but_not_saved` |",
+        "| `fairrg` | `rtk-hook` | pass | 0 | `correct_but_not_saved` |",
+    ] {
+        assert!(benchmarks.contains(row), "{row}");
+    }
+
+    for fragment in [
+        "| `rtk-codex-rules` | 2 fair cases | 0 | 2 | `11` token delta total |",
+        "| `rtk-hook` | 4 | 3 | 0 | 1 | `-1` total delta |",
+        "| `codex` | `fairfind` | fail | fail | `0` | `wrong_and_not_saved` |",
+        "| `codex` | `fairrg` | fail | fail | `11` | `saved_but_wrong` |",
+        "| `claude` | `fairbuild` | pass | pass | `-1` | `correct_but_not_saved` |",
+        "| `claude` | `fairfind` | fail | pass | `0` | `correct_but_not_saved` |",
+        "| `claude` | `fairrg` | pass | pass | `0` | `correct_but_not_saved` |",
+    ] {
+        assert!(vs_doc.contains(fragment), "{fragment}");
+    }
+}
+
+#[test]
+fn e2e_docs_match_generated_stable_case_rows_and_verdicts() {
+    let base = temp_test_dir("e2e-doc-lock");
+    let codex_root = base.join(".tmp-codex-e2e");
+    let claude_root = base.join(".tmp-claude-e2e");
+    let claude_fair_root = base.join(".tmp-claude-e2e-fair");
+    fs::create_dir_all(&codex_root).expect("mkdir codex");
+    fs::create_dir_all(&claude_root).expect("mkdir claude");
+    fs::create_dir_all(&claude_fair_root).expect("mkdir claude fair");
+
+    write_codex_e2e_sample(
+        &codex_root.join("buildcase.raw.jsonl"),
+        "test result: ok. 105 passed; 0 failed; 0 ignored; 0 measured",
+        "STAGE=cargo test --lib -- --nocapture\nFILE=src/lib.rs\nCOUNT=0",
+    );
+    write_codex_e2e_sample(
+        &codex_root.join("buildcase.tke.jsonl"),
+        "__TKE__{\"v\":1,\"cmd\":\"cargo\",\"sc\":\"cargo\",\"sr\":\"build\",\"p\":\"log\",\"bd\":{\"ok\":105,\"fl\":0,\"tt\":105}}",
+        "STAGE=cargo test --lib -- --nocapture\nFILE=src/lib.rs\nCOUNT=0",
+    );
+    write_codex_e2e_sample(
+        &codex_root.join("fairbuild.raw.jsonl"),
+        "test result: ok. 105 passed; 0 failed; 0 ignored; 0 measured",
+        "STAGE=cargo test --lib -- --nocapture | tail -n 80\nFILE=src/lib.rs\nCOUNT=0",
+    );
+    write_codex_e2e_sample(
+        &codex_root.join("fairfind.raw.jsonl"),
+        repeated_lines("src/rollout_stats.rs", 17).as_str(),
+        "STAGE=rg --files src | head -n 40\nFILE=src/rollout_stats.rs\nCOUNT=12",
+    );
+    write_codex_e2e_sample(
+        &codex_root.join("fairfind.rtk-codex-rules.jsonl"),
+        repeated_lines("src/rollout_stats.rs", 17).as_str(),
+        "STAGE=rg --files src | head -n 40\nFILE=src/rollout_stats.rs\nCOUNT=12",
+    );
+    write_codex_e2e_sample(
+        &codex_root.join("fairrg.raw.jsonl"),
+        repeated_lines(
+            "src/tests.rs:10:normalize_text compare-e2e benchmark-commands",
+            8,
+        )
+        .as_str(),
+        "STAGE=rg -n \"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\" src\nFILE=src/shim.rs\nKIND=search",
+    );
+    write_codex_e2e_sample(
+        &codex_root.join("fairrg.rtk-codex-rules.jsonl"),
+        "1 result in src/tests.rs",
+        "STAGE=rg -n \"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\" src\nFILE=src/shim.rs\nKIND=search",
+    );
+    write_codex_e2e_sample(
+        &codex_root.join("findcase.raw.jsonl"),
+        repeated_lines("src/tests.rs", 17).as_str(),
+        "STAGE=find src -type f | head -n 40\nFILE=src/tests.rs\nCOUNT=17",
+    );
+    write_codex_e2e_sample(
+        &codex_root.join("findcase.tke.jsonl"),
+        "__TKE__{\"v\":1,\"cmd\":\"find\",\"sc\":\"find\",\"sr\":\"search\",\"p\":\"pathlist\",\"c\":17}",
+        "STAGE=find src -type f | head -n 40\nFILE=src/tests.rs\nCOUNT=17",
+    );
+    write_codex_e2e_sample(
+        &codex_root.join("realtask.raw.jsonl"),
+        repeated_lines("src/benchmark.rs:42:task compare row", 40).as_str(),
+        "STAGE=sed -n '1,120p' src/benchmark.rs\nFILE=src/benchmark.rs\nCOUNT=40",
+    );
+    write_codex_e2e_sample(
+        &codex_root.join("realtask.tke.jsonl"),
+        "__TKE__{\"v\":1,\"cmd\":\"sed\",\"sc\":\"sed\",\"sr\":\"file\",\"p\":\"file\",\"c\":40}",
+        "STAGE=sed -n '1,120p' src/benchmark.rs\nFILE=src/benchmark.rs\nCOUNT=40",
+    );
+    write_codex_e2e_sample(
+        &codex_root.join("rgcase.raw.jsonl"),
+        repeated_lines("src/tests.rs:10:assert benchmark normalize claude", 8).as_str(),
+        "STAGE=rg -n \"assert|benchmark|normalize|claude\" src/tests.rs\nFILE=src/tests.rs\nKIND=search",
+    );
+    write_codex_e2e_sample(
+        &codex_root.join("rgcase.tke.jsonl"),
+        "__TKE__{\"v\":1,\"cmd\":\"rg\",\"sc\":\"rg\",\"sr\":\"search\",\"p\":\"search\"}",
+        "STAGE=rg -n \"assert|benchmark|normalize|claude\" src/tests.rs\nFILE=src/tests.rs\nKIND=search",
+    );
+
+    write_claude_e2e_gateway_sample(
+        &claude_root.join("findcase.raw.stream.jsonl"),
+        repeated_lines("src/tests.rs", 17).as_str(),
+        "STAGE=find src -type f | head -n 40\nFILE=src/tests.rs\nCOUNT=17",
+    );
+    write_claude_e2e_sample(
+        &claude_root.join("findcase.tke.stream.jsonl"),
+        "__TKE__{\"v\":1,\"cmd\":\"find\",\"sc\":\"find\",\"sr\":\"search\",\"p\":\"pathlist\",\"c\":17}",
+        "STAGE=find src -type f | head -n 40\nFILE=src/tests.rs\nCOUNT=16",
+    );
+    write_claude_e2e_gateway_sample(
+        &claude_root.join("findcase.rtk-hook.stream.jsonl"),
+        repeated_lines("src/tests.rs", 17).as_str(),
+        "STAGE=find src -type f | head -n 40\nFILE=src/tests.rs\nCOUNT=17",
+    );
+
+    write_claude_e2e_sample(
+        &claude_fair_root.join("fairbuild.raw.stream.jsonl"),
+        "test result: ok. 105 passed; 0 failed; 0 ignored; 0 measured",
+        "STAGE=cargo test --lib -- --nocapture | tail -n 80\nFILE=src/lib.rs\nCOUNT=0",
+    );
+    write_claude_e2e_sample(
+        &claude_fair_root.join("fairbuild.rtk-hook.stream.jsonl"),
+        "test result: ok. 105 passed; 0 failed; 0 ignored; 0 measured",
+        "STAGE=cargo test --lib -- --nocapture | tail -n 80\nFILE=src/lib.rs\nCOUNT=0",
+    );
+    write_claude_e2e_sample(
+        &claude_fair_root.join("fairfind.raw.stream.jsonl"),
+        repeated_lines("src/rollout_stats.rs", 17).as_str(),
+        "STAGE=rg --files src | head -n 40\nFILE=src/rollout_stats.rs\nCOUNT=12",
+    );
+    write_claude_e2e_sample(
+        &claude_fair_root.join("fairfind.rtk-hook.stream.jsonl"),
+        repeated_lines("src/rollout_stats.rs", 17).as_str(),
+        "STAGE=rg --files src | head -n 40\nFILE=src/rollout_stats.rs\nCOUNT=15",
+    );
+    write_claude_e2e_sample(
+        &claude_fair_root.join("fairrg.raw.stream.jsonl"),
+        repeated_lines(
+            "src/tests.rs:10:normalize_text compare-e2e benchmark-commands",
+            8,
+        )
+        .as_str(),
+        "STAGE=rg -n \"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\" src\nFILE=src/tests.rs\nKIND=search",
+    );
+    write_claude_e2e_sample(
+        &claude_fair_root.join("fairrg.rtk-hook.stream.jsonl"),
+        repeated_lines(
+            "src/tests.rs:10:normalize_text compare-e2e benchmark-commands",
+            8,
+        )
+        .as_str(),
+        "STAGE=rg -n \"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\" src\nFILE=src/tests.rs\nKIND=search",
+    );
+
+    let report = build_e2e_compare_report(
+        vec![codex_root, claude_root, claude_fair_root],
+        None,
+        &Config::default(),
+    )
+    .expect("e2e report");
+    let docs = fs::read_to_string("docs/e2e.md").expect("e2e doc");
+
+    let codex_cases = report
+        .cases
+        .iter()
+        .filter(|case| case.agent == "codex")
+        .collect::<Vec<_>>();
+    for case in codex_cases {
+        let notes = if e2e_case_status(case, "tke") == "pass" {
+            "stable tke case"
+        } else {
+            "-"
+        };
+        let row = format!(
+            "| `{}` | {} | {} | {} | {} |",
+            case.name,
+            case.baseline.correctness.status,
+            e2e_case_status(case, "tke"),
+            e2e_case_status(case, "rtk-codex-rules"),
+            notes
+        );
+        assert!(docs.contains(&row), "{row}");
+    }
+
+    let claude_cases = report
+        .cases
+        .iter()
+        .filter(|case| case.agent == "claude")
+        .collect::<Vec<_>>();
+    for case in claude_cases {
+        let notes = match case.name.as_str() {
+            "findcase" => "experimental live tke path, gateway noise on RTK hook path",
+            _ => "fair RTK hook path",
+        };
+        let row = format!(
+            "| `{}` | {} | {} | {} | {} |",
+            case.name,
+            case.baseline.correctness.status,
+            e2e_case_status(case, "tke"),
+            e2e_case_status(case, "rtk-hook"),
+            notes
+        );
+        assert!(docs.contains(&row), "{row}");
+    }
+
+    for line in [
+        "- Codex vs RTK must use `rtk-codex-rules`.",
+        "- Claude vs RTK must use `rtk-hook`.",
+        "- `rtk-direct` is not the official fairness path for Codex.",
+        "- Codex remains the primary validated live-compression path.",
+        "- Claude currently prioritizes stable compatibility over live compression by default.",
+        "- RTK results must be reported per agent integration mode, not as one universal number.",
+    ] {
+        assert!(docs.contains(line), "{line}");
     }
 }
 

@@ -605,23 +605,27 @@ fn merge_build_counters(out: &mut BuildCounters, update: BuildCounters) {
 fn extract_build_counts(line: &str, tokens: &[String]) -> Option<BuildCounters> {
     let mut out = BuildCounters::default();
     let mut matched = false;
+    let install_line = has_token_sequence(tokens, &["successfully", "installed"]);
 
-    if let Some(count) = colon_label_count(line, "passed") {
+    if !install_line && let Some(count) = colon_label_count(line, "passed") {
         out.ok = count;
         matched = true;
     }
-    if let Some(count) =
-        colon_label_count(line, "failed").or_else(|| colon_label_count(line, "failures"))
+    if !install_line
+        && let Some(count) =
+            colon_label_count(line, "failed").or_else(|| colon_label_count(line, "failures"))
     {
         out.fl = count;
         matched = true;
     }
-    if let Some(count) = colon_label_count(line, "skipped") {
+    if !install_line && let Some(count) = colon_label_count(line, "skipped") {
         out.sk = count;
         matched = true;
     }
-    if let Some(count) =
-        colon_label_count(line, "total").or_else(|| colon_label_count(line, "tests run"))
+    if !install_line
+        && looks_like_test_count_line(tokens)
+        && let Some(count) =
+            colon_label_count(line, "total").or_else(|| colon_label_count(line, "tests run"))
     {
         out.tt = count;
         matched = true;
@@ -652,7 +656,11 @@ fn extract_build_counts(line: &str, tokens: &[String]) -> Option<BuildCounters> 
         && let Some(count) = count_after_sequence(tokens, &["tests", "run"])
             .or_else(|| count_before_sequence(tokens, &["tests", "completed"]))
             .or_else(|| count_before_sequence(tokens, &["test", "completed"]))
-            .or_else(|| adjacent_count_for_token(tokens, "total"))
+            .or_else(|| {
+                looks_like_test_count_line(tokens)
+                    .then(|| adjacent_count_for_token(tokens, "total"))
+                    .flatten()
+            })
             .or_else(|| count_after_sequence(tokens, &["out", "of"]))
     {
         out.tt = count;
@@ -676,6 +684,15 @@ fn should_capture_build_example(line: &str, tokens: &[String]) -> bool {
             || count_before_sequence(tokens, &["tests", "passed"]).is_some()
             || count_before_sequence(tokens, &["tests", "completed"]).is_some()
             || count_before_sequence(tokens, &["test", "completed"]).is_some())
+}
+
+fn looks_like_test_count_line(tokens: &[String]) -> bool {
+    has_ascii_token(tokens, "test")
+        || has_ascii_token(tokens, "tests")
+        || has_ascii_token(tokens, "passed")
+        || has_ascii_token(tokens, "failed")
+        || has_ascii_token(tokens, "failures")
+        || has_ascii_token(tokens, "skipped")
 }
 
 fn push_unique_sample(out: &mut Vec<String>, line: &str, cap: usize, width: usize) {
