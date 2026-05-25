@@ -386,8 +386,7 @@ fn wait_for_child(child: Pid) -> Result<i32, AppError> {
         match waitpid(child, None)? {
             WaitStatus::Exited(_, code) => return Ok(code),
             WaitStatus::Signaled(_, signal, _) => return Ok(128 + signal as i32),
-            WaitStatus::StillAlive | WaitStatus::Continued(_) | WaitStatus::Stopped(_, _) => {}
-            WaitStatus::PtraceEvent(_, _, _) | WaitStatus::PtraceSyscall(_) => {}
+            _ => {}
         }
     }
 }
