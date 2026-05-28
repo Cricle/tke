@@ -101,7 +101,7 @@ This section is generated from the current benchmark and E2E artifacts. The clai
 | Built-in rollout/task traces | `39` traces, `263751` tokens saved, `86.3%` | RTK participates only through the fairness/synthetic harness subset wired here | `tke` has broader measured coverage inside the repo |
 | Codex real E2E | `4/4` pass, `6257` tool tokens saved | `1/2` pass, `11` token delta | Current real Codex evidence favors `tke` clearly |
 | Structured output surface | `pathlist`, `search`, `diff`, `log`, `table`, and `file` profiles emit inspectable `__TKE__{...}` summaries | No equivalent repo-local structured envelope | `tke` gives a concrete artifact that tooling can compare and audit |
-| Claude stable synthetic traces | `121335` tokens saved at `86.0%` | `122479` tokens saved at `86.1%` | `rtk-hook` currently leads on both absolute token savings and ratio in the stable synthetic Claude traces, while `tke` remains competitive on fragment retention |
+| Claude stable synthetic traces | `121330` tokens saved at `86.0%` | `122474` tokens saved at `86.1%` | `rtk-hook` currently leads on both absolute token savings and ratio in the stable synthetic Claude traces, while `tke` remains competitive on fragment retention |
 
 Current built-in totals:
 
@@ -126,8 +126,8 @@ Claude-oriented stable synthetic summary:
 
 | Path | Raw tokens | Rewritten tokens | Tokens saved | Savings | Fragments kept |
 | --- | --- | --- | --- | --- | --- |
-| `tke` | 141074 | 19739 | 121335 | 86.0% | `218/218` |
-| `rtk-hook` | 142217 | 19738 | 122479 | 86.1% | `221/221` |
+| `tke` | 141074 | 19744 | 121330 | 86.0% | `218/218` |
+| `rtk-hook` | 142217 | 19743 | 122474 | 86.1% | `221/221` |
 
 Task-mode comparison for Claude-oriented stable synthetic traces:
 
@@ -230,8 +230,8 @@ Accuracy and compression scorecard:
 
 | Scope | Path | Cases | Accuracy | Compression rate | Semantic retention | Token outcome |
 | --- | --- | --- | --- | --- | --- | --- |
-| `Claude synthetic` | `tke` | 17 | `n/a` | 86.0% | `218/218` | 121335 |
-| `Claude synthetic` | `rtk-hook` | 17 | `n/a` | 86.1% | `221/221` | 122479 |
+| `Claude synthetic` | `tke` | 17 | `n/a` | 86.0% | `218/218` | 121330 |
+| `Claude synthetic` | `rtk-hook` | 17 | `n/a` | 86.1% | `221/221` | 122474 |
 | `codex` | `rtk-codex-rules` | 2 | 50.0% | `n/a` | `pass=1 fail=1 gateway=0 ungraded=0` | 11 |
 | `claude` | `tke` | 3 | 33.3% | `n/a` | `pass=1 fail=2 gateway=0 ungraded=0` | 5984 |
 

@@ -8267,3 +8267,419 @@ fn log_summary_includes_progress_count() {
     assert_eq!(summary.warn, 1, "should count 1 warning");
     assert_eq!(summary.fail, 1, "should count 1 failure");
 }
+
+#[test]
+fn log_summary_extracts_build_crates_and_elapsed() {
+    let lines = vec![
+        "   Compiling serde v1.0.0",
+        "   Compiling tokio v1.28.0",
+        "   Compiling hyper v0.14.27",
+        "   Compiling reqwest v0.11.18",
+        "   Compiling my-app v0.1.0 (/home/user/my-app)",
+        "warning: unused variable `x` in src/main.rs",
+        "    Finished release [optimized] in 42.5s",
+    ];
+    let summary = crate::log_profile::collect_log_summary(&lines);
+    assert_eq!(summary.crates, 5, "should count 5 compiling lines");
+    assert_eq!(
+        summary.elapsed,
+        Some("42.5s".to_owned()),
+        "should extract elapsed time"
+    );
+    assert_eq!(summary.warn, 1);
+    assert_eq!(
+        summary.progress, 5,
+        "compiling lines are also progress lines"
+    );
+}
+
+#[test]
+fn log_summary_handles_minutes_elapsed() {
+    let lines = vec![
+        "   Compiling libc v0.2.147",
+        "   Compiling serde_derive v1.0.188",
+        "    Finished dev [unoptimized] in 2m 15s",
+    ];
+    let summary = crate::log_profile::collect_log_summary(&lines);
+    assert_eq!(summary.crates, 2);
+    assert_eq!(summary.elapsed, Some("2m".to_owned()));
+}
+
+#[test]
+fn log_summary_no_build_info() {
+    let lines = vec!["Hello world", "Some output line", "Another line"];
+    let summary = crate::log_profile::collect_log_summary(&lines);
+    assert_eq!(summary.crates, 0);
+    assert_eq!(summary.elapsed, None);
+    assert_eq!(summary.progress, 0);
+    assert_eq!(summary.warn, 0);
+    assert_eq!(summary.fail, 0);
+}
+
+#[test]
+fn log_profile_lower_threshold_triggers_on_small_build_output() {
+    // Build output with 10 lines should trigger with the new lower threshold (8 lines OR 256 bytes)
+    let lines: Vec<String> = (0..10)
+        .map(|i| format!("   Compiling crate-{i} v0.1.0"))
+        .collect();
+    let text = lines.join("\n");
+    let result = normalize_text(
+        "cargo",
+        &["build".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &Config::default(),
+    )
+    .expect("no error");
+    let value: serde_json::Value = serde_json::from_str(&result).expect("json");
+    assert_eq!(value["p"], "log", "should select log profile");
+    assert_eq!(value["t"], true, "should be forced trim");
+    assert!(value["bd"].is_object(), "should have build summary");
+}
+
+#[test]
+fn file_profile_detects_typescript_outline() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    cfg.max_body_lines = 1;
+    let text = [
+        "import React from 'react';",
+        "import { useState } from 'react';",
+        "",
+        "interface UserProps {",
+        "  name: string;",
+        "  age: number;",
+        "}",
+        "",
+        "export function UserCard({ name, age }: UserProps) {",
+        "  const [visible, setVisible] = useState(true);",
+        "  return <div>{name}</div>;",
+        "}",
+        "",
+        "export default function App() {",
+        "  return <UserCard name='test' age={25} />;",
+        "}",
+    ]
+    .join("\n");
+    let json = normalize_text(
+        "cat",
+        &["src/App.tsx".to_owned()],
+        "stdout",
+        CommandKind::File,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("json");
+    let matches = value["m"].as_array().expect("matches");
+    let has_import = matches.iter().any(|c| {
+        c["l"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l.as_str().unwrap().contains("import"))
+    });
+    let has_interface = matches.iter().any(|c| {
+        c["l"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l.as_str().unwrap().contains("interface"))
+    });
+    let has_export_fn = matches.iter().any(|c| {
+        c["l"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l.as_str().unwrap().contains("export function"))
+    });
+    assert!(has_import, "should detect import statements as outline");
+    assert!(has_interface, "should detect interface as outline");
+    assert!(
+        has_export_fn,
+        "should detect export function as code boundary"
+    );
+}
+
+#[test]
+fn file_profile_detects_python_outline() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    cfg.max_body_lines = 1;
+    let text = [
+        "import os",
+        "from pathlib import Path",
+        "",
+        "class Config:",
+        "    def __init__(self, path):",
+        "        self.path = path",
+        "",
+        "async def fetch_data(url):",
+        "    return await request(url)",
+        "",
+        "def main():",
+        "    config = Config('/tmp/config')",
+        "    print(config.path)",
+    ]
+    .join("\n");
+    let json = normalize_text(
+        "cat",
+        &["app.py".to_owned()],
+        "stdout",
+        CommandKind::File,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("json");
+    let matches = value["m"].as_array().expect("matches");
+    let has_import = matches.iter().any(|c| {
+        c["l"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l.as_str().unwrap().contains("import"))
+    });
+    let has_class = matches.iter().any(|c| {
+        c["l"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l.as_str().unwrap().contains("class"))
+    });
+    let has_async_def = matches.iter().any(|c| {
+        c["l"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l.as_str().unwrap().contains("async def"))
+    });
+    assert!(has_import, "should detect import as outline");
+    assert!(has_class, "should detect class as code boundary");
+    assert!(has_async_def, "should detect async def as code boundary");
+}
+
+#[test]
+fn file_profile_detects_go_outline() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    cfg.max_body_lines = 1;
+    let text = [
+        "package main",
+        "",
+        "import \"fmt\"",
+        "",
+        "func main() {",
+        "    fmt.Println(\"hello\")",
+        "}",
+        "",
+        "func process(data []byte) error {",
+        "    return nil",
+        "}",
+    ]
+    .join("\n");
+    let json = normalize_text(
+        "cat",
+        &["main.go".to_owned()],
+        "stdout",
+        CommandKind::File,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("json");
+    let matches = value["m"].as_array().expect("matches");
+    let has_import = matches.iter().any(|c| {
+        c["l"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l.as_str().unwrap().contains("import"))
+    });
+    let has_func = matches.iter().any(|c| {
+        c["l"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l.as_str().unwrap().contains("func"))
+    });
+    assert!(has_import, "should detect import as outline");
+    assert!(has_func, "should detect func as code boundary");
+}
+
+#[test]
+fn file_profile_detects_java_outline() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    cfg.max_body_lines = 1;
+    let text = [
+        "package com.example;",
+        "",
+        "import java.util.List;",
+        "",
+        "public class UserService {",
+        "    public static User findById(long id) {",
+        "        return null;",
+        "    }",
+        "",
+        "    private void validate(String input) {",
+        "        // validation logic",
+        "    }",
+        "}",
+    ]
+    .join("\n");
+    let json = normalize_text(
+        "cat",
+        &["UserService.java".to_owned()],
+        "stdout",
+        CommandKind::File,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("json");
+    let matches = value["m"].as_array().expect("matches");
+    let has_import = matches.iter().any(|c| {
+        c["l"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l.as_str().unwrap().contains("import"))
+    });
+    let has_class = matches.iter().any(|c| {
+        c["l"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l.as_str().unwrap().contains("class"))
+    });
+    let has_public_static = matches.iter().any(|c| {
+        c["l"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|l| l.as_str().unwrap().contains("public static"))
+    });
+    assert!(has_import, "should detect import as outline");
+    assert!(has_class, "should detect class as code boundary");
+    assert!(
+        has_public_static,
+        "should detect public static method as code boundary"
+    );
+}
+
+#[test]
+fn log_profile_catches_linking_and_checking_progress() {
+    let lines = vec![
+        "   Checking libc v0.2.147",
+        "   Checking serde v1.0.188",
+        "   Linking my-app",
+        "   Running unittests src/lib.rs",
+    ];
+    for line in &lines {
+        assert!(
+            has_log_progress(line),
+            "line should be detected as progress: {line}"
+        );
+    }
+}
+
+#[test]
+fn real_world_npm_build_output_compresses() {
+    let mut lines = Vec::new();
+    for i in 0..30 {
+        lines.push(format!(
+            "Compiling module-{i} v1.0.0 (/src/modules/module-{i})"
+        ));
+    }
+    lines.push("Creating optimized production build...".to_owned());
+    lines.push("File sizes after gzip:".to_owned());
+    lines.push("  45.2 kB  build/static/js/main.abc123.js".to_owned());
+    lines.push("  1.2 kB   build/static/css/main.def456.css".to_owned());
+    lines.push("The build folder is ready to be deployed.".to_owned());
+    let text = lines.join("\n");
+    let result = normalize_text(
+        "npm",
+        &["run".to_owned(), "build".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &Config::default(),
+    )
+    .expect("no error");
+    let value: serde_json::Value = serde_json::from_str(&result).expect("json");
+    assert_eq!(
+        value["p"], "log",
+        "npm build output should select log profile"
+    );
+    assert_eq!(value["t"], true, "npm build output should be forced");
+}
+
+#[test]
+fn real_world_docker_build_output_compresses() {
+    let mut lines = Vec::new();
+    lines.push("Step 1/10 : FROM rust:1.70 as builder".to_owned());
+    lines.push("    1234567890ab".to_owned());
+    for i in 0..20 {
+        lines.push(format!("Step {}/{} : RUN cargo build --release", i + 2, 21));
+        lines.push("    Running in abcdef123456".to_owned());
+        lines.push(format!("   Compiling crate-{i} v0.1.0 (/src/crate-{i})"));
+        lines.push("    987654321fed".to_owned());
+    }
+    lines.push("Successfully built 1234567890ab".to_owned());
+    lines.push("Successfully tagged myapp:latest".to_owned());
+    let text = lines.join("\n");
+    let result = normalize_text(
+        "docker",
+        &["build".to_owned(), ".".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &Config::default(),
+    )
+    .expect("no error");
+    let value: serde_json::Value = serde_json::from_str(&result).expect("json");
+    assert_eq!(
+        value["p"], "log",
+        "docker build output should select log profile"
+    );
+    assert_eq!(value["t"], true, "docker build output should be forced");
+    assert!(
+        value["bd"].is_object(),
+        "docker build output should have build summary"
+    );
+}
+
+#[test]
+fn real_world_cargo_test_output_compresses() {
+    let mut lines = Vec::new();
+    lines.push("   Compiling my-app v0.1.0 (/home/user/my-app)".to_owned());
+    for i in 0..20 {
+        lines.push(format!("   Compiling dep-{i} v1.0.0 (/home/user/dep-{i})"));
+    }
+    lines.push("    Finished test [unoptimized + debuginfo] in 25.3s".to_owned());
+    lines.push("     Running unittests src/lib.rs (target/debug/deps/my_app-abc123)".to_owned());
+    for i in 0..25 {
+        lines.push(format!("test tests::test_{i} ... ok"));
+    }
+    lines.push(
+        "test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out".to_owned(),
+    );
+    let text = lines.join("\n");
+    let result = normalize_text(
+        "cargo",
+        &["test".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &Config::default(),
+    )
+    .expect("no error");
+    let value: serde_json::Value = serde_json::from_str(&result).expect("json");
+    assert_eq!(
+        value["p"], "log",
+        "cargo test output should select log profile"
+    );
+    assert_eq!(value["t"], true, "cargo test output should be forced");
+}

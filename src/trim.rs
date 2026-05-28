@@ -1097,7 +1097,7 @@ pub(crate) fn default_json_prefix() -> String {
     "__TKE__".to_owned()
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CommandKind {
     File,
     Search,
@@ -1190,6 +1190,11 @@ pub(crate) fn select_profile(
     }
     if looks_like_stacktrace(lines) {
         return TrimProfile::Stacktrace;
+    }
+    // For file reads, skip table/pathlist heuristics — code indentation
+    // triggers false positives on table detection.
+    if kind == CommandKind::File {
+        return TrimProfile::File;
     }
     if !is_python_command && looks_like_path_list(lines) {
         return TrimProfile::PathList;
@@ -1303,8 +1308,8 @@ pub(crate) fn should_force_trim(
                 || total_lines >= usize::min(config.max_body_lines, 4)
         }
         TrimProfile::Log => {
-            total_bytes >= usize::min(config.min_trim_bytes, 512)
-                || total_lines >= usize::min(config.max_body_lines, 16)
+            total_bytes >= usize::min(config.min_trim_bytes, 256)
+                || total_lines >= usize::min(config.max_body_lines, 8)
         }
         TrimProfile::Generic => {
             total_lines >= 3
@@ -1511,7 +1516,19 @@ fn classify_log_line(line: &str) -> LogLineClass {
         || has_ascii_token(&tokens, "created")
         || has_ascii_token(&tokens, "updated")
         || has_ascii_token(&tokens, "removed")
-        || has_ascii_token(&tokens, "added");
+        || has_ascii_token(&tokens, "added")
+        || has_ascii_token(&tokens, "linking")
+        || has_ascii_token(&tokens, "checking")
+        || has_ascii_token(&tokens, "running")
+        || has_ascii_token(&tokens, "unpacking")
+        || has_ascii_token(&tokens, "converting")
+        || has_ascii_token(&tokens, "copying")
+        || has_ascii_token(&tokens, "extracting")
+        || has_ascii_token(&tokens, "loading")
+        || has_ascii_token(&tokens, "processing")
+        || has_ascii_token(&tokens, "preparing")
+        || has_ascii_token(&tokens, "resolving")
+        || has_ascii_token(&tokens, "updating");
     LogLineClass {
         warning,
         failure,
@@ -1789,6 +1806,10 @@ pub(crate) struct LogSummary {
     pub(crate) fw: Option<String>,
     #[serde(skip_serializing_if = "is_zero")]
     pub(crate) progress: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub(crate) crates: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) elapsed: Option<String>,
 }
 
 #[derive(Serialize)]

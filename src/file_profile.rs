@@ -111,11 +111,26 @@ fn is_outline_line(line: &str) -> bool {
         || has_token_prefix(&tokens, &["trait"])
         || has_token_prefix(&tokens, &["pub", "trait"])
         || has_token_prefix(&tokens, &["impl"])
+        || has_token_prefix(&tokens, &["extern"])
+        || has_token_prefix(&tokens, &["static"])
+        || has_token_prefix(&tokens, &["pub", "static"])
+        || has_token_prefix(&tokens, &["let"])
+        || has_token_prefix(&tokens, &["var"])
+        || has_token_prefix(&tokens, &["import"])
+        || has_token_prefix(&tokens, &["from"])
+        || has_token_prefix(&tokens, &["require"])
+        || has_token_prefix(&tokens, &["interface"])
+        || has_token_prefix(&tokens, &["export"])
+        || has_token_prefix(&tokens, &["public"])
+        || has_token_prefix(&tokens, &["private"])
+        || has_token_prefix(&tokens, &["protected"])
+        || line.starts_with('@')
         || is_code_boundary(line)
 }
 
 fn is_code_boundary(line: &str) -> bool {
     let tokens = ascii_word_tokens(line);
+    // Rust
     has_token_prefix(&tokens, &["fn"])
         || has_token_prefix(&tokens, &["pub", "fn"])
         || has_token_prefix(&tokens, &["pub", "crate", "fn"])
@@ -128,9 +143,27 @@ fn is_code_boundary(line: &str) -> bool {
         || has_token_prefix(&tokens, &["enum"])
         || has_token_prefix(&tokens, &["pub", "enum"])
         || has_token_prefix(&tokens, &["pub", "crate", "enum"])
+        // Python
         || has_token_prefix(&tokens, &["class"])
         || has_token_prefix(&tokens, &["def"])
+        || has_token_prefix(&tokens, &["async", "def"])
         || has_token_prefix(&tokens, &["function"])
+        // Go
+        || has_token_prefix(&tokens, &["func"])
+        // Java/C# methods
+        || has_token_prefix(&tokens, &["public", "static"])
+        || has_token_prefix(&tokens, &["private", "static"])
+        || has_token_prefix(&tokens, &["protected", "static"])
+        || has_token_prefix(&tokens, &["public", "abstract"])
+        || has_token_prefix(&tokens, &["private", "abstract"])
+        || has_token_prefix(&tokens, &["protected", "abstract"])
+        // JavaScript/TypeScript
+        || has_token_prefix(&tokens, &["export", "function"])
+        || has_token_prefix(&tokens, &["export", "async", "function"])
+        || has_token_prefix(&tokens, &["export", "class"])
+        || has_token_prefix(&tokens, &["export", "default", "function"])
+        || has_token_prefix(&tokens, &["export", "default", "class"])
+        || has_token_prefix(&tokens, &["export", "default", "async", "function"])
 }
 
 fn find_block_end(lines: &[&str], start: usize) -> usize {

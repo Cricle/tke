@@ -63,6 +63,8 @@ pub(crate) fn collect_log_summary(lines: &[&str]) -> LogSummary {
     let mut fail = 0usize;
     let mut warn = 0usize;
     let mut prog = 0usize;
+    let mut crates = 0usize;
+    let mut elapsed = None;
     let mut first_fail = None;
     let mut first_warn = None;
     for line in lines {
@@ -81,6 +83,13 @@ pub(crate) fn collect_log_summary(lines: &[&str]) -> LogSummary {
         if has_log_progress(line) {
             prog += 1;
         }
+        let trimmed = line.trim();
+        if is_compiling_line(trimmed) {
+            crates += 1;
+        }
+        if elapsed.is_none() {
+            elapsed = extract_elapsed_time(trimmed);
+        }
     }
     LogSummary {
         fail,
@@ -88,7 +97,27 @@ pub(crate) fn collect_log_summary(lines: &[&str]) -> LogSummary {
         ff: first_fail,
         fw: first_warn,
         progress: prog,
+        crates,
+        elapsed,
     }
+}
+
+fn is_compiling_line(line: &str) -> bool {
+    let tokens = crate::trim::ascii_word_tokens(line);
+    crate::trim::has_ascii_token(&tokens, "compiling")
+}
+
+fn extract_elapsed_time(line: &str) -> Option<String> {
+    if !line.contains("Finished") && !line.contains("finished") {
+        return None;
+    }
+    let tokens: Vec<&str> = line.split_whitespace().collect();
+    for (i, tok) in tokens.iter().enumerate() {
+        if (tok.ends_with('s') || tok.ends_with('m')) && i > 0 && tokens[i - 1].contains("in") {
+            return Some((*tok).to_owned());
+        }
+    }
+    None
 }
 
 fn push_fold_chunk(
