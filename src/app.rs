@@ -341,9 +341,6 @@ fn normalized_path_components(path: &Path) -> Vec<String> {
 #[derive(Debug)]
 pub enum Dispatch {
     Help,
-    Install {
-        bin_dir: Option<PathBuf>,
-    },
     Activate {
         agents: Vec<String>,
         shim_dir: Option<PathBuf>,
@@ -432,7 +429,6 @@ pub fn parse_dispatch(argv0: &str, args: Vec<String>) -> Result<Dispatch, AppErr
     }
     match sub {
         None | Some("-h") | Some("--help") | Some("help") => Ok(Dispatch::Help),
-        Some("install") => parse_install(args),
         Some("activate") | Some("env") => parse_activate(args),
         Some("run") => parse_run(args),
         Some("tty") => parse_tty(args),
@@ -457,7 +453,6 @@ pub fn usage() -> String {
         "",
         "Usage:",
         "  tke <agent> [args ...]",
-        "  tke install [--bin-dir PATH]",
         "  tke activate [--shim-dir PATH] [--shell SHELL] [agent ...]",
         "  tke env [--shim-dir PATH] [--shell SHELL] [agent ...]",
         "  tke run [--shim-dir PATH] <agent> [args ...]",
@@ -471,7 +466,6 @@ pub fn usage() -> String {
         "  tke benchmark-commands [--check]",
         "",
         "Examples:",
-        "  tke install",
         "  tke codex",
         "  tk codex",
         "  tke codex exec --json 'Reply with exactly OK.'",
@@ -699,28 +693,6 @@ fn parse_activate(args: Vec<String>) -> Result<Dispatch, AppError> {
         shim_dir,
         shell,
     })
-}
-
-fn parse_install(args: Vec<String>) -> Result<Dispatch, AppError> {
-    let mut bin_dir = None;
-    let mut iter = args.into_iter().skip(2);
-    while let Some(arg) = iter.next() {
-        match arg.as_str() {
-            "--bin-dir" => {
-                let value = iter.next().ok_or_else(|| {
-                    AppError::Usage(format!("missing value for --bin-dir\n\n{}", usage()))
-                })?;
-                bin_dir = Some(PathBuf::from(value));
-            }
-            other => {
-                return Err(AppError::Usage(format!(
-                    "unknown install arg `{other}`\n\n{}",
-                    usage()
-                )));
-            }
-        }
-    }
-    Ok(Dispatch::Install { bin_dir })
 }
 
 fn parse_run(args: Vec<String>) -> Result<Dispatch, AppError> {

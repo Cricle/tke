@@ -2,7 +2,7 @@ use std::env;
 use std::process;
 use tke::{
     AppError, Config, Dispatch, benchmark_commands, capture_interactive, compare_e2e_command,
-    compare_rollout, install_self, parse_dispatch, print_activate, print_deactivate, run_shim,
+    compare_rollout, parse_dispatch, print_activate, print_deactivate, run_shim,
     run_tty_wrapped, run_wrapped, usage, usage_stats,
 };
 
@@ -24,7 +24,6 @@ fn run() -> Result<(), AppError> {
             println!("{}", usage());
             Ok(())
         }
-        Dispatch::Install { bin_dir } => install_self(bin_dir),
         Dispatch::Activate {
             agents,
             shim_dir,

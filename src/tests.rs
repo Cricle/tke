@@ -3052,26 +3052,6 @@ fn parse_activate_accepts_shell() {
 }
 
 #[test]
-fn parse_install_dispatch() {
-    let dispatch = parse_dispatch(
-        "tke",
-        vec![
-            "tke".to_owned(),
-            "install".to_owned(),
-            "--bin-dir".to_owned(),
-            "/tmp/tke-bin".to_owned(),
-        ],
-    )
-    .expect("dispatch");
-    match dispatch {
-        Dispatch::Install { bin_dir } => {
-            assert_eq!(bin_dir, Some(PathBuf::from("/tmp/tke-bin")));
-        }
-        other => panic!("unexpected dispatch: {other:?}"),
-    }
-}
-
-#[test]
 fn parse_run_dispatch() {
     let dispatch = parse_dispatch(
         "tke",
