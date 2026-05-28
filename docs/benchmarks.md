@@ -15,14 +15,14 @@ Generated from:
 | `cat_code` | file | 743 | 166 | 577 | 77.7% |
 | `sed_code` | file | 743 | 171 | 572 | 77.0% |
 | `bat_code` | file | 743 | 173 | 570 | 76.7% |
-| `nl_code` | file | 1058 | 40 | 1018 | 96.2% |
+| `nl_code` | file | 1058 | 195 | 863 | 81.6% |
 | `rg_code` | search | 2257 | 235 | 2022 | 89.6% |
 | `grep_code` | search | 2257 | 239 | 2018 | 89.4% |
 | `find_paths` | pathlist | 8151 | 93 | 8058 | 98.9% |
 | `fd_paths` | pathlist | 8151 | 93 | 8058 | 98.9% |
 | `tree_paths` | pathlist | 3926 | 93 | 3833 | 97.6% |
 | `git_diff` | diff | 3691 | 623 | 3068 | 83.1% |
-| `cargo_build` | log | 884 | 202 | 682 | 77.1% |
+| `cargo_build` | log | 884 | 205 | 679 | 76.8% |
 | `pytest_run` | log | 453 | 189 | 264 | 58.3% |
 | `npm_test` | log | 863 | 182 | 681 | 78.9% |
 | `dotnet_test` | log | 800 | 152 | 648 | 81.0% |
@@ -39,7 +39,7 @@ Profile averages:
 | Profile | Cases | Average token savings |
 | --- | --- | --- |
 | diff | 1 | 83.1% |
-| file | 12 | 78.9% |
+| file | 12 | 77.7% |
 | generic | 1 | 0.0% |
 | json | 4 | 98.7% |
 | log | 27 | 82.6% |
@@ -51,9 +51,9 @@ Built-in rollout/task benchmarks:
 
 | Task | Mode | Raw tokens | Rewritten tokens | Tokens saved | Savings |
 | --- | --- | --- | --- | --- | --- |
-| `codex_api_trace_rollout_savings` | api | 5389 | 532 | 4857 | 90.1% |
+| `codex_api_trace_rollout_savings` | api | 5389 | 670 | 4719 | 87.6% |
 | `codex_api_trace_default_tool_coverage` | api | 4695 | 829 | 3866 | 82.3% |
-| `codex_interactive_trace_selected_search_stage` | interactive | 2913 | 640 | 2273 | 78.0% |
+| `codex_interactive_trace_selected_search_stage` | interactive | 2913 | 616 | 2297 | 78.9% |
 | `codex_interactive_trace_selected_find_stage` | interactive | 8125 | 93 | 8032 | 98.9% |
 | `codex_interactive_trace_selected_build_stage` | interactive | 1102 | 193 | 909 | 82.5% |
 | `claude_bash_trace_selected_search_stage` | api | 2380 | 545 | 1835 | 77.1% |
@@ -66,11 +66,11 @@ Built-in rollout/task benchmarks:
 | `claude_bash_trace_complex_stacktrace_diff_task` | api | 6505 | 1391 | 5114 | 78.6% |
 | `claude_bash_trace_complex_root_cause_task` | api | 10897 | 1491 | 9406 | 86.3% |
 | `claude_bash_trace_answer_consistency_task` | api | 10414 | 1342 | 9072 | 87.1% |
-| `claude_bash_trace_candidate_root_cause_task` | api | 11248 | 1644 | 9604 | 85.4% |
-| `claude_bash_trace_misleading_signal_task` | api | 10463 | 1636 | 8827 | 84.4% |
-| `claude_bash_trace_cross_file_causality_task` | api | 14605 | 1699 | 12906 | 88.4% |
-| `claude_bash_trace_negative_evidence_task` | api | 6834 | 1307 | 5527 | 80.9% |
-| `claude_bash_trace_temporal_causality_task` | api | 13830 | 1705 | 12125 | 87.7% |
+| `claude_bash_trace_candidate_root_cause_task` | api | 11248 | 1645 | 9603 | 85.4% |
+| `claude_bash_trace_misleading_signal_task` | api | 10463 | 1637 | 8826 | 84.4% |
+| `claude_bash_trace_cross_file_causality_task` | api | 14605 | 1700 | 12905 | 88.4% |
+| `claude_bash_trace_negative_evidence_task` | api | 6834 | 1308 | 5526 | 80.9% |
+| `claude_bash_trace_temporal_causality_task` | api | 13830 | 1706 | 12124 | 87.7% |
 | `claude_bash_trace_symbol_collision_task` | api | 5515 | 914 | 4601 | 83.4% |
 | `claude_bash_trace_reversal_task` | api | 10174 | 1702 | 8472 | 83.3% |
 | `claude_rtk_hook_trace_selected_find_stage` | api | 8125 | 93 | 8032 | 98.9% |
@@ -83,11 +83,11 @@ Built-in rollout/task benchmarks:
 | `claude_rtk_hook_trace_complex_stacktrace_diff_task` | api | 6592 | 1407 | 5185 | 78.7% |
 | `claude_rtk_hook_trace_complex_root_cause_task` | api | 11014 | 1503 | 9511 | 86.4% |
 | `claude_rtk_hook_trace_answer_consistency_task` | api | 10531 | 1354 | 9177 | 87.1% |
-| `claude_rtk_hook_trace_candidate_root_cause_task` | api | 11382 | 1651 | 9731 | 85.5% |
-| `claude_rtk_hook_trace_misleading_signal_task` | api | 10598 | 1645 | 8953 | 84.5% |
-| `claude_rtk_hook_trace_cross_file_causality_task` | api | 14741 | 1709 | 13032 | 88.4% |
-| `claude_rtk_hook_trace_negative_evidence_task` | api | 6951 | 1319 | 5632 | 81.0% |
-| `claude_rtk_hook_trace_temporal_causality_task` | api | 13947 | 1717 | 12230 | 87.7% |
+| `claude_rtk_hook_trace_candidate_root_cause_task` | api | 11382 | 1652 | 9730 | 85.5% |
+| `claude_rtk_hook_trace_misleading_signal_task` | api | 10598 | 1646 | 8952 | 84.5% |
+| `claude_rtk_hook_trace_cross_file_causality_task` | api | 14741 | 1710 | 13031 | 88.4% |
+| `claude_rtk_hook_trace_negative_evidence_task` | api | 6951 | 1320 | 5631 | 81.0% |
+| `claude_rtk_hook_trace_temporal_causality_task` | api | 13947 | 1718 | 12229 | 87.7% |
 | `claude_rtk_hook_trace_symbol_collision_task` | api | 5631 | 924 | 4707 | 83.6% |
 | `claude_rtk_hook_trace_reversal_task` | api | 10430 | 1726 | 8704 | 83.5% |
 
@@ -97,8 +97,8 @@ This section is generated from the current benchmark and E2E artifacts. The clai
 
 | Evidence area | `tke` result | `rtk` result in this repo | Why this matters |
 | --- | --- | --- | --- |
-| Built-in local compression benchmarks | `65/34` cases, `110033` tokens saved, `91.9%` | No equivalent repo-local tool-output benchmark runner in this repo | `tke` can be measured locally and repeatedly without depending on agent compliance |
-| Built-in rollout/task traces | `39` traces, `263751` tokens saved, `86.3%` | RTK participates only through the fairness/synthetic harness subset wired here | `tke` has broader measured coverage inside the repo |
+| Built-in local compression benchmarks | `65/34` cases, `109872` tokens saved, `91.8%` | No equivalent repo-local tool-output benchmark runner in this repo | `tke` can be measured locally and repeatedly without depending on agent compliance |
+| Built-in rollout/task traces | `39` traces, `263627` tokens saved, `86.3%` | RTK participates only through the fairness/synthetic harness subset wired here | `tke` has broader measured coverage inside the repo |
 | Codex real E2E | `4/4` pass, `6257` tool tokens saved | `1/2` pass, `11` token delta | Current real Codex evidence favors `tke` clearly |
 | Structured output surface | `pathlist`, `search`, `diff`, `log`, `table`, and `file` profiles emit inspectable `__TKE__{...}` summaries | No equivalent repo-local structured envelope | `tke` gives a concrete artifact that tooling can compare and audit |
 | Claude stable synthetic traces | `121330` tokens saved at `86.0%` | `122474` tokens saved at `86.1%` | `rtk-hook` currently leads on both absolute token savings and ratio in the stable synthetic Claude traces, while `tke` remains competitive on fragment retention |
@@ -107,17 +107,17 @@ Current built-in totals:
 
 | Scope | Cases | Tokens saved | Savings ratio |
 | --- | --- | --- | --- |
-| Default compress benchmarks | 65 | 110033 | 91.9% |
-| Built-in rollout/task traces | 39 | 263751 | 86.3% |
+| Default compress benchmarks | 65 | 109872 | 91.8% |
+| Built-in rollout/task traces | 39 | 263627 | 86.3% |
 
 Per-profile compression totals:
 
 | Profile | Cases | Tokens saved | Savings ratio |
 | --- | --- | --- | --- |
 | `diff` | 1 | 3068 | 83.1% |
-| `file` | 12 | 7336 | 79.5% |
+| `file` | 12 | 7181 | 77.8% |
 | `json` | 4 | 26597 | 98.7% |
-| `log` | 27 | 21674 | 83.9% |
+| `log` | 27 | 21668 | 83.9% |
 | `pathlist` | 8 | 42154 | 98.4% |
 | `search` | 3 | 6058 | 89.5% |
 | `table` | 10 | 3146 | 71.6% |
@@ -143,11 +143,11 @@ Task-mode comparison for Claude-oriented stable synthetic traces:
 | complex/stacktrace-diff | `5114` (78.6%) | `5185` (78.7%) | `12/12` | `12/12` |
 | complex/root-cause | `9406` (86.3%) | `9511` (86.4%) | `13/13` | `13/13` |
 | answer-consistency | `9072` (87.1%) | `9177` (87.1%) | `15/15` | `15/15` |
-| candidate-root-cause | `9604` (85.4%) | `9731` (85.5%) | `20/20` | `20/20` |
-| misleading-signal | `8827` (84.4%) | `8953` (84.5%) | `20/20` | `20/20` |
-| cross-file-causality | `12906` (88.4%) | `13032` (88.4%) | `19/19` | `19/19` |
-| negative-evidence | `5527` (80.9%) | `5632` (81.0%) | `17/17` | `17/17` |
-| temporal-causality | `12125` (87.7%) | `12230` (87.7%) | `19/19` | `19/19` |
+| candidate-root-cause | `9603` (85.4%) | `9730` (85.5%) | `20/20` | `20/20` |
+| misleading-signal | `8826` (84.4%) | `8952` (84.5%) | `20/20` | `20/20` |
+| cross-file-causality | `12905` (88.4%) | `13031` (88.4%) | `19/19` | `19/19` |
+| negative-evidence | `5526` (80.9%) | `5631` (81.0%) | `17/17` | `17/17` |
+| temporal-causality | `12124` (87.7%) | `12229` (87.7%) | `19/19` | `19/19` |
 | symbol-collision | `4601` (83.4%) | `4707` (83.6%) | `15/15` | `15/15` |
 | reversal | `8472` (83.3%) | `8704` (83.5%) | `19/19` | `19/19` |
 
