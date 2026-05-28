@@ -1,8 +1,8 @@
 use crate::app::{AppError, Config};
+use crate::table_profile::looks_like_table;
 pub(crate) use crate::table_profile::{
     TableSummary, collect_table_kept_ranges, collect_table_summary,
 };
-use crate::table_profile::looks_like_table;
 use serde::Serialize;
 use std::collections::HashSet;
 use std::env;
@@ -123,17 +123,15 @@ fn collect_diff_chunks(lines: &[&str], terms: &[String], limits: ProfileLimits) 
                 }
                 // Keep lines that are part of the diff (context, additions, deletions)
                 let chars: Vec<char> = next_trimmed.chars().collect();
-                if chars.is_empty()
-                    || chars[0] == ' '
-                    || chars[0] == '+'
-                    || chars[0] == '-'
-                {
+                if chars.is_empty() || chars[0] == ' ' || chars[0] == '+' || chars[0] == '-' {
                     end = j + 1;
                 }
             }
             // Limit hunk size to avoid keeping too much
             end = usize::min(end, start + 20);
-            if push_chunk(&mut out, &mut used, lines, start, end, "hunk") && out.len() >= limits.max_matches {
+            if push_chunk(&mut out, &mut used, lines, start, end, "hunk")
+                && out.len() >= limits.max_matches
+            {
                 break;
             }
         }

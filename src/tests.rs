@@ -7967,8 +7967,8 @@ fn find_latest_claude_rollout_after_resolves_session_json_to_jsonl() {
     let jsonl = projects_dir.join("resolve-uuid-abcd.jsonl");
     fs::write(&jsonl, "{\"type\":\"message\"}\n").expect("write jsonl");
 
-    let result = crate::rollout_io::test_find_latest_claude_rollout_after(&sessions_dir, 0)
-        .expect("find");
+    let result =
+        crate::rollout_io::test_find_latest_claude_rollout_after(&sessions_dir, 0).expect("find");
     assert!(result.is_some());
     assert_eq!(result.unwrap(), jsonl);
 }
@@ -8000,7 +8000,10 @@ fn find_latest_claude_rollout_after_filters_by_started_at() {
 
     let result = crate::rollout_io::test_find_latest_claude_rollout_after(&sessions_dir, 20000)
         .expect("find");
-    assert!(result.is_none(), "should filter out sessions before started_at");
+    assert!(
+        result.is_none(),
+        "should filter out sessions before started_at"
+    );
 }
 
 #[test]

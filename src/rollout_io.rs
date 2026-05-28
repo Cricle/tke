@@ -246,9 +246,7 @@ impl UsageStatsFilter {
     fn value(&self) -> Option<String> {
         match self {
             Self::None => None,
-            Self::Profile(value) | Self::Command(value) | Self::Agent(value) => {
-                Some(value.clone())
-            }
+            Self::Profile(value) | Self::Command(value) | Self::Agent(value) => Some(value.clone()),
         }
     }
 }
@@ -1273,10 +1271,7 @@ fn find_latest_claude_rollout_after(
             Ok(v) => v,
             Err(_) => continue,
         };
-        let session_started = meta
-            .get("startedAt")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(0) as u128;
+        let session_started = meta.get("startedAt").and_then(|v| v.as_u64()).unwrap_or(0) as u128;
         if session_started + 5000 < started_at_ms {
             continue;
         }
@@ -1287,7 +1282,9 @@ fn find_latest_claude_rollout_after(
             continue;
         };
         let encoded = claude_encode_project_path(cwd);
-        let jsonl_path = projects_dir.join(&encoded).join(format!("{session_id}.jsonl"));
+        let jsonl_path = projects_dir
+            .join(&encoded)
+            .join(format!("{session_id}.jsonl"));
         if !jsonl_path.exists() {
             continue;
         }
@@ -1554,7 +1551,8 @@ fn detect_agent_from_path(source: &str) -> &'static str {
     let has_component = |name: &str| components.iter().any(|c| *c == name);
     if has_component(".codex") || has_component("codex") || normalized.contains("codex-") {
         "codex"
-    } else if has_component(".claude") || has_component("claude") || normalized.contains("claude-") {
+    } else if has_component(".claude") || has_component("claude") || normalized.contains("claude-")
+    {
         "claude"
     } else {
         "unknown"
