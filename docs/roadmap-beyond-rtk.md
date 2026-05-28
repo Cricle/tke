@@ -66,9 +66,9 @@ If the command output is the same, the compressed result should be the same.
 
 Every compression decision should be inspectable through local artifacts like:
 
-- `tke benchmark-commands`
-- `tke compare-rollout`
-- `tke compare-e2e`
+- `tke-bench benchmark-commands`
+- `tke-bench compare-rollout`
+- `tke-bench compare-e2e`
 
 ### Prefer fallback over cleverness
 

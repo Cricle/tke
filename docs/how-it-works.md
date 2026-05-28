@@ -180,9 +180,9 @@ Transcript adapter:
 `tke` also rewrites saved agent transcripts after the fact. This is what powers:
 
 - `tke capture-interactive`
-- `tke compare-rollout`
-- `tke compare-e2e`
-- `tke benchmark-commands`
+- `tke-bench compare-rollout`
+- `tke-bench compare-e2e`
+- `tke-bench benchmark-commands`
 
 The adapter reads JSONL event streams and rewrites nested tool output fields in place.
 

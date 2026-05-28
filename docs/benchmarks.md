@@ -7,7 +7,7 @@ This file is generated from the current local benchmark and E2E artifacts.
 Generated from:
 
 ```bash
-./target/release/tke benchmark-commands --check
+./target/release/tke-bench benchmark-commands --check
 ```
 
 | Command case | Profile | Raw tokens | Rewritten tokens | Tokens saved | Savings |
@@ -191,7 +191,7 @@ The current local comparison is broader than raw token totals alone. `tke` now e
 Generated from:
 
 ```bash
-./target/release/tke compare-e2e --agent codex \
+./target/release/tke-bench compare-e2e --agent codex \
   --source .tmp-codex-e2e \
   --source .tmp-codex-e2e-real \
   --source .tmp-codex-e2e-fair
@@ -254,7 +254,7 @@ Codex RTK variant rows:
 Generated from:
 
 ```bash
-./target/release/tke compare-e2e --agent claude \
+./target/release/tke-bench compare-e2e --agent claude \
   --source .tmp-claude-e2e \
   --source .tmp-claude-e2e-fair
 ```
