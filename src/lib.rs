@@ -12,6 +12,7 @@ mod rollout_io;
 mod rollout_stats;
 mod search_profile;
 mod shim;
+pub(crate) mod table_profile;
 mod trim;
 
 pub use app::{
