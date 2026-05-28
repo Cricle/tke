@@ -175,10 +175,16 @@ E2E comparison:
 | `rtk-hook` | 4 | 3 | 0 | 1 | `-1` total delta |
 | `tke` | 1 | 0 | 1 | 0 | `0` total delta |
 
+Fair comparison framework:
+
+- `tke` is now included in the fair comparison suite (`scripts/claude_fair_suite.sh`) alongside `raw` and `rtk-hook`.
+- All three modes (`raw`, `tke`, `rtk-hook`) are tested on the same prompts: `fairfind`, `fairrg`, `fairbuild`.
+- Live probes show tke passes all cases (5/5: livebuild, livediff, livefind, liverg, compatfind).
+
 Interpretation:
 
 - `tke` on Claude now achieves **27.5% savings** on live sessions, up from 6.8% after fixing malformed JSON handling in the transcript rewriter.
-- `rtk-hook` remains the more stable fairness path for E2E correctness tests.
+- `tke` is now included in the same fair comparison framework as `rtk-hook`, ensuring equal test coverage.
 - The live `tke` Claude path now delivers meaningful compression: `file` at 74.3%, `table` at 78.5%, `pathlist` at 55.1%.
 - In the current seventeen-scenario stable synthetic Claude-oriented traces, `tke` saves `121971` tokens total at `86.5%`, while `rtk-hook` saves `123066` at `86.5%`; both preserve all required semantic fragments in those controlled cases, and the complex scenario deltas are listed directly in [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:151).
 

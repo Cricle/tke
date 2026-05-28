@@ -501,11 +501,13 @@ codex_summary_by_mode = summary_map(codex_summary_rows)
 claude_summary_by_mode = summary_map(claude_summary_rows)
 fair_compare_rows = (
     collect_fair_compare_rows(codex, "codex", "rtk-codex-rules")
+    + collect_fair_compare_rows(claude, "claude", "tke")
     + collect_fair_compare_rows(claude, "claude", "rtk-hook")
 )
 fair_compare_summary_rows = collect_fair_compare_summary_rows(
     [
         ("codex", codex, "rtk-codex-rules"),
+        ("claude", claude, "tke"),
         ("claude", claude, "rtk-hook"),
     ]
 )

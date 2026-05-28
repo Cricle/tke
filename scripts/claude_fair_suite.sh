@@ -57,7 +57,7 @@ run_case() {
   return 0
 }
 
-for mode in raw rtk-hook; do
+for mode in raw tke rtk-hook; do
   run_case "$mode" fairfind "$PROMPT_DIR/fairfind.txt"
   run_case "$mode" fairrg "$PROMPT_DIR/fairrg.txt"
   run_case "$mode" fairbuild "$PROMPT_DIR/fairbuild.txt"
