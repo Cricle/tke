@@ -8,8 +8,13 @@ TKE_BIN="${TKE_BIN:-$LOCAL_TKE_BIN}"
 if [[ -x "$LOCAL_TKE_BIN" ]]; then
   TKE_BIN="$LOCAL_TKE_BIN"
 fi
+LOCAL_TKE_BENCH="$ROOT/target/release/tke-bench"
+TKE_BENCH="${TKE_BENCH:-$LOCAL_TKE_BENCH}"
+if [[ -x "$LOCAL_TKE_BENCH" ]]; then
+  TKE_BENCH="$LOCAL_TKE_BENCH"
+fi
 
-python3 - "$ROOT" "$TKE_BIN" <<'PY'
+python3 - "$ROOT" "$TKE_BIN" "$TKE_BENCH" <<'PY'
 import json
 import pathlib
 import subprocess
@@ -17,6 +22,7 @@ import sys
 
 root = pathlib.Path(sys.argv[1])
 tke_bin = pathlib.Path(sys.argv[2])
+tke_bench = pathlib.Path(sys.argv[3])
 
 
 def run_json(args):
@@ -30,7 +36,7 @@ def try_compare(agent, sources):
     present = [src for src in sources if (root / src).exists()]
     if not present:
         return None
-    args = [str(tke_bin), "compare-e2e", "--agent", agent]
+    args = [str(tke_bench), "compare-e2e", "--agent", agent]
     for src in present:
         args.extend(["--source", src])
     return run_json(args)
@@ -52,7 +58,7 @@ def load_attempts(agent_dirs):
     return [out[key] for key in sorted(out)]
 
 
-benchmark = run_json([str(tke_bin), "benchmark-commands"])
+benchmark = run_json([str(tke_bench), "benchmark-commands"])
 codex = try_compare(
     "codex",
     [".tmp-codex-e2e", ".tmp-codex-e2e-real", ".tmp-codex-e2e-fair"],
@@ -644,7 +650,7 @@ benchmarks_md = [
     "Generated from:",
     "",
     "```bash",
-    "./target/release/tke benchmark-commands --check",
+    "./target/release/tke-bench benchmark-commands --check",
     "```",
     "",
     md_table(
@@ -736,7 +742,7 @@ if codex:
             "Generated from:",
             "",
             "```bash",
-            "./target/release/tke compare-e2e --agent codex \\",
+            "./target/release/tke-bench compare-e2e --agent codex \\",
             "  --source .tmp-codex-e2e \\",
             "  --source .tmp-codex-e2e-real \\",
             "  --source .tmp-codex-e2e-fair",
@@ -809,7 +815,7 @@ if claude:
             "Generated from:",
             "",
             "```bash",
-            "./target/release/tke compare-e2e --agent claude \\",
+            "./target/release/tke-bench compare-e2e --agent claude \\",
             "  --source .tmp-claude-e2e \\",
             "  --source .tmp-claude-e2e-fair",
             "```",

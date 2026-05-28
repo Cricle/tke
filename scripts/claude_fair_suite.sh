@@ -63,4 +63,4 @@ for mode in raw tke rtk-hook; do
   run_case "$mode" fairbuild "$PROMPT_DIR/fairbuild.txt"
 done
 
-"$ROOT/target/release/tke" compare-e2e --agent claude --source "$OUT_DIR"
+"$ROOT/target/release/tke-bench" compare-e2e --agent claude --source "$OUT_DIR"

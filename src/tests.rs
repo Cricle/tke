@@ -3179,19 +3179,6 @@ fn parse_shim_subcommand_dispatch() {
 }
 
 #[test]
-fn parse_benchmark_commands_dispatch() {
-    let dispatch = parse_dispatch(
-        "tke",
-        vec!["tke".to_owned(), "benchmark-commands".to_owned()],
-    )
-    .expect("dispatch");
-    assert!(matches!(
-        dispatch,
-        Dispatch::BenchmarkCommands { check: false }
-    ));
-}
-
-#[test]
 fn parse_stats_dispatch() {
     let dispatch = parse_dispatch(
         "tke",
@@ -3550,29 +3537,6 @@ fn usage_stats_custom_sources_do_not_write_default_cache() {
 
     assert_eq!(value["samples"], 1);
     assert!(!project.join(".tke/stats-cache.json").exists());
-}
-
-#[test]
-fn parse_compare_e2e_dispatch() {
-    let dispatch = parse_dispatch(
-        "tke",
-        vec![
-            "tke".to_owned(),
-            "compare-e2e".to_owned(),
-            "--source".to_owned(),
-            "/tmp/e2e".to_owned(),
-            "--agent".to_owned(),
-            "claude".to_owned(),
-        ],
-    )
-    .expect("dispatch");
-    match dispatch {
-        Dispatch::CompareE2e { sources, agent } => {
-            assert_eq!(sources, vec![PathBuf::from("/tmp/e2e")]);
-            assert_eq!(agent, Some("claude".to_owned()));
-        }
-        other => panic!("unexpected dispatch: {other:?}"),
-    }
 }
 
 #[test]

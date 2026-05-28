@@ -361,9 +361,6 @@ pub enum Dispatch {
         source: Option<PathBuf>,
         output: Option<PathBuf>,
     },
-    CompareRollout {
-        source: Option<PathBuf>,
-    },
     Stats {
         sources: Vec<PathBuf>,
         limit: Option<usize>,
@@ -374,13 +371,6 @@ pub enum Dispatch {
         top: usize,
         sort_by: UsageStatsSortBy,
         json: bool,
-    },
-    CompareE2e {
-        sources: Vec<PathBuf>,
-        agent: Option<String>,
-    },
-    BenchmarkCommands {
-        check: bool,
     },
     Shim {
         name: String,
@@ -434,11 +424,7 @@ pub fn parse_dispatch(argv0: &str, args: Vec<String>) -> Result<Dispatch, AppErr
         Some("tty") => parse_tty(args),
         Some("deactivate") => Ok(Dispatch::Deactivate),
         Some("capture-interactive") => parse_capture_interactive(args),
-        Some("compare-rollout") => parse_compare_rollout(args),
         Some("stats") => parse_stats(args),
-
-        Some("compare-e2e") => parse_compare_e2e(args),
-        Some("benchmark-commands") => parse_benchmark_commands(args),
         Some("shim") => parse_shim_exec(args),
         Some(other) => Err(AppError::Usage(format!(
             "unknown subcommand `{other}`\n\n{}",
@@ -459,11 +445,7 @@ pub fn usage() -> String {
         "  tke tty [--shim-dir PATH] <command> [args ...]",
         "  tke deactivate",
         "  tke capture-interactive [--source PATH] [--output PATH]",
-        "  tke compare-rollout [--source PATH]",
         "  tke stats [--source PATH]... [--limit N] [--profile NAME] [--command NAME] [--agent codex|claude] [--by day|profile|command|agent] [--changed-only] [--refresh] [--top N] [--sort saved|ratio|low-ratio|samples] [--json]",
-
-        "  tke compare-e2e [--source DIR]... [--agent codex|claude]",
-        "  tke benchmark-commands [--check]",
         "",
         "Examples:",
         "  tke codex",
@@ -475,16 +457,12 @@ pub fn usage() -> String {
         "  tke tty codex",
         "  eval \"$(tke activate --shim-dir ./.tke/shims codex)\"",
         "  tke capture-interactive",
-        "  tke compare-rollout",
         "  tke stats",
-
         "  tke stats --json --limit 10",
         "  tke stats --profile pathlist --by command",
         "  tke stats --changed-only --top 8 --sort ratio",
         "  tke stats --by command --sort low-ratio",
         "  tke stats --refresh",
-        "  tke compare-e2e",
-        "  tke benchmark-commands",
     ]
     .join("\n")
 }
@@ -774,28 +752,6 @@ fn parse_capture_interactive(args: Vec<String>) -> Result<Dispatch, AppError> {
     Ok(Dispatch::CaptureInteractive { source, output })
 }
 
-fn parse_compare_rollout(args: Vec<String>) -> Result<Dispatch, AppError> {
-    let mut source = None;
-    let mut iter = args.into_iter().skip(2);
-    while let Some(arg) = iter.next() {
-        match arg.as_str() {
-            "--source" => {
-                let value = iter.next().ok_or_else(|| {
-                    AppError::Usage(format!("missing value for --source\n\n{}", usage()))
-                })?;
-                source = Some(PathBuf::from(value));
-            }
-            other => {
-                return Err(AppError::Usage(format!(
-                    "unknown compare-rollout arg `{other}`\n\n{}",
-                    usage()
-                )));
-            }
-        }
-    }
-    Ok(Dispatch::CompareRollout { source })
-}
-
 fn parse_shim_exec(args: Vec<String>) -> Result<Dispatch, AppError> {
     let name = args
         .get(2)
@@ -919,51 +875,6 @@ fn parse_stats(args: Vec<String>) -> Result<Dispatch, AppError> {
         sort_by,
         json,
     })
-}
-
-fn parse_benchmark_commands(args: Vec<String>) -> Result<Dispatch, AppError> {
-    let mut check = false;
-    for arg in args.into_iter().skip(2) {
-        match arg.as_str() {
-            "--check" => check = true,
-            other => {
-                return Err(AppError::Usage(format!(
-                    "unknown benchmark-commands arg `{other}`\n\n{}",
-                    usage()
-                )));
-            }
-        }
-    }
-    Ok(Dispatch::BenchmarkCommands { check })
-}
-
-fn parse_compare_e2e(args: Vec<String>) -> Result<Dispatch, AppError> {
-    let mut sources = Vec::new();
-    let mut agent = None;
-    let mut iter = args.into_iter().skip(2);
-    while let Some(arg) = iter.next() {
-        match arg.as_str() {
-            "--source" => {
-                let value = iter.next().ok_or_else(|| {
-                    AppError::Usage(format!("missing value for --source\n\n{}", usage()))
-                })?;
-                sources.push(PathBuf::from(value));
-            }
-            "--agent" => {
-                let value = iter.next().ok_or_else(|| {
-                    AppError::Usage(format!("missing value for --agent\n\n{}", usage()))
-                })?;
-                agent = Some(value);
-            }
-            other => {
-                return Err(AppError::Usage(format!(
-                    "unknown compare-e2e arg `{other}`\n\n{}",
-                    usage()
-                )));
-            }
-        }
-    }
-    Ok(Dispatch::CompareE2e { sources, agent })
 }
 
 pub fn benchmark_commands(config: &Config, check: bool) -> Result<(), AppError> {

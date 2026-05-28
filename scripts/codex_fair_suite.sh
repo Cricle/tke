@@ -37,4 +37,4 @@ for mode in raw rtk-codex-rules; do
   bash "$ROOT/scripts/codex_fair_compare.sh" "$ROOT" "$mode" fairbuild "$PROMPT_DIR/fairbuild.txt"
 done
 
-"$ROOT/target/release/tke" compare-e2e --agent codex --source "$OUT_DIR"
+"$ROOT/target/release/tke-bench" compare-e2e --agent codex --source "$OUT_DIR"
