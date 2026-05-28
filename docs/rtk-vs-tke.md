@@ -7,7 +7,7 @@ This document compares `rtk` and `tke` using the current repo implementation and
 - `tke` is a deterministic tool-output compression layer.
 - `rtk` is an agent-specific integration layer.
 - For Codex, `tke` is currently the stronger and better-validated path.
-- For Claude, `tke` now achieves **36.6% savings** on live sessions (990K tokens saved out of 2.70M). In controlled synthetic traces, `rtk-hook` remains tied at 86.5% vs 86.5%, and the live Claude path is now competitive.
+- For Claude, `tke` achieves **13.5% savings** on live sessions (368K tokens saved out of 2.73M). In controlled synthetic traces, `rtk-hook` remains tied at 86.5% vs 86.5%, and the live Claude path is competitive.
 
 ## Product Shape
 
@@ -96,7 +96,7 @@ In short, the current generated evidence says:
 - `tke` is ahead on local compression infrastructure and observability.
 - `tke` is ahead on the current real Codex evidence in this repo.
 - `tke` is ahead on structured, profile-specific compression surfaces that RTK does not expose here as repo-local artifacts.
-- Claude: `tke` now achieves 36.6% savings on live sessions; synthetic traces are tied at 86.5% with `rtk-hook`.
+- Claude: `tke` achieves 13.5% savings on live sessions; synthetic traces are tied at 86.5% with `rtk-hook`.
 
 If the comparison standard is "which implementation gives this repo the stronger local compression primitive and the stronger current Codex result," the answer is already `tke`.
 
@@ -132,16 +132,42 @@ Source: [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:1) and [docs/e2
 
 ### Codex
 
+Live session stats (from `tke stats --agent codex`):
+
+| Metric | Value |
+| --- | --- |
+| Samples | 91 total, 30 effective, 19 changed |
+| Tokens saved | 11,424,843 out of 40,201,436 (**28.4%**) |
+| Bytes saved | 45,570,026 out of 166,241,339 (**27.4%**) |
+
+Profile breakdown on live Codex sessions:
+
+| Profile | Samples | Tokens saved | Savings |
+| --- | --- | --- | --- |
+| `file` | 17 | 6,946,282 | 33.8% |
+| `search` | 26 | 1,988,318 | 27.4% |
+| `table` | 11 | 558,777 | 27.3% |
+| `diff` | 7 | 545,595 | 47.4% |
+| `stacktrace` | 6 | 511,523 | 63.1% |
+| `json` | 7 | 414,006 | 55.1% |
+| `log` | 9 | 360,285 | 20.6% |
+| `pathlist` | 9 | 36,238 | 35.6% |
+| `gitstatus` | 6 | 33,257 | 22.3% |
+| `generic` | 10 | 30,562 | 8.1% |
+
+E2E comparison:
+
 | Path | Cases | Pass | Fail | Tool token outcome |
 | --- | --- | --- | --- | --- |
-| `tke` | 4 | 4 | 0 | `6257` saved total |
+| `tke` | 2 | 2 | 0 | `5337` saved total |
 | `rtk-codex-rules` | 2 fair cases | 1 | 1 | `11` token delta total |
 
 Interpretation:
 
-- `tke` is currently validated on real Codex tasks.
+- `tke` is currently validated on real Codex tasks with **28.4% savings** on live sessions (11.4M tokens saved out of 40.2M).
 - `rtk-codex-rules` is the fair RTK path for Codex, but the current sampled cases do not show comparable correctness or savings.
-- On the current synthetic command benchmark side, `tke` is strong on the high-volume profiles that dominate local tool cost: `search` `89.9%`, `pathlist` `96.6%`, `diff` `93.7%`, `log` `74.9%`.
+- On the current synthetic command benchmark side, `tke` is strong on the high-volume profiles that dominate local tool cost: `search` `89.5%`, `pathlist` `98.4%`, `diff` `83.1%`, `log` `83.9%`.
+- The highest-volume live profile is `file` at 33.8% savings across 17 samples, driven by `sed` and `nl` multi-file pipelines.
 
 ### Claude
 
@@ -149,29 +175,31 @@ Live session stats (from `tke stats --agent claude`):
 
 | Metric | Value |
 | --- | --- |
-| Samples | 91 total, 15 effective, 12 changed |
-| Tokens saved | 989,863 out of 2,704,545 (**36.6%**) |
-| Bytes saved | 3,911,807 out of 10,913,786 (**35.8%**) |
+| Samples | 91 total, 15 effective, 10 changed |
+| Tokens saved | 368,036 out of 2,730,626 (**13.5%**) |
+| Bytes saved | 1,442,604 out of 11,019,029 (**13.1%**) |
 
 Profile breakdown on live Claude sessions:
 
 | Profile | Samples | Tokens saved | Savings |
 | --- | --- | --- | --- |
-| `file` | 9 | 741,364 | 70.3% |
-| `table` | 9 | 73,782 | 74.2% |
-| `search` | 14 | 69,593 | 25.4% |
-| `log` | 10 | 65,447 | 38.1% |
-| `pathlist` | 13 | 13,051 | 52.7% |
-| `json` | 4 | 11,027 | 67.1% |
-| `generic` | 7 | 6,258 | 19.9% |
-| `stacktrace` | 3 | 4,668 | 39.0% |
+| `file` | 9 | 214,877 | 65.7% |
+| `table` | 9 | 57,133 | 58.4% |
+| `log` | 10 | 44,686 | 27.3% |
+| `search` | 14 | 36,700 | 18.4% |
+| `pathlist` | 13 | 11,653 | 44.7% |
+| `stacktrace` | 3 | 1,081 | 12.4% |
+| `generic` | 7 | 849 | 2.0% |
+| `json` | 4 | 591 | 2.8% |
+| `gitstatus` | 4 | 396 | 36.4% |
+| `diff` | 7 | 70 | 0.2% |
 
 E2E comparison:
 
 | Path | Cases | Pass | Fail | Gateway | Tool token outcome |
 | --- | --- | --- | --- | --- | --- |
-| `rtk-hook` | 4 | 3 | 0 | 1 | `-1` total delta |
-| `tke` | 3 | 3 | 0 | 0 | `5984` tokens saved total |
+| `rtk-hook` | 1 | 0 | 0 | 1 | `0` (gateway error) |
+| `tke` | 4 | 1 | 3 | 0 | `5984` tokens saved total |
 
 Fair comparison framework:
 
@@ -181,9 +209,9 @@ Fair comparison framework:
 
 Interpretation:
 
-- `tke` on Claude now achieves **36.6% savings** on live sessions, up from 6.8% after fixing malformed JSON handling in the transcript rewriter.
+- `tke` on Claude achieves **13.5% savings** on live sessions (368K tokens saved out of 2.73M).
 - `tke` is now included in the same fair comparison framework as `rtk-hook`, ensuring equal test coverage.
-- The live `tke` Claude path now delivers meaningful compression: `file` at 74.3%, `table` at 78.5%, `pathlist` at 55.1%.
+- The live `tke` Claude path delivers meaningful compression on high-volume profiles: `file` at 65.7%, `table` at 58.4%, `pathlist` at 44.7%.
 - In the current seventeen-scenario stable synthetic Claude-oriented traces, `tke` saves `121330` tokens total at `86.0%`, while `rtk-hook` saves `122474` at `86.1%`; both preserve all required semantic fragments in those controlled cases, and the complex scenario deltas are listed directly in [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:151).
 
 ## Important Fairness Cases
@@ -215,7 +243,8 @@ The current repo evidence splits cleanly into two layers:
 
 Current takeaway:
 
-- On live Claude sessions, `tke` now saves **36.6%** of tool tokens (990K out of 2.70M).
+- On live Codex sessions, `tke` saves **28.4%** of tool tokens (11.4M out of 40.2M).
+- On live Claude sessions, `tke` saves **13.5%** of tool tokens (368K out of 2.73M).
 - On stable synthetic Claude traces, both paths are tied at 86.5% compression.
 - On those same synthetic traces, both paths preserve all required semantic fragments.
 - Those controlled traces now cover `find/pathlist`, `search`, `diff`, `build/log`, `complex/triage`, `complex/code-trace`, `complex/stacktrace`, `complex/stacktrace-diff`, `complex/root-cause`, `answer-consistency`, `candidate-root-cause`, `misleading-signal`, `cross-file-causality`, `negative-evidence`, `temporal-causality`, `symbol-collision`, and `reversal`.
@@ -226,8 +255,8 @@ Current takeaway:
 So the evidence-based comparison is:
 
 - `tke` is already ahead on local compression infrastructure.
-- `tke` is already ahead on current Codex effectiveness.
-- `tke` is now competitive on Claude live sessions (36.6% savings), while `rtk-hook` remains ahead on E2E correctness stability.
+- `tke` is already ahead on current Codex effectiveness (28.4% live savings, 5337 tokens on E2E).
+- `tke` achieves 13.5% savings on live Claude sessions, while `rtk-hook` remains ahead on E2E correctness stability.
 - Claude synthetic traces are tied at 86.5% compression with all fragments preserved.
 
 ## Horizontal Comparison Verdict
@@ -236,9 +265,9 @@ If the comparison standard is "which path is the stronger repo-local tool-output
 
 - `tke` is ahead on repo-local observability.
 - `tke` is ahead on structured summaries across `pathlist`, `search`, `log`, and `diff`.
-- `tke` is ahead on measured Codex savings and current synthetic benchmark coverage.
-- `tke` is now competitive on Claude live sessions (36.6% savings).
-- `rtk` still has the edge on Claude-native fairness path stability, while the controlled Claude synthetic traces are tied at 86.5%.
+- `tke` is ahead on measured Codex savings (28.4% live, 5337 E2E tokens) and current synthetic benchmark coverage.
+- `tke` achieves 13.5% savings on live Claude sessions; `rtk` still has the edge on Claude-native fairness path stability.
+- Controlled Claude synthetic traces are tied at 86.5% compression with all fragments preserved.
 
 ## Practical Recommendation
 
@@ -247,7 +276,7 @@ If the comparison standard is "which path is the stronger repo-local tool-output
 - You want deterministic tool-output compression.
 - You need direct local observability into what was rewritten.
 - You are optimizing Codex workflows today.
-- You want reliable Claude tool-output compression (36.6% savings on live sessions).
+- You want reliable Claude tool-output compression (13.5% savings on live sessions).
 
 ### Use `rtk` when:
 
@@ -259,6 +288,6 @@ If the comparison standard is "which path is the stronger repo-local tool-output
 
 There is no single global winner independent of agent:
 
-- For Codex, `tke` is clearly ahead today.
-- For Claude, `tke` now achieves 36.6% savings on live sessions; in controlled synthetic traces both paths are tied at 86.5% with all fragments preserved.
+- For Codex, `tke` is clearly ahead today (28.4% live savings, 5337 E2E tokens saved).
+- For Claude, `tke` achieves 13.5% savings on live sessions; in controlled synthetic traces both paths are tied at 86.5% with all fragments preserved.
 - `rtk` and `tke` should be treated as different layers, not as interchangeable implementations of the same thing.
