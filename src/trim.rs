@@ -157,8 +157,7 @@ fn collect_stacktrace_chunks(lines: &[&str], limits: ProfileLimits) -> Vec<Match
     let mut used = Vec::<(usize, usize)>::new();
 
     for (idx, line) in lines.iter().enumerate() {
-        if is_stack_summary(line)
-            && push_chunk(&mut out, &mut used, lines, idx, idx + 1, "summary")
+        if is_stack_summary(line) && push_chunk(&mut out, &mut used, lines, idx, idx + 1, "summary")
         {
             break;
         }

@@ -566,7 +566,8 @@ fn relay_native_pty(
             while !resize_shutdown.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(100));
                 let current = read_winsize(control_fd);
-                if current.is_some() && current != last
+                if current.is_some()
+                    && current != last
                     && let Some(winsize) = current
                 {
                     apply_winsize(resize_master.as_raw_fd(), &winsize)?;
@@ -845,7 +846,8 @@ pub(crate) fn emit_stream<W: Write>(
         return Ok(());
     }
 
-    if config.is_agent_command(name) && stream == "stdout"
+    if config.is_agent_command(name)
+        && stream == "stdout"
         && let Some(rewritten) = rewrite_agent_transcript(text, config)?
     {
         write_all_resilient(&mut writer, rewritten.as_bytes())?;
