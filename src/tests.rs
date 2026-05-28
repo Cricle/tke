@@ -1,7 +1,10 @@
 use crate::adapter::{
     rewrite_agent_transcript, rewrite_claude_jsonl, rewrite_codex_jsonl, rewrite_generic_jsonl,
 };
-use crate::app::{AppError, Config, Dispatch, default_tool_commands, parse_dispatch};
+use crate::app::{
+    AppError, Config, Dispatch, default_activate_shim_dir, default_runtime_shim_dir,
+    default_tool_commands, parse_dispatch,
+};
 use crate::benchmark::{
     RolloutCompareReport, benchmark_specs, benchmark_task_specs, build_benchmark_report,
 };
@@ -22,8 +25,9 @@ use crate::rollout_stats::{
 use crate::shim::{maybe_normalize_text, normalize_text, normalize_text_with_stage};
 use crate::trim::{
     CommandKind, ShellKind, candidate_command_names, canonical_command_name, classify_command,
-    create_windows_cmd_shim, is_failure_signal_line, is_log_signal, is_warning_signal, match_terms,
+    create_windows_exe_shim, is_failure_signal_line, is_log_signal, is_warning_signal, match_terms,
     now_millis, read_stream_payload, render_activate_script, render_deactivate_script,
+    shim_command_path,
 };
 use std::fs;
 use std::io::{self, Cursor, Read};
@@ -53,7 +57,7 @@ fn remove_env_var(key: &str) {
 }
 
 fn repeated_lines(prefix: &str, count: usize) -> String {
-    crate::benchmark::repeated_lines(prefix, count)
+    crate::benchmark_data::repeated_lines(prefix, count)
 }
 
 fn write_codex_e2e_sample(path: &Path, tool_output: &str, result: &str) {
@@ -2538,6 +2542,91 @@ fn rewrites_exec_command_error_output() {
     );
     assert_eq!(nested["s"], "stderr");
     assert_eq!(nested["sc"], "rg");
+}
+
+#[test]
+fn rewrites_shell_command_function_call_output() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let jsonl = [
+        serde_json::json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "shell_command",
+                "arguments": "{\"command\":\"cat /tmp/demo.rs | rg -n beta | head -n 1\",\"workdir\":\"/tmp\",\"timeout_ms\":10000}",
+                "call_id": "call_shell_1"
+            }
+        })
+        .to_string(),
+        serde_json::json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call_output",
+                "call_id": "call_shell_1",
+                "output": format!(
+                    "Exit code: 0\nWall time: 0.9 seconds\nOutput:\n{}\n",
+                    repeated_lines("2:pub fn beta() {}", 160)
+                )
+            }
+        })
+        .to_string(),
+    ]
+    .join("\n");
+    let rewritten = rewrite_codex_jsonl(&jsonl, &cfg)
+        .expect("rewrite")
+        .expect("changed");
+    let second = rewritten.lines().nth(1).expect("second line");
+    let value = value_from_json(second);
+    let nested = value_from_json(
+        value["payload"]["output"]
+            .as_str()
+            .expect("output")
+            .trim_start_matches("__TKE__"),
+    );
+    assert_eq!(nested["sc"], "rg");
+    assert_eq!(nested["sr"], "search");
+    assert_eq!(nested["p"], "search");
+}
+
+#[test]
+fn rollout_stats_track_shell_command_function_call_output() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let jsonl = [
+        serde_json::json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "shell_command",
+                "arguments": "{\"command\":\"find src -name '*.rs' | head -n 40\",\"workdir\":\"/tmp\",\"timeout_ms\":10000}",
+                "call_id": "call_shell_stats_1"
+            }
+        })
+        .to_string(),
+        serde_json::json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call_output",
+                "call_id": "call_shell_stats_1",
+                "output": format!(
+                    "Exit code: 0\nWall time: 1.1 seconds\nOutput:\n{}\n",
+                    repeated_lines("/tmp/project/src/lib.rs", 160)
+                )
+            }
+        })
+        .to_string(),
+    ]
+    .join("\n");
+    assert!(rollout_has_relevant_tool_output(&jsonl));
+    let stats = collect_rollout_output_stats_detailed(&jsonl, &cfg);
+    assert!(stats.total.approx_tokens > 0);
+    assert!(
+        stats
+            .records
+            .iter()
+            .any(|record| record.command == "find" && record.profile == "pathlist")
+    );
 }
 
 #[test]
@@ -7353,7 +7442,7 @@ fn e2e_docs_match_generated_stable_case_rows_and_verdicts() {
         "- Claude vs RTK must use `rtk-hook`.",
         "- `rtk-direct` is not the official fairness path for Codex.",
         "- Codex remains the primary validated live-compression path.",
-        "- Claude currently prioritizes stable compatibility over live compression by default.",
+        "- Claude tool compression works via PATH shims; agent output is passed through.",
         "- RTK results must be reported per agent integration mode, not as one universal number.",
     ] {
         assert!(docs.contains(line), "{line}");
@@ -7429,15 +7518,66 @@ fn candidate_command_names_expand_windows_pathext() {
 }
 
 #[test]
-fn create_windows_cmd_shim_writes_wrapper() {
+fn create_windows_exe_shim_writes_executable_shim() {
     let base = temp_test_dir("windows-shim");
     fs::create_dir_all(&base).expect("base");
     let exe = base.join("tke.exe");
-    fs::write(&exe, b"").expect("exe");
-    create_windows_cmd_shim(&base, &exe, "rg").expect("shim");
-    let wrapper = fs::read_to_string(base.join("rg.cmd")).expect("wrapper");
-    assert!(wrapper.contains("tke.exe"));
-    assert!(wrapper.contains("shim \"%~n0\" %*"));
+    fs::write(&exe, b"demo").expect("exe");
+    create_windows_exe_shim(&base, &exe, "rg").expect("shim");
+    let shim = base.join(if cfg!(windows) { "rg.exe" } else { "rg.exe" });
+    assert!(shim.exists());
+    assert!(fs::metadata(&shim).expect("shim metadata").len() > 0);
+}
+
+#[test]
+fn shim_command_path_matches_platform_wrapper_shape() {
+    let base = Path::new("C:\\tke\\shims");
+    let shim = shim_command_path(base, "codex");
+    if cfg!(windows) {
+        assert_eq!(shim, base.join("codex.exe"));
+    } else {
+        assert_eq!(shim, base.join("codex"));
+    }
+}
+
+#[test]
+fn default_runtime_shim_dir_uses_temp_space_not_workspace_tke_dir() {
+    let path = default_runtime_shim_dir();
+    let rendered = path.to_string_lossy().replace('\\', "/");
+    assert!(rendered.contains("/shims"));
+    assert!(rendered.contains("tke-run-"));
+    assert!(!rendered.contains("/.tke/shims"));
+}
+
+#[test]
+fn default_activate_shim_dir_uses_temp_space_not_workspace_tke_dir() {
+    let path = default_activate_shim_dir();
+    let rendered = path.to_string_lossy().replace('\\', "/");
+    assert!(rendered.contains("/tke/shims"));
+    assert!(!rendered.contains("/.tke/shims"));
+}
+
+#[cfg(windows)]
+#[test]
+fn passthrough_runs_cmd_scripts_on_windows() {
+    let base = temp_test_dir("passthrough-cmd");
+    fs::create_dir_all(&base).expect("base");
+    let script = base.join("echo.cmd");
+    let output = base.join("result.txt");
+    fs::write(
+        &script,
+        format!(
+            "@echo off\r\necho %1>%~dp0{}\r\n",
+            output.file_name().unwrap().to_string_lossy()
+        ),
+    )
+    .expect("script");
+
+    let code = crate::shim::passthrough(&script, &["hello".to_owned()], None, None, false)
+        .expect("passthrough");
+
+    assert_eq!(code, 0);
+    assert_eq!(fs::read_to_string(output).expect("output").trim(), "hello");
 }
 
 #[test]
@@ -7528,14 +7668,18 @@ fn capture_interactive_errors_without_rollout() {
     let cfg = Config::default();
     let base = temp_test_dir("capture-missing");
     let codex_home = base.join("codex-home");
+    let claude_home = base.join("claude-home");
     let project = base.join("project");
     fs::create_dir_all(codex_home.join("sessions")).expect("sessions");
+    fs::create_dir_all(claude_home.join("sessions")).expect("sessions");
     fs::create_dir_all(&project).expect("project");
 
     let original_cwd = std::env::current_dir().expect("cwd");
     let original_codex_home = std::env::var_os("CODEX_HOME");
+    let original_claude_home = std::env::var_os("CLAUDE_HOME");
     std::env::set_current_dir(&project).expect("chdir");
     set_env_var("CODEX_HOME", &codex_home);
+    set_env_var("CLAUDE_HOME", &claude_home);
 
     let err = capture_interactive(None, None, &cfg).expect_err("missing rollout");
 
@@ -7544,12 +7688,17 @@ fn capture_interactive_errors_without_rollout() {
     } else {
         remove_env_var("CODEX_HOME");
     }
+    if let Some(value) = original_claude_home {
+        set_env_var("CLAUDE_HOME", value);
+    } else {
+        remove_env_var("CLAUDE_HOME");
+    }
     std::env::set_current_dir(original_cwd).expect("restore cwd");
 
     assert!(matches!(err, AppError::Usage(_)));
     assert!(
         err.to_string()
-            .contains("could not find a codex rollout jsonl")
+            .contains("could not find any agent rollout jsonl")
     );
 }
 
@@ -7584,6 +7733,7 @@ fn interactive_tracker_writes_rewritten_rollout_copy() {
     let tracker = InteractiveTracker {
         sessions_dir: base.join("sessions"),
         started_at_ms: 0,
+        agent: "codex",
     };
     tracker.finish(&cfg).expect("finish");
     std::env::set_current_dir(original_cwd).expect("restore cwd");
@@ -7620,6 +7770,7 @@ fn interactive_tracker_skips_unmodified_rollouts() {
     let tracker = InteractiveTracker {
         sessions_dir: base.join("sessions"),
         started_at_ms: 0,
+        agent: "codex",
     };
     tracker.finish(&cfg).expect("finish");
     std::env::set_current_dir(original_cwd).expect("restore cwd");
@@ -7628,5 +7779,255 @@ fn interactive_tracker_skips_unmodified_rollouts() {
         !base
             .join("project/.tke/interactive/rollout-test.jsonl")
             .exists()
+    );
+}
+
+#[test]
+fn claude_interactive_tracker_writes_rewritten_rollout_copy() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let base = temp_test_dir("claude-tracker");
+    let claude_home = base.join("claude-home");
+    let sessions_dir = claude_home.join("sessions");
+    let projects_dir = claude_home.join("projects").join("-tmp-test");
+    let output_dir = base.join("project/.tke/interactive");
+    fs::create_dir_all(&sessions_dir).expect("sessions");
+    fs::create_dir_all(&projects_dir).expect("projects");
+    fs::create_dir_all(base.join("project")).expect("project");
+
+    let session_id = "test-session-uuid-1234";
+    let session_json = serde_json::json!({
+        "pid": 12345,
+        "sessionId": session_id,
+        "cwd": "/tmp/test",
+        "startedAt": 0u64,
+        "kind": "interactive"
+    });
+    fs::write(
+        sessions_dir.join("12345.json"),
+        serde_json::to_string(&session_json).unwrap(),
+    )
+    .expect("write session json");
+
+    let rollout = projects_dir.join(format!("{session_id}.jsonl"));
+    let line = serde_json::json!({
+        "type": "assistant",
+        "message": {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "tool_1",
+                    "name": "Bash",
+                    "input": { "command": "cat /tmp/demo.rs | rg -n fn | head" }
+                }
+            ]
+        }
+    })
+    .to_string();
+    let result_line = serde_json::json!({
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "tool_1",
+                    "content": format!("{}\n", repeated_lines("1:pub fn alpha() {}", 160))
+                }
+            ]
+        }
+    })
+    .to_string();
+    fs::write(&rollout, format!("{line}\n{result_line}\n")).expect("write rollout");
+
+    let original_cwd = std::env::current_dir().expect("cwd");
+    std::env::set_current_dir(base.join("project")).expect("chdir");
+    let tracker = InteractiveTracker {
+        sessions_dir: sessions_dir.clone(),
+        started_at_ms: 0,
+        agent: "claude",
+    };
+    tracker.finish(&cfg).expect("finish");
+    std::env::set_current_dir(original_cwd).expect("restore cwd");
+
+    let mirrored = output_dir.join(format!("{session_id}.jsonl"));
+    assert!(mirrored.exists(), "mirrored file should exist");
+    let raw = fs::read_to_string(&mirrored).expect("mirrored");
+    assert!(raw.contains("__TKE__"), "should contain rewritten output");
+}
+
+#[test]
+fn capture_interactive_finds_claude_sessions_when_no_codex() {
+    let _guard = ENV_LOCK.lock().expect("env lock");
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let base = temp_test_dir("capture-claude");
+    let codex_home = base.join("codex-home");
+    let claude_home = base.join("claude-home");
+    let sessions_dir = claude_home.join("sessions");
+    let projects_dir = claude_home.join("projects").join("-tmp-test");
+    let project = base.join("project");
+    fs::create_dir_all(codex_home.join("sessions")).expect("codex sessions");
+    fs::create_dir_all(&sessions_dir).expect("claude sessions");
+    fs::create_dir_all(&projects_dir).expect("projects");
+    fs::create_dir_all(&project).expect("project");
+
+    let session_id = "capture-test-uuid-5678";
+    let session_json = serde_json::json!({
+        "pid": 99999,
+        "sessionId": session_id,
+        "cwd": "/tmp/test",
+        "startedAt": 0u64,
+        "kind": "interactive"
+    });
+    fs::write(
+        sessions_dir.join("99999.json"),
+        serde_json::to_string(&session_json).unwrap(),
+    )
+    .expect("write session json");
+
+    let rollout = projects_dir.join(format!("{session_id}.jsonl"));
+    let line = serde_json::json!({
+        "type": "assistant",
+        "message": {
+            "role": "assistant",
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": "tool_a",
+                    "name": "Bash",
+                    "input": { "command": "find src -name '*.rs' | head -n 40" }
+                }
+            ]
+        }
+    })
+    .to_string();
+    let result_line = serde_json::json!({
+        "type": "user",
+        "message": {
+            "role": "user",
+            "content": [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "tool_a",
+                    "content": format!("{}\n", repeated_lines("/tmp/project/src/lib.rs", 160))
+                }
+            ]
+        }
+    })
+    .to_string();
+    fs::write(&rollout, format!("{line}\n{result_line}\n")).expect("write rollout");
+
+    let original_cwd = std::env::current_dir().expect("cwd");
+    let original_codex_home = std::env::var_os("CODEX_HOME");
+    let original_claude_home = std::env::var_os("CLAUDE_HOME");
+    std::env::set_current_dir(&project).expect("chdir");
+    set_env_var("CODEX_HOME", &codex_home);
+    set_env_var("CLAUDE_HOME", &claude_home);
+
+    let result = capture_interactive(None, None, &cfg);
+
+    if let Some(value) = original_codex_home {
+        set_env_var("CODEX_HOME", value);
+    } else {
+        remove_env_var("CODEX_HOME");
+    }
+    if let Some(value) = original_claude_home {
+        set_env_var("CLAUDE_HOME", value);
+    } else {
+        remove_env_var("CLAUDE_HOME");
+    }
+    std::env::set_current_dir(original_cwd).expect("restore cwd");
+
+    result.expect("capture");
+    let mirrored = project.join(format!(".tke/interactive/{session_id}.jsonl"));
+    assert!(mirrored.exists(), "should find and mirror Claude session");
+}
+
+#[test]
+fn find_latest_claude_rollout_after_resolves_session_json_to_jsonl() {
+    let base = temp_test_dir("claude-find");
+    let claude_home = base.join("claude-home");
+    let sessions_dir = claude_home.join("sessions");
+    let projects_dir = claude_home.join("projects").join("-tmp-resolve");
+    fs::create_dir_all(&sessions_dir).expect("sessions");
+    fs::create_dir_all(&projects_dir).expect("projects");
+
+    let session_json = serde_json::json!({
+        "pid": 42,
+        "sessionId": "resolve-uuid-abcd",
+        "cwd": "/tmp/resolve",
+        "startedAt": 1000u64,
+        "kind": "interactive"
+    });
+    fs::write(
+        sessions_dir.join("42.json"),
+        serde_json::to_string(&session_json).unwrap(),
+    )
+    .expect("write session json");
+
+    let jsonl = projects_dir.join("resolve-uuid-abcd.jsonl");
+    fs::write(&jsonl, "{\"type\":\"message\"}\n").expect("write jsonl");
+
+    let result = crate::rollout_io::test_find_latest_claude_rollout_after(&sessions_dir, 0)
+        .expect("find");
+    assert!(result.is_some());
+    assert_eq!(result.unwrap(), jsonl);
+}
+
+#[test]
+fn find_latest_claude_rollout_after_filters_by_started_at() {
+    let base = temp_test_dir("claude-filter");
+    let claude_home = base.join("claude-home");
+    let sessions_dir = claude_home.join("sessions");
+    let projects_dir = claude_home.join("projects").join("-tmp-old");
+    fs::create_dir_all(&sessions_dir).expect("sessions");
+    fs::create_dir_all(&projects_dir).expect("projects");
+
+    let session_json = serde_json::json!({
+        "pid": 99,
+        "sessionId": "old-uuid-xxxx",
+        "cwd": "/tmp/old",
+        "startedAt": 1000u64,
+        "kind": "interactive"
+    });
+    fs::write(
+        sessions_dir.join("99.json"),
+        serde_json::to_string(&session_json).unwrap(),
+    )
+    .expect("write session json");
+
+    let jsonl = projects_dir.join("old-uuid-xxxx.jsonl");
+    fs::write(&jsonl, "{\"type\":\"message\"}\n").expect("write jsonl");
+
+    let result = crate::rollout_io::test_find_latest_claude_rollout_after(&sessions_dir, 20000)
+        .expect("find");
+    assert!(result.is_none(), "should filter out sessions before started_at");
+}
+
+#[test]
+fn claude_encode_project_path_handles_unix_paths() {
+    assert_eq!(
+        crate::rollout_io::test_claude_encode_project_path("/root/github/tke"),
+        "-root-github-tke"
+    );
+    assert_eq!(
+        crate::rollout_io::test_claude_encode_project_path("/tmp/test"),
+        "-tmp-test"
+    );
+}
+
+#[test]
+fn claude_encode_project_path_handles_windows_paths() {
+    // C:\Users\user\project → C:-Users-user-project → C--Users-user-project
+    assert_eq!(
+        crate::rollout_io::test_claude_encode_project_path("C:\\Users\\user\\project"),
+        "C--Users-user-project"
+    );
+    assert_eq!(
+        crate::rollout_io::test_claude_encode_project_path("D:\\dev\\tke"),
+        "D--dev-tke"
     );
 }

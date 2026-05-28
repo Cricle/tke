@@ -92,6 +92,7 @@ fn collect_diff_chunks(lines: &[&str], terms: &[String], limits: ProfileLimits) 
     let mut out = Vec::new();
     let mut used = Vec::<(usize, usize)>::new();
 
+    // Keep file headers (diff --git, index, ---, +++)
     for (idx, line) in lines.iter().enumerate() {
         let trimmed = line.trim_start();
         if is_diff_file_header(trimmed)
@@ -104,17 +105,37 @@ fn collect_diff_chunks(lines: &[&str], terms: &[String], limits: ProfileLimits) 
         }
     }
 
+    // Keep hunk headers with their changed lines (+ and - lines)
     for (idx, line) in lines.iter().enumerate() {
         let trimmed = line.trim_start();
         if is_diff_hunk_header(trimmed) {
+            // Find the end of this hunk (next hunk header or end of file)
             let start = idx;
-            let end = usize::min(lines.len(), idx + 3);
-            if push_chunk(&mut out, &mut used, lines, start, end, "hunk") && out.len() >= 6 {
+            let mut end = idx + 1;
+            for j in (idx + 1)..lines.len() {
+                let next_trimmed = lines[j].trim_start();
+                if is_diff_hunk_header(next_trimmed) || is_diff_file_header(next_trimmed) {
+                    break;
+                }
+                // Keep lines that are part of the diff (context, additions, deletions)
+                let chars: Vec<char> = next_trimmed.chars().collect();
+                if chars.is_empty()
+                    || chars[0] == ' '
+                    || chars[0] == '+'
+                    || chars[0] == '-'
+                {
+                    end = j + 1;
+                }
+            }
+            // Limit hunk size to avoid keeping too much
+            end = usize::min(end, start + 20);
+            if push_chunk(&mut out, &mut used, lines, start, end, "hunk") && out.len() >= limits.max_matches {
                 break;
             }
         }
     }
 
+    // Also keep lines matching search terms
     for chunk in collect_term_chunks(
         lines,
         terms,
@@ -1228,7 +1249,7 @@ pub(crate) fn shell_path_sep(shell: ShellKind) -> char {
 
 pub(crate) fn create_single_shim(shim_dir: &Path, exe: &Path, name: &str) -> Result<(), AppError> {
     if cfg!(windows) {
-        create_windows_cmd_shim(shim_dir, exe, name)
+        create_windows_exe_shim(shim_dir, exe, name)
     } else {
         let link = shim_dir.join(name);
         if link.exists() {
@@ -1240,19 +1261,42 @@ pub(crate) fn create_single_shim(shim_dir: &Path, exe: &Path, name: &str) -> Res
     }
 }
 
-pub(crate) fn create_windows_cmd_shim(
+pub(crate) fn create_windows_exe_shim(
     shim_dir: &Path,
     exe: &Path,
     name: &str,
 ) -> Result<(), AppError> {
-    let wrapper = shim_dir.join(format!("{name}.cmd"));
-    if wrapper.exists() {
-        fs::remove_file(&wrapper)?;
+    let shim = shim_dir.join(format!("{name}.exe"));
+    if shim.exists() {
+        fs::remove_file(&shim)?;
     }
-    let exe = exe.to_string_lossy().replace('"', "\"\"");
-    let body = format!("@echo off\r\n\"{exe}\" shim \"%~n0\" %*\r\nexit /b %ERRORLEVEL%\r\n");
-    fs::write(wrapper, body)?;
+    let stale_wrapper = shim_dir.join(format!("{name}.cmd"));
+    if stale_wrapper.exists() {
+        fs::remove_file(stale_wrapper)?;
+    }
+    if fs::hard_link(exe, &shim).is_err() {
+        fs::copy(exe, &shim)?;
+    }
     Ok(())
+}
+
+pub(crate) fn shim_command_path(shim_dir: &Path, name: &str) -> PathBuf {
+    if cfg!(windows) {
+        shim_dir.join(format!("{name}.exe"))
+    } else {
+        shim_dir.join(name)
+    }
+}
+
+pub(crate) fn normalize_runtime_path(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let raw = path.to_string_lossy();
+        if let Some(stripped) = raw.strip_prefix(r"\\?\") {
+            return PathBuf::from(stripped);
+        }
+    }
+    path
 }
 
 pub(crate) fn candidate_command_names(name: &str) -> Vec<OsString> {
@@ -1262,8 +1306,8 @@ pub(crate) fn candidate_command_names(name: &str) -> Vec<OsString> {
     let raw = OsStr::new(name);
     let has_ext = Path::new(raw).extension().is_some();
     let mut names = Vec::new();
-    names.push(raw.to_os_string());
     if has_ext {
+        names.push(raw.to_os_string());
         return names;
     }
     let pathext = env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_owned());
@@ -1274,6 +1318,7 @@ pub(crate) fn candidate_command_names(name: &str) -> Vec<OsString> {
             ext.to_ascii_lowercase()
         )));
     }
+    names.push(raw.to_os_string());
     names
 }
 
@@ -1441,7 +1486,7 @@ pub(crate) fn profile_limits(profile: TrimProfile, config: &Config) -> ProfileLi
             head_lines: usize::min(config.head_lines, 8),
             tail_lines: usize::min(config.tail_lines, 8),
             match_context: 1,
-            max_matches: usize::max(config.max_matches, 8),
+            max_matches: usize::max(config.max_matches, 16),
         },
         TrimProfile::GitStatus => ProfileLimits {
             head_lines: 0,
@@ -2109,10 +2154,9 @@ fn select_named_table_columns(headers: &[String]) -> Option<Vec<usize>> {
         return Some(vec![0, 1, 2]);
     }
 
-    if normalized.contains(&"command".to_owned())
-        && normalized.contains(&"pid".to_owned())
-        && normalized.contains(&"%cpu".to_owned())
-    {
+    let has = |name: &str| normalized.iter().any(|h| h == name);
+
+    if has("command") && has("pid") && has("%cpu") {
         return Some(select_columns_by_name(
             &normalized,
             &["user", "pid", "%cpu", "%mem", "command"],
@@ -2120,7 +2164,7 @@ fn select_named_table_columns(headers: &[String]) -> Option<Vec<usize>> {
         ));
     }
 
-    if normalized.contains(&"containerid".to_owned()) && normalized.contains(&"names".to_owned()) {
+    if has("containerid") && has("names") {
         return Some(select_columns_by_name(
             &normalized,
             &["containerid", "image", "status", "ports", "names"],
@@ -2128,7 +2172,7 @@ fn select_named_table_columns(headers: &[String]) -> Option<Vec<usize>> {
         ));
     }
 
-    if normalized.contains(&"unit".to_owned()) && normalized.contains(&"description".to_owned()) {
+    if has("unit") && has("description") {
         return Some(select_columns_by_name(
             &normalized,
             &["unit", "active", "sub", "description"],
@@ -2768,5 +2812,13 @@ impl BenchmarkExpectation {
             Self::Compress => "compress",
             Self::PassThrough => "pass_through",
         }
+    }
+}
+
+pub(crate) fn ratio(saved: isize, total: usize) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        saved as f64 / total as f64
     }
 }

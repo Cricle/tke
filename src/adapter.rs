@@ -1,7 +1,8 @@
 use crate::app::{AppError, Config};
 use crate::rewrite::{
     ParsedCommand, extract_exec_command_output, looks_like_stderr_only_exec_output,
-    parse_command_execution, parse_exec_command_args, rewrite_command_like_values,
+    parse_command_execution, parse_command_like_args, parse_exec_command_args,
+    rewrite_command_like_values,
 };
 use crate::trim::{classify_command, has_prefix};
 use std::collections::HashMap;
@@ -18,7 +19,10 @@ pub(crate) fn rewrite_agent_transcript(
     for line in text.lines() {
         let mut value: serde_json::Value = match serde_json::from_str(line) {
             Ok(value) => value,
-            Err(_) => return Ok(None),
+            Err(_) => {
+                out.push(line.to_owned());
+                continue;
+            }
         };
 
         if rewrite_codex_event(&mut value, &mut codex_calls, config)?
@@ -58,7 +62,6 @@ pub(crate) fn rewrite_generic_jsonl(
 }
 
 struct PendingToolCall {
-    tool_name: String,
     parsed: Option<ParsedCommand>,
 }
 
@@ -96,16 +99,18 @@ fn record_codex_tool_call(
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_owned();
-    let parsed = if tool_name == "exec_command" {
-        payload
-            .get("arguments")
-            .and_then(|v| v.as_str())
-            .and_then(parse_exec_command_args)
-            .map(|cmd| parse_command_execution(&cmd))
-    } else {
-        None
-    };
-    tool_calls.insert(call_id.to_owned(), PendingToolCall { tool_name, parsed });
+    let parsed = payload
+        .get("arguments")
+        .and_then(|v| v.as_str())
+        .and_then(|raw| {
+            if tool_name == "exec_command" {
+                parse_exec_command_args(raw)
+            } else {
+                parse_command_like_args(raw)
+            }
+        })
+        .map(|cmd| parse_command_execution(&cmd));
+    tool_calls.insert(call_id.to_owned(), PendingToolCall { parsed });
 }
 
 fn rewrite_codex_tool_call_output(
@@ -119,9 +124,6 @@ fn rewrite_codex_tool_call_output(
     let Some(pending) = tool_calls.get(call_id) else {
         return Ok(false);
     };
-    if pending.tool_name != "exec_command" {
-        return Ok(false);
-    }
     let Some(parsed) = pending.parsed.as_ref() else {
         return Ok(false);
     };
@@ -200,21 +202,39 @@ fn record_claude_tool_uses(
             .get("name")
             .and_then(|v| v.as_str())
             .unwrap_or_default();
-        if !matches!(name, "Bash" | "bash" | "Shell" | "shell") {
-            continue;
-        }
         let Some(tool_id) = block.get("id").and_then(|v| v.as_str()) else {
             continue;
         };
         let input = block.get("input").unwrap_or(&serde_json::Value::Null);
-        let command = input
-            .get("command")
-            .and_then(|v| v.as_str())
-            .or_else(|| input.get("cmd").and_then(|v| v.as_str()));
-        let Some(command) = command else {
-            continue;
+        let command = match name {
+            "Bash" | "bash" | "Shell" | "shell" => input
+                .get("command")
+                .and_then(|v| v.as_str())
+                .or_else(|| input.get("cmd").and_then(|v| v.as_str()))
+                .map(|cmd| cmd.to_owned()),
+            "Grep" | "grep" | "ripgrep" => {
+                let pattern = input.get("pattern").and_then(|v| v.as_str()).unwrap_or("");
+                let path = input.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+                Some(format!("grep {pattern} {path}"))
+            }
+            "Glob" | "glob" => {
+                let pattern = input.get("pattern").and_then(|v| v.as_str()).unwrap_or(".");
+                let path = input.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+                Some(format!("find {pattern} {path}"))
+            }
+            "Read" | "read" => {
+                let path = input
+                    .get("file_path")
+                    .or_else(|| input.get("path"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                Some(format!("cat {path}"))
+            }
+            _ => None,
         };
-        tool_calls.insert(tool_id.to_owned(), parse_command_execution(command));
+        if let Some(command) = command {
+            tool_calls.insert(tool_id.to_owned(), parse_command_execution(&command));
+        }
     }
 }
 

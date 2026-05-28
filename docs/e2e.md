@@ -34,5 +34,5 @@ This file is generated from the current local E2E artifacts.
 ## Current Repo Verdict
 
 - Codex remains the primary validated live-compression path.
-- Claude currently prioritizes stable compatibility over live compression by default.
+- Claude tool compression works via PATH shims; agent output is passed through.
 - RTK results must be reported per agent integration mode, not as one universal number.

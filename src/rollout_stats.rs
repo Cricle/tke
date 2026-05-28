@@ -1,6 +1,7 @@
 use crate::app::Config;
 use crate::rewrite::{
-    extract_exec_command_output, parse_command_execution, parse_exec_command_args,
+    extract_exec_command_output, parse_command_execution, parse_command_like_args,
+    parse_exec_command_args,
 };
 use crate::trim::{classify_command, select_profile};
 use serde::{Deserialize, Serialize};
@@ -196,9 +197,21 @@ fn remember_relevant_tool_call(
     if let Some(payload) = value.get("payload").and_then(Value::as_object) {
         let payload_type = payload.get("type").and_then(Value::as_str);
         let payload_name = payload.get("name").and_then(Value::as_str);
-        if payload_type == Some("function_call") && payload_name == Some("exec_command") {
-            if let Some(call_id) = payload.get("call_id").and_then(Value::as_str) {
+        if payload_type == Some("function_call") {
+            let Some(call_id) = payload.get("call_id").and_then(Value::as_str) else {
+                return false;
+            };
+            let Some(arguments) = payload.get("arguments").and_then(Value::as_str) else {
+                return false;
+            };
+            let known_command = if payload_name == Some("exec_command") {
+                parse_exec_command_args(arguments)
+            } else {
+                parse_command_like_args(arguments)
+            };
+            if known_command.is_some() {
                 codex_commands.insert(call_id.to_owned(), ());
+                return true;
             }
             return true;
         }
@@ -336,21 +349,39 @@ fn record_claude_tool_calls(value: &Value, tool_calls: &mut HashMap<String, Stri
         let Some(name) = block.get("name").and_then(Value::as_str) else {
             continue;
         };
-        if !matches!(name, "Bash" | "bash" | "Shell" | "shell") {
-            continue;
-        }
         let Some(tool_id) = block.get("id").and_then(Value::as_str) else {
             continue;
         };
         let input = block.get("input").unwrap_or(&Value::Null);
-        let command = input
-            .get("command")
-            .and_then(Value::as_str)
-            .or_else(|| input.get("cmd").and_then(Value::as_str));
-        let Some(command) = command else {
-            continue;
+        let command = match name {
+            "Bash" | "bash" | "Shell" | "shell" => input
+                .get("command")
+                .and_then(Value::as_str)
+                .or_else(|| input.get("cmd").and_then(Value::as_str))
+                .map(|cmd| cmd.to_owned()),
+            "Grep" | "grep" | "ripgrep" => {
+                let pattern = input.get("pattern").and_then(Value::as_str).unwrap_or("");
+                let path = input.get("path").and_then(Value::as_str).unwrap_or(".");
+                Some(format!("grep {pattern} {path}"))
+            }
+            "Glob" | "glob" => {
+                let pattern = input.get("pattern").and_then(Value::as_str).unwrap_or(".");
+                let path = input.get("path").and_then(Value::as_str).unwrap_or(".");
+                Some(format!("find {pattern} {path}"))
+            }
+            "Read" | "read" => {
+                let path = input
+                    .get("file_path")
+                    .or_else(|| input.get("path"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                Some(format!("cat {path}"))
+            }
+            _ => None,
         };
-        tool_calls.insert(tool_id.to_owned(), command.to_owned());
+        if let Some(command) = command {
+            tool_calls.insert(tool_id.to_owned(), command);
+        }
     }
 }
 
@@ -431,11 +462,17 @@ fn extract_exec_command_call(value: &Value) -> Option<(String, String)> {
     if payload.get("type").and_then(Value::as_str) != Some("function_call") {
         return None;
     }
-    if payload.get("name").and_then(Value::as_str) != Some("exec_command") {
-        return None;
-    }
     let call_id = payload.get("call_id").and_then(Value::as_str)?.to_owned();
-    let command = parse_exec_command_args(payload.get("arguments")?.as_str()?)?;
+    let tool_name = payload
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let arguments = payload.get("arguments")?.as_str()?;
+    let command = if tool_name == "exec_command" {
+        parse_exec_command_args(arguments)
+    } else {
+        parse_command_like_args(arguments)
+    }?;
     Some((call_id, command))
 }
 
@@ -484,7 +521,7 @@ fn infer_output_record(text: &str, command: Option<&str>, config: &Config) -> Op
         stats: RolloutOutputStats {
             fields: 1,
             bytes: text.len(),
-            approx_tokens: crate::benchmark::estimate_text_tokens(text),
+            approx_tokens: crate::benchmark_data::estimate_text_tokens(text),
         },
     })
 }
@@ -495,7 +532,7 @@ fn approx_token_count(text: &str, config: &Config) -> usize {
     {
         return count_json_tokens(&value);
     }
-    crate::benchmark::estimate_text_tokens(text)
+    crate::benchmark_data::estimate_text_tokens(text)
 }
 
 fn count_json_tokens(value: &Value) -> usize {
@@ -503,11 +540,11 @@ fn count_json_tokens(value: &Value) -> usize {
         Value::Null => 1,
         Value::Bool(_) => 1,
         Value::Number(_) => 1,
-        Value::String(s) => crate::benchmark::estimate_text_tokens(s),
+        Value::String(s) => crate::benchmark_data::estimate_text_tokens(s),
         Value::Array(values) => values.iter().map(count_json_tokens).sum(),
         Value::Object(map) => map
             .iter()
-            .map(|(k, v)| crate::benchmark::estimate_text_tokens(k) + count_json_tokens(v))
+            .map(|(k, v)| crate::benchmark_data::estimate_text_tokens(k) + count_json_tokens(v))
             .sum(),
     }
 }

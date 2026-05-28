@@ -87,7 +87,7 @@ Two modes matter here:
 - interactive TTY mode: the agent UI is passed through live
 - captured mode: `tke` can rewrite agent stdout/stderr before emitting it
 
-For Claude, live tool rewriting is conservative by default. For Codex TTY sessions, `tke` mainly rewrites the saved rollout after the session exits.
+For Claude, tool output is compressed via PATH shims (always active in agent context). Agent output is passed through. For Codex TTY sessions, `tke` mainly rewrites the saved rollout after the session exits.
 
 ### 4. Tool Interception And Normalization
 
@@ -259,3 +259,20 @@ The RTK path may still improve correctness or agent behavior, but it does not pr
 - If you want stable local measurement of tool-token reduction, `tke` is the stronger fit.
 - If you want to compare official agent-native RTK behavior, you must use the per-agent fairness paths instead of assuming one universal RTK mode.
 - If you want both correctness and token efficiency, the right workflow in this repo is to measure `tke` and RTK separately, then compare them through `compare-e2e` and `benchmark-commands`.
+
+## Platform Notes
+
+### Windows
+
+- `tke codex`, `tk codex`, and `tke tty codex` work against npm-installed Codex CLI on Windows.
+- Runtime shims do not default to `./.tke/shims`; one-shot runs use temporary shim directories.
+- `tke activate` defaults to a temp shim directory on Windows unless `--shim-dir` is provided.
+- Shims are generated as `.exe` entries rather than `.cmd` wrappers for closer Linux-like dispatch.
+- `tke install` defaults to `%LOCALAPPDATA%\Microsoft\WindowsApps` and creates `tk.cmd`.
+
+### Linux / macOS
+
+- `tke install` defaults to `~/.local/bin`.
+- Linux release artifacts are static `musl` builds.
+- macOS ships native Darwin binaries for Intel and Apple Silicon.
+- PTY attach (`tke tty`) uses native Linux PTY via the `nix` crate.

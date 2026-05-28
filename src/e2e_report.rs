@@ -1,7 +1,9 @@
 use crate::adapter::rewrite_agent_transcript;
 use crate::app::{AppError, Config};
-use crate::benchmark::{RolloutCompareReport, estimate_text_tokens};
+use crate::benchmark::RolloutCompareReport;
+use crate::benchmark_data::estimate_text_tokens;
 use crate::rollout_stats::collect_rollout_output_stats_detailed;
+use crate::trim::ratio;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
@@ -193,14 +195,6 @@ fn compare_rollout_pair(
     let raw_stats = collect_rollout_output_stats_detailed(raw_text, config);
     let rewritten_stats = collect_rollout_output_stats_detailed(rewritten_text, config);
     RolloutCompareReport::from_stats(source, changed, raw_stats, rewritten_stats)
-}
-
-fn ratio(saved: isize, total: usize) -> f64 {
-    if total == 0 {
-        0.0
-    } else {
-        saved as f64 / total as f64
-    }
 }
 
 fn discover_e2e_cases(

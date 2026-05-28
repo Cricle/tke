@@ -1,12 +1,13 @@
 use crate::benchmark::build_benchmark_report;
 use crate::e2e_report::compare_e2e;
-use crate::rollout_io::{UsageStatsFilter, UsageStatsGroupBy, UsageStatsSortBy};
+use crate::rollout_io::{InteractiveTracker, UsageStatsFilter, UsageStatsGroupBy, UsageStatsSortBy};
 use crate::shim::{create_shims, passthrough, run_agent_command, run_tool_command};
 use crate::trim::{
     ShellKind, base_name, candidate_config_path, csv_list, default_head_lines, default_json_prefix,
     default_match_context, default_max_body_lines, default_max_matches, default_min_trim_bytes,
-    default_output_trim, default_show_stats, default_tail_lines, detect_shell_kind, parse_usize,
-    read_stdin_if_piped, render_activate_script, render_deactivate_script, resolve_real_command,
+    default_output_trim, default_show_stats, default_tail_lines, detect_shell_kind,
+    normalize_runtime_path, parse_usize, read_stdin_if_piped, render_activate_script,
+    render_deactivate_script, resolve_real_command, shim_command_path,
 };
 #[cfg(unix)]
 use nix::errno::Errno;
@@ -16,6 +17,7 @@ use std::ffi::OsString;
 use std::fs;
 use std::io;
 use std::path::{Component, Path, PathBuf};
+use std::process;
 
 const DEFAULT_AGENT_COMMANDS: &[&str] = &["codex", "claude", "gemini", "aider"];
 const DEFAULT_TOOL_COMMANDS: &[&str] = &[
@@ -398,8 +400,17 @@ fn is_driver_name(invoked: &str) -> bool {
     )
 }
 
+fn normalize_invoked_name(invoked: &str) -> String {
+    #[cfg(windows)]
+    if invoked.len() > 4 && invoked.to_ascii_lowercase().ends_with(".exe") {
+        return invoked[..invoked.len() - 4].to_owned();
+    }
+
+    invoked.to_owned()
+}
+
 pub fn parse_dispatch(argv0: &str, args: Vec<String>) -> Result<Dispatch, AppError> {
-    let invoked = base_name(argv0);
+    let invoked = normalize_invoked_name(&base_name(argv0));
     if !is_driver_name(&invoked) {
         return Ok(Dispatch::Shim {
             name: invoked,
@@ -452,8 +463,8 @@ pub fn usage() -> String {
         "  tke deactivate",
         "  tke capture-interactive [--source PATH] [--output PATH]",
         "  tke compare-rollout [--source PATH]",
-        "  tke stats [--source PATH]... [--limit N] [--profile NAME] [--command NAME] [--by day|profile|command] [--changed-only] [--refresh] [--top N] [--sort saved|ratio|low-ratio|samples] [--json]",
-        "  tke usage stats [--source PATH]... [--limit N] [--profile NAME] [--command NAME] [--by day|profile|command] [--changed-only] [--refresh] [--top N] [--sort saved|ratio|low-ratio|samples] [--json]",
+        "  tke stats [--source PATH]... [--limit N] [--profile NAME] [--command NAME] [--agent codex|claude] [--by day|profile|command|agent] [--changed-only] [--refresh] [--top N] [--sort saved|ratio|low-ratio|samples] [--json]",
+        "  tke usage stats [--source PATH]... [--limit N] [--profile NAME] [--command NAME] [--agent codex|claude] [--by day|profile|command|agent] [--changed-only] [--refresh] [--top N] [--sort saved|ratio|low-ratio|samples] [--json]",
         "  tke compare-e2e [--source DIR]... [--agent codex|claude]",
         "  tke benchmark-commands [--check]",
         "",
@@ -494,13 +505,12 @@ pub fn print_activate(
         agents.to_vec()
     };
 
-    let cwd = env::current_dir()?;
-    let shim_dir = shim_dir.unwrap_or_else(|| cwd.join(".tke").join("shims"));
+    let shim_dir = shim_dir.unwrap_or_else(default_activate_shim_dir);
     fs::create_dir_all(&shim_dir)?;
     create_shims(&shim_dir, &selected_agents, &config.tool_commands)?;
 
     let exe = env::current_exe()?;
-    let shim_dir_abs = fs::canonicalize(&shim_dir).unwrap_or(shim_dir);
+    let shim_dir_abs = normalize_runtime_path(fs::canonicalize(&shim_dir).unwrap_or(shim_dir));
     let current_path = env::var("PATH").unwrap_or_default();
     let real_path = env::var("TKE_REAL_PATH").unwrap_or(current_path.clone());
     let shell = shell.unwrap_or_else(detect_shell_kind);
@@ -545,9 +555,8 @@ pub fn run_wrapped(
     shim_dir: Option<PathBuf>,
     config: &Config,
 ) -> Result<i32, AppError> {
-    let cwd = env::current_dir()?;
-    let shim_dir = shim_dir.unwrap_or_else(|| cwd.join(".tke").join("shims"));
-    fs::create_dir_all(&shim_dir)?;
+    let shim_home = prepare_runtime_shim_dir(shim_dir)?;
+    let shim_dir = shim_home.path().to_path_buf();
 
     let mut agents = config.agent_commands.clone();
     if !agents.iter().any(|agent| agent == name) {
@@ -555,7 +564,7 @@ pub fn run_wrapped(
     }
     create_shims(&shim_dir, &[name.to_owned()], &config.tool_commands)?;
 
-    let shim_dir_abs = fs::canonicalize(&shim_dir).unwrap_or(shim_dir);
+    let shim_dir_abs = normalize_runtime_path(fs::canonicalize(&shim_dir).unwrap_or(shim_dir));
     let real_path =
         env::var("TKE_REAL_PATH").unwrap_or_else(|_| env::var("PATH").unwrap_or_default());
     let path =
@@ -563,7 +572,8 @@ pub fn run_wrapped(
             .map_err(|err| AppError::Usage(format!("failed to construct PATH: {err}")))?;
     let stdin_payload = read_stdin_if_piped()?;
     let exe = env::current_exe()?;
-    let shim_cmd = shim_dir_abs.join(name);
+    let shim_cmd = shim_command_path(&shim_dir_abs, name);
+    let tracker = InteractiveTracker::start_for_agent(name);
     let code = passthrough(
         &shim_cmd,
         args,
@@ -587,7 +597,75 @@ pub fn run_wrapped(
         stdin_payload,
         true,
     )?;
+    if let Some(tracker) = tracker {
+        tracker.finish(config)?;
+    }
     Ok(code)
+}
+
+fn prepare_runtime_shim_dir(shim_dir: Option<PathBuf>) -> Result<RuntimeShimDir, AppError> {
+    match shim_dir {
+        Some(path) => {
+            fs::create_dir_all(&path)?;
+            Ok(RuntimeShimDir::persistent(path))
+        }
+        None => RuntimeShimDir::temporary(),
+    }
+}
+
+pub(crate) fn default_runtime_shim_dir() -> PathBuf {
+    let mut path = env::temp_dir();
+    path.push(format!(
+        "tke-run-{}-{}",
+        process::id(),
+        crate::trim::now_millis()
+    ));
+    path.push("shims");
+    path
+}
+
+pub(crate) fn default_activate_shim_dir() -> PathBuf {
+    env::temp_dir().join("tke").join("shims")
+}
+
+struct RuntimeShimDir {
+    path: PathBuf,
+    cleanup_on_drop: bool,
+}
+
+impl RuntimeShimDir {
+    fn persistent(path: PathBuf) -> Self {
+        Self {
+            path,
+            cleanup_on_drop: false,
+        }
+    }
+
+    fn temporary() -> Result<Self, AppError> {
+        let path = default_runtime_shim_dir();
+        fs::create_dir_all(&path)?;
+        Ok(Self {
+            path,
+            cleanup_on_drop: true,
+        })
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for RuntimeShimDir {
+    fn drop(&mut self) {
+        if self.cleanup_on_drop {
+            let _ = fs::remove_dir_all(
+                self.path
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| self.path.clone()),
+            );
+        }
+    }
 }
 
 fn parse_activate(args: Vec<String>) -> Result<Dispatch, AppError> {
@@ -813,6 +891,12 @@ fn parse_stats(args: Vec<String>) -> Result<Dispatch, AppError> {
                 })?;
                 filter = UsageStatsFilter::Command(value);
             }
+            "--agent" => {
+                let value = iter.next().ok_or_else(|| {
+                    AppError::Usage(format!("missing value for --agent\n\n{}", usage()))
+                })?;
+                filter = UsageStatsFilter::Agent(value);
+            }
             "--by" => {
                 let value = iter.next().ok_or_else(|| {
                     AppError::Usage(format!("missing value for --by\n\n{}", usage()))
@@ -821,6 +905,7 @@ fn parse_stats(args: Vec<String>) -> Result<Dispatch, AppError> {
                     "day" => UsageStatsGroupBy::Day,
                     "profile" => UsageStatsGroupBy::Profile,
                     "command" => UsageStatsGroupBy::Command,
+                    "agent" => UsageStatsGroupBy::Agent,
                     _ => {
                         return Err(AppError::Usage(format!(
                             "invalid --by `{value}`\n\n{}",

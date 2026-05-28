@@ -819,7 +819,7 @@ if claude:
             "",
             "Compatibility notes:",
             "",
-            "- `Claude + tke` currently defaults to compatibility mode in live CLI usage. This keeps agent and tool I/O transparent unless `TKE_CLAUDE_LIVE_TOOLS=1` is set.",
+            "- `Claude + tke` compresses tool output via PATH shims. Agent output (TTY or `-p`) is passed through. Tool shims are always active when running inside a `tke` session.",
             "- The offline transcript rewriter and compare reports still measure potential savings on saved Claude stream JSONL output.",
             "- `gateway_error` means the gateway returned a transient upstream failure such as Cloudflare 504; treat those samples as infrastructure noise rather than a correctness verdict on the harness itself.",
             "",
@@ -1047,7 +1047,7 @@ e2e_md = [
     "## Current Repo Verdict",
     "",
     "- Codex remains the primary validated live-compression path.",
-    "- Claude currently prioritizes stable compatibility over live compression by default.",
+    "- Claude tool compression works via PATH shims; agent output is passed through.",
     "- RTK results must be reported per agent integration mode, not as one universal number.",
 ]
 

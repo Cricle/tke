@@ -11,6 +11,15 @@ pub(crate) fn parse_exec_command_args(arguments: &str) -> Option<String> {
     value.get("cmd")?.as_str().map(ToOwned::to_owned)
 }
 
+pub(crate) fn parse_command_like_args(arguments: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(arguments).ok()?;
+    value
+        .get("cmd")
+        .and_then(|v| v.as_str())
+        .or_else(|| value.get("command").and_then(|v| v.as_str()))
+        .map(ToOwned::to_owned)
+}
+
 struct ExecCommandEnvelope<'a> {
     exit_code: Option<i32>,
     output: &'a str,
@@ -32,6 +41,13 @@ fn parse_exec_command_envelope(raw: &str) -> Option<ExecCommandEnvelope<'_>> {
 
         if let Some(code) = line
             .strip_prefix("Process exited with code ")
+            .and_then(|value| value.parse::<i32>().ok())
+        {
+            exit_code = Some(code);
+            saw_header = true;
+        } else if let Some(code) = line
+            .strip_prefix("Exit code:")
+            .map(str::trim)
             .and_then(|value| value.parse::<i32>().ok())
         {
             exit_code = Some(code);

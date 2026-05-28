@@ -1,6 +1,6 @@
 use crate::adapter::rewrite_agent_transcript;
 use crate::app::{AppError, Config};
-use crate::benchmark::estimate_text_tokens;
+use crate::benchmark_data::estimate_text_tokens;
 use crate::rewrite::{LivePipelineDecision, detect_linux_parent_pipeline, live_pipeline_decision};
 use crate::rollout_io::InteractiveTracker;
 use crate::trim::{
@@ -24,16 +24,21 @@ use nix::sys::wait::{WaitStatus, waitpid};
 use nix::unistd::{Pid, execve, read as nix_read, write as nix_write};
 use std::collections::BTreeSet;
 use std::env;
+#[cfg(unix)]
 use std::ffi::CString;
 use std::ffi::OsString;
 #[cfg(unix)]
 use std::fs::{File, OpenOptions};
-use std::io::{self, IsTerminal, Read, Write};
+#[cfg(unix)]
+use std::io::Read;
+use std::io::{self, IsTerminal, Write};
 #[cfg(unix)]
 use std::os::fd::{AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::path::Path;
 use std::process::{Command, Stdio};
+#[cfg(unix)]
 use std::sync::Arc;
+#[cfg(unix)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
@@ -103,11 +108,7 @@ pub(crate) fn run_agent_command(
     let force_passthrough = should_passthrough_agent_output(name);
 
     if stdout_is_tty && stderr_is_tty {
-        let tracker = if name == "codex" {
-            Some(InteractiveTracker::start()?)
-        } else {
-            None
-        };
+        let tracker = InteractiveTracker::start_for_agent(name);
         let code = passthrough(real_cmd, args, Some(envs), stdin_payload, true)?;
         if let Some(tracker) = tracker {
             tracker.finish(config)?;
@@ -116,11 +117,7 @@ pub(crate) fn run_agent_command(
     }
 
     if should_bridge_agent_with_pty(name, &stdin_payload) {
-        let tracker = if name == "codex" {
-            Some(InteractiveTracker::start()?)
-        } else {
-            None
-        };
+        let tracker = InteractiveTracker::start_for_agent(name);
         let code = passthrough_with_native_pty(real_cmd, args, Some(envs), true)?;
         if let Some(tracker) = tracker {
             tracker.finish(config)?;
@@ -166,10 +163,11 @@ fn should_passthrough_agent_output(name: &str) -> bool {
     if name != "claude" {
         return false;
     }
-    !matches!(
-        env::var("TKE_CLAUDE_LIVE_TOOLS").ok().as_deref(),
-        Some("1" | "true" | "TRUE" | "yes" | "YES")
-    )
+    // Claude agent output is always passed through. Tool compression happens
+    // via PATH shims (run_tool_command), not via agent output capture.
+    // Claude's stdout is either the interactive TUI (TTY) or the final answer
+    // text (-p mode); neither contains raw tool output worth compressing.
+    true
 }
 
 pub(crate) fn run_tool_command(
@@ -293,15 +291,14 @@ pub(crate) fn passthrough(
     stdin_payload: Option<Vec<u8>>,
     keep_shim_path: bool,
 ) -> Result<i32, AppError> {
-    let mut cmd = Command::new(real_cmd);
-    cmd.args(args)
-        .stdin(if stdin_payload.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::inherit()
-        })
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit());
+    let mut cmd = build_command(real_cmd, args);
+    cmd.stdin(if stdin_payload.is_some() {
+        Stdio::piped()
+    } else {
+        Stdio::inherit()
+    })
+    .stdout(Stdio::inherit())
+    .stderr(Stdio::inherit());
 
     if !keep_shim_path {
         cmd.env("PATH", real_path_string());
@@ -661,9 +658,14 @@ pub fn run_tty_wrapped(
     shim_dir: Option<std::path::PathBuf>,
     config: &Config,
 ) -> Result<i32, AppError> {
-    let cwd = env::current_dir()?;
-    let shim_dir = shim_dir.unwrap_or_else(|| cwd.join(".tke").join("shims"));
-    std::fs::create_dir_all(&shim_dir)?;
+    let shim_home = match shim_dir {
+        Some(path) => {
+            std::fs::create_dir_all(&path)?;
+            RuntimeShimDir::persistent(path)
+        }
+        None => RuntimeShimDir::temporary()?,
+    };
+    let shim_dir = shim_home.path().to_path_buf();
 
     let mut agents = config.agent_commands.clone();
     if !agents.iter().any(|agent| agent == name) {
@@ -671,7 +673,8 @@ pub fn run_tty_wrapped(
     }
     create_shims(&shim_dir, &agents, &config.tool_commands)?;
 
-    let shim_dir_abs = std::fs::canonicalize(&shim_dir).unwrap_or(shim_dir);
+    let shim_dir_abs =
+        crate::trim::normalize_runtime_path(std::fs::canonicalize(&shim_dir).unwrap_or(shim_dir));
     let real_path =
         env::var("TKE_REAL_PATH").unwrap_or_else(|_| env::var("PATH").unwrap_or_default());
     let path =
@@ -698,8 +701,52 @@ pub fn run_tty_wrapped(
 
     let target_cmd = crate::trim::resolve_real_command(name)?;
     let target_args = args.to_vec();
+    let tracker = InteractiveTracker::start_for_agent(name);
+    let code = passthrough_with_native_pty(&target_cmd, &target_args, Some(envs), true)?;
+    if let Some(tracker) = tracker {
+        tracker.finish(config)?;
+    }
+    Ok(code)
+}
 
-    passthrough_with_native_pty(&target_cmd, &target_args, Some(envs), true)
+struct RuntimeShimDir {
+    path: std::path::PathBuf,
+    cleanup_on_drop: bool,
+}
+
+impl RuntimeShimDir {
+    fn persistent(path: std::path::PathBuf) -> Self {
+        Self {
+            path,
+            cleanup_on_drop: false,
+        }
+    }
+
+    fn temporary() -> Result<Self, AppError> {
+        let path = crate::app::default_runtime_shim_dir();
+        std::fs::create_dir_all(&path)?;
+        Ok(Self {
+            path,
+            cleanup_on_drop: true,
+        })
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for RuntimeShimDir {
+    fn drop(&mut self) {
+        if self.cleanup_on_drop {
+            let _ = std::fs::remove_dir_all(
+                self.path
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_else(|| self.path.clone()),
+            );
+        }
+    }
 }
 
 pub(crate) fn capture_process(
@@ -709,9 +756,8 @@ pub(crate) fn capture_process(
     stdin_payload: Option<Vec<u8>>,
     keep_shim_path: bool,
 ) -> Result<std::process::Output, AppError> {
-    let mut cmd = Command::new(real_cmd);
-    cmd.args(args)
-        .stdout(Stdio::piped())
+    let mut cmd = build_command(real_cmd, args);
+    cmd.stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .stdin(if stdin_payload.is_some() {
             Stdio::piped()
@@ -742,6 +788,34 @@ pub(crate) fn capture_process(
         }
     }
     Ok(child.wait_with_output()?)
+}
+
+fn build_command(real_cmd: &Path, args: &[String]) -> Command {
+    #[cfg(windows)]
+    {
+        if should_spawn_via_cmd(real_cmd) {
+            let mut cmd = Command::new("cmd.exe");
+            cmd.arg("/C").arg(real_cmd);
+            cmd.args(args);
+            return cmd;
+        }
+    }
+
+    let mut cmd = Command::new(real_cmd);
+    cmd.args(args);
+    cmd
+}
+
+#[cfg(windows)]
+fn should_spawn_via_cmd(real_cmd: &Path) -> bool {
+    matches!(
+        real_cmd
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext.to_ascii_lowercase())
+            .as_deref(),
+        Some("cmd" | "bat")
+    )
 }
 
 pub(crate) fn emit_stream<W: Write>(

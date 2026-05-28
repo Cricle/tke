@@ -1,6 +1,7 @@
 mod adapter;
 mod app;
 mod benchmark;
+mod benchmark_data;
 mod e2e_report;
 mod file_profile;
 mod log_profile;

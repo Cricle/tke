@@ -20,14 +20,9 @@ pub fn capture_interactive(
 ) -> Result<(), AppError> {
     let source = match source {
         Some(path) => path,
-        None => {
-            let sessions_dir = codex_sessions_dir().ok_or_else(|| {
-                AppError::Usage("tke could not resolve CODEX_HOME sessions dir".to_owned())
-            })?;
-            find_latest_rollout_after(&sessions_dir, 0)?.ok_or_else(|| {
-                AppError::Usage("tke could not find a codex rollout jsonl".to_owned())
-            })?
-        }
+        None => find_latest_any_rollout()?.ok_or_else(|| {
+            AppError::Usage("tke could not find any agent rollout jsonl".to_owned())
+        })?,
     };
     let output_dir = output.or_else(interactive_output_dir).ok_or_else(|| {
         AppError::Usage("tke could not resolve interactive output dir".to_owned())
@@ -40,14 +35,9 @@ pub fn capture_interactive(
 pub fn compare_rollout(source: Option<PathBuf>, config: &Config) -> Result<(), AppError> {
     let source = match source {
         Some(path) => path,
-        None => {
-            let sessions_dir = codex_sessions_dir().ok_or_else(|| {
-                AppError::Usage("tke could not resolve CODEX_HOME sessions dir".to_owned())
-            })?;
-            find_latest_rollout_after(&sessions_dir, 0)?.ok_or_else(|| {
-                AppError::Usage("tke could not find a codex rollout jsonl".to_owned())
-            })?
-        }
+        None => find_latest_any_rollout()?.ok_or_else(|| {
+            AppError::Usage("tke could not find any agent rollout jsonl".to_owned())
+        })?,
     };
 
     let raw = fs::read_to_string(&source)?;
@@ -129,6 +119,7 @@ pub enum UsageStatsGroupBy {
     Day,
     Profile,
     Command,
+    Agent,
 }
 
 impl UsageStatsGroupBy {
@@ -137,6 +128,7 @@ impl UsageStatsGroupBy {
             Self::Day => "day",
             Self::Profile => "profile",
             Self::Command => "command",
+            Self::Agent => "agent",
         }
     }
 }
@@ -238,6 +230,7 @@ pub enum UsageStatsFilter {
     None,
     Profile(String),
     Command(String),
+    Agent(String),
 }
 
 impl UsageStatsFilter {
@@ -246,13 +239,16 @@ impl UsageStatsFilter {
             Self::None => "none",
             Self::Profile(_) => "profile",
             Self::Command(_) => "command",
+            Self::Agent(_) => "agent",
         }
     }
 
     fn value(&self) -> Option<String> {
         match self {
             Self::None => None,
-            Self::Profile(value) | Self::Command(value) => Some(value.clone()),
+            Self::Profile(value) | Self::Command(value) | Self::Agent(value) => {
+                Some(value.clone())
+            }
         }
     }
 }
@@ -977,22 +973,39 @@ fn lookup_usage_stats_cache<'a>(
 pub struct InteractiveTracker {
     pub(crate) sessions_dir: PathBuf,
     pub(crate) started_at_ms: u128,
+    pub(crate) agent: &'static str,
 }
 
 impl InteractiveTracker {
-    pub fn start() -> Result<Self, AppError> {
-        let sessions_dir = codex_sessions_dir().ok_or_else(|| {
-            AppError::Usage("tke could not resolve CODEX_HOME sessions dir".to_owned())
-        })?;
-        Ok(Self {
-            sessions_dir,
-            started_at_ms: now_millis(),
-        })
+    pub fn start_for_agent(name: &str) -> Option<Self> {
+        match name {
+            "codex" => {
+                let sessions_dir = codex_sessions_dir()?;
+                Some(Self {
+                    sessions_dir,
+                    started_at_ms: now_millis(),
+                    agent: "codex",
+                })
+            }
+            "claude" => {
+                let sessions_dir = claude_sessions_dir()?;
+                Some(Self {
+                    sessions_dir,
+                    started_at_ms: now_millis(),
+                    agent: "claude",
+                })
+            }
+            _ => None,
+        }
     }
 
     pub fn finish(&self, config: &Config) -> Result<(), AppError> {
-        let Some(latest) = find_latest_rollout_after(&self.sessions_dir, self.started_at_ms)?
-        else {
+        let latest = if self.agent == "claude" {
+            find_latest_claude_rollout_after(&self.sessions_dir, self.started_at_ms)?
+        } else {
+            find_latest_rollout_after(&self.sessions_dir, self.started_at_ms)?
+        };
+        let Some(latest) = latest else {
             return Ok(());
         };
         if let Some(dir) = interactive_output_dir() {
@@ -1006,9 +1019,40 @@ fn codex_sessions_dir() -> Option<PathBuf> {
     resolve_codex_home().map(|home| home.join("sessions"))
 }
 
+fn claude_sessions_dir() -> Option<PathBuf> {
+    resolve_claude_home().map(|home| home.join("sessions"))
+}
+
+fn resolve_claude_home() -> Option<PathBuf> {
+    if let Ok(home) = env::var("CLAUDE_HOME") {
+        return Some(PathBuf::from(home));
+    }
+    #[cfg(windows)]
+    {
+        if let Ok(home) = env::var("USERPROFILE") {
+            return Some(PathBuf::from(home).join(".claude"));
+        }
+        if let (Ok(drive), Ok(path)) = (env::var("HOMEDRIVE"), env::var("HOMEPATH")) {
+            return Some(PathBuf::from(format!("{drive}{path}")).join(".claude"));
+        }
+    }
+    env::var("HOME")
+        .ok()
+        .map(|home| PathBuf::from(home).join(".claude"))
+}
+
 fn resolve_codex_home() -> Option<PathBuf> {
     if let Ok(home) = env::var("CODEX_HOME") {
         return Some(PathBuf::from(home));
+    }
+    #[cfg(windows)]
+    {
+        if let Ok(home) = env::var("USERPROFILE") {
+            return Some(PathBuf::from(home).join(".codex"));
+        }
+        if let (Ok(drive), Ok(path)) = (env::var("HOMEDRIVE"), env::var("HOMEPATH")) {
+            return Some(PathBuf::from(format!("{drive}{path}")).join(".codex"));
+        }
     }
     env::var("HOME")
         .ok()
@@ -1026,10 +1070,39 @@ fn default_stats_roots() -> Vec<PathBuf> {
     if let Some(sessions) = codex_sessions_dir() {
         roots.push(sessions);
     }
+    if let Some(claude_home) = resolve_claude_home() {
+        roots.push(claude_home.join("projects"));
+    }
     if let Some(interactive) = interactive_output_dir() {
         roots.push(interactive);
     }
     roots
+}
+
+fn find_latest_any_rollout() -> Result<Option<PathBuf>, AppError> {
+    let mut best: Option<(u128, PathBuf)> = None;
+
+    if let Some(sessions_dir) = codex_sessions_dir() {
+        if let Some(path) = find_latest_rollout_after(&sessions_dir, 0)? {
+            let ms = rollout_modified_ms(&path);
+            match &best {
+                Some((best_ms, _)) if ms <= *best_ms => {}
+                _ => best = Some((ms, path)),
+            }
+        }
+    }
+
+    if let Some(sessions_dir) = claude_sessions_dir() {
+        if let Some(path) = find_latest_claude_rollout_after(&sessions_dir, 0)? {
+            let ms = rollout_modified_ms(&path);
+            match &best {
+                Some((best_ms, _)) if ms <= *best_ms => {}
+                _ => best = Some((ms, path)),
+            }
+        }
+    }
+
+    Ok(best.map(|(_, path)| path))
 }
 
 fn discover_rollout_paths(
@@ -1172,6 +1245,65 @@ fn find_latest_rollout_after(dir: &Path, started_at_ms: u128) -> Result<Option<P
     Ok(best.map(|(_, path)| path))
 }
 
+fn find_latest_claude_rollout_after(
+    sessions_dir: &Path,
+    started_at_ms: u128,
+) -> Result<Option<PathBuf>, AppError> {
+    if !sessions_dir.exists() {
+        return Ok(None);
+    }
+
+    let claude_home = sessions_dir
+        .parent()
+        .ok_or_else(|| AppError::Usage("cannot resolve claude home".to_owned()))?;
+    let projects_dir = claude_home.join("projects");
+
+    let mut best: Option<(u128, PathBuf)> = None;
+    for entry in fs::read_dir(sessions_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+            continue;
+        }
+        let raw = match fs::read_to_string(&path) {
+            Ok(raw) => raw,
+            Err(_) => continue,
+        };
+        let meta: serde_json::Value = match serde_json::from_str(&raw) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let session_started = meta
+            .get("startedAt")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u128;
+        if session_started + 5000 < started_at_ms {
+            continue;
+        }
+        let Some(session_id) = meta.get("sessionId").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(cwd) = meta.get("cwd").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let encoded = claude_encode_project_path(cwd);
+        let jsonl_path = projects_dir.join(&encoded).join(format!("{session_id}.jsonl"));
+        if !jsonl_path.exists() {
+            continue;
+        }
+        let file_ms = rollout_modified_ms(&jsonl_path);
+        match &best {
+            Some((best_ms, _)) if file_ms <= *best_ms => {}
+            _ => best = Some((file_ms, jsonl_path)),
+        }
+    }
+    Ok(best.map(|(_, path)| path))
+}
+
+fn claude_encode_project_path(cwd: &str) -> String {
+    cwd.replace('/', "-").replace('\\', "-").replace(':', "-")
+}
+
 fn rewrite_rollout_to_output(
     source: &Path,
     output_dir: &Path,
@@ -1192,13 +1324,7 @@ fn rewrite_rollout_to_output(
     Ok(())
 }
 
-fn ratio(saved: isize, total: usize) -> f64 {
-    if total == 0 {
-        0.0
-    } else {
-        saved as f64 / total as f64
-    }
-}
+use crate::trim::ratio;
 
 fn print_usage_stats_report(report: &UsageStatsReport) -> Result<(), AppError> {
     let mut out = std::io::stdout();
@@ -1411,6 +1537,27 @@ fn select_breakdown_pair(
         UsageStatsFilter::Command(value) => {
             Some(filtered_pair_stats(report, |_, command| command == value))
         }
+        UsageStatsFilter::Agent(value) => {
+            if detect_agent_from_path(&report.source) == value.as_str() {
+                Some((report.raw_detail.total, report.rewritten_detail.total))
+            } else {
+                let zero = crate::rollout_stats::RolloutOutputStats::default();
+                Some((zero, zero))
+            }
+        }
+    }
+}
+
+fn detect_agent_from_path(source: &str) -> &'static str {
+    let normalized = source.replace('\\', "/");
+    let components: Vec<&str> = normalized.split('/').collect();
+    let has_component = |name: &str| components.iter().any(|c| *c == name);
+    if has_component(".codex") || has_component("codex") || normalized.contains("codex-") {
+        "codex"
+    } else if has_component(".claude") || has_component("claude") || normalized.contains("claude-") {
+        "claude"
+    } else {
+        "unknown"
     }
 }
 
@@ -1431,6 +1578,11 @@ fn usage_group_rows(
             )],
             UsageStatsGroupBy::Profile => report_record_rows(item, filter, true),
             UsageStatsGroupBy::Command => report_record_rows(item, filter, false),
+            UsageStatsGroupBy::Agent => vec![(
+                detect_agent_from_path(&item.source).to_owned(),
+                item.raw_detail.total,
+                item.rewritten_detail.total,
+            )],
         };
         for (key, raw, rewritten) in rows {
             let entry = grouped.entry(key).or_insert((0, 0, 0, 0, 0, 0, 0));
@@ -1482,7 +1634,7 @@ fn usage_group_rows(
             },
         )
         .filter(|row| {
-            if matches!(group_by, UsageStatsGroupBy::Day) {
+            if matches!(group_by, UsageStatsGroupBy::Day | UsageStatsGroupBy::Agent) {
                 true
             } else {
                 row.tokens_saved != 0 || row.bytes_saved != 0
@@ -1490,7 +1642,7 @@ fn usage_group_rows(
         })
         .collect::<Vec<_>>();
     sort_usage_groups(&mut rows, sort_by);
-    if !matches!(group_by, UsageStatsGroupBy::Day) && rows.len() > top {
+    if !matches!(group_by, UsageStatsGroupBy::Day | UsageStatsGroupBy::Agent) && rows.len() > top {
         rows.truncate(top);
     }
     rows
@@ -1599,7 +1751,7 @@ fn paired_record_rows(
     paired_record_rows_with_meta(report)
         .into_iter()
         .filter(|(profile, command, _, _)| match filter {
-            UsageStatsFilter::None => true,
+            UsageStatsFilter::None | UsageStatsFilter::Agent(_) => true,
             UsageStatsFilter::Profile(value) => profile == value,
             UsageStatsFilter::Command(value) => command == value,
         })
@@ -1637,4 +1789,17 @@ fn paired_record_rows_with_meta(
         ));
     }
     rows
+}
+
+#[cfg(test)]
+pub(crate) fn test_find_latest_claude_rollout_after(
+    sessions_dir: &Path,
+    started_at_ms: u128,
+) -> Result<Option<PathBuf>, AppError> {
+    find_latest_claude_rollout_after(sessions_dir, started_at_ms)
+}
+
+#[cfg(test)]
+pub(crate) fn test_claude_encode_project_path(cwd: &str) -> String {
+    claude_encode_project_path(cwd)
 }
