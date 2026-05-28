@@ -186,7 +186,7 @@ Interpretation:
 - `tke` on Claude now achieves **33.4% savings** on live sessions, up from 6.8% after fixing malformed JSON handling in the transcript rewriter.
 - `tke` is now included in the same fair comparison framework as `rtk-hook`, ensuring equal test coverage.
 - The live `tke` Claude path now delivers meaningful compression: `file` at 74.3%, `table` at 78.5%, `pathlist` at 55.1%.
-- In the current seventeen-scenario stable synthetic Claude-oriented traces, `tke` saves `121391` tokens total at `86.0%`, while `rtk-hook` saves `122479` at `86.1%`; both preserve all required semantic fragments in those controlled cases, and the complex scenario deltas are listed directly in [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:151).
+- In the current seventeen-scenario stable synthetic Claude-oriented traces, `tke` saves `121335` tokens total at `86.0%`, while `rtk-hook` saves `122479` at `86.1%`; both preserve all required semantic fragments in those controlled cases, and the complex scenario deltas are listed directly in [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:151).
 
 ## Important Fairness Cases
 

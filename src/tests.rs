@@ -8155,3 +8155,78 @@ fn generic_repeated_lines_folded() {
     );
     assert!(result.contains("c:25"), "fold should report count of 25");
 }
+
+#[test]
+fn generic_structural_template_folds() {
+    // Lines sharing a canonical prefix ("Processing item #") should fold
+    let lines: Vec<String> = (0..20)
+        .map(|i| format!("Processing item {i} of 100 in the batch"))
+        .collect();
+    let text = lines.join("\n");
+    let result = normalize_text(
+        "somecmd",
+        &[],
+        "stdout",
+        CommandKind::Generic,
+        &text,
+        &Config::default(),
+    )
+    .expect("no error");
+    assert!(
+        result.contains("fold"),
+        "Structural template detection should fold lines with shared canonical prefix"
+    );
+    assert!(result.contains("c:20"), "fold should report count of 20");
+}
+
+#[test]
+fn generic_short_output_compresses() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 2048;
+    cfg.max_body_lines = 100;
+    // 50 lines of generic output, ~2000 bytes — above 512 threshold and large enough for token savings
+    let lines: Vec<String> = (0..50)
+        .map(|i| format!("Processing item {i} of 100 in the batch"))
+        .collect();
+    let text = lines.join("\n");
+    assert!(text.len() >= 512);
+    let result = maybe_normalize_text(
+        "somecmd",
+        &[],
+        "stdout",
+        CommandKind::Generic,
+        &text,
+        &cfg,
+        None,
+    )
+    .expect("no error");
+    assert!(
+        result.is_some(),
+        "Generic output >=512 bytes and >=16 lines should compress"
+    );
+}
+
+#[test]
+fn search_profile_includes_context() {
+    let lines: Vec<String> = vec![
+        "line before match".to_owned(),
+        "fn alpha_function() {}".to_owned(),
+        "line after match".to_owned(),
+        "unrelated line".to_owned(),
+    ];
+    let text = lines.join("\n");
+    let result = normalize_text(
+        "rg",
+        &["alpha".to_owned()],
+        "stdout",
+        CommandKind::Search,
+        &text,
+        &Config::default(),
+    )
+    .expect("no error");
+    // With match_context=1, the line before and after the match should be included
+    assert!(
+        result.contains("line before match") || result.contains("line after match"),
+        "Search profile with match_context=1 should include context around matches"
+    );
+}

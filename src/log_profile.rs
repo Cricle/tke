@@ -132,7 +132,7 @@ fn canonicalize_log_line(line: &str) -> String {
     out
 }
 
-fn truncate_for_sample(line: &str) -> String {
+pub(crate) fn truncate_for_sample(line: &str) -> String {
     const MAX: usize = 72;
     truncate_ellipsized(line, MAX)
 }

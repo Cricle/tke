@@ -59,9 +59,83 @@ pub(crate) fn collect_profile_chunks(
                     break;
                 }
             }
+            // Structural template detection: group lines sharing a canonical prefix
+            if chunks.len() < limits.max_matches {
+                let templates = detect_structural_templates(lines, 4);
+                for tmpl in templates {
+                    let [start, end] = tmpl.r;
+                    if start >= end || used.iter().any(|(s, e)| start < *e && end > *s) {
+                        continue;
+                    }
+                    used.push((start, end));
+                    chunks.push(tmpl);
+                    if chunks.len() >= limits.max_matches {
+                        break;
+                    }
+                }
+            }
             chunks
         }
     }
+}
+
+fn canonicalize_line(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut prev_digit = false;
+    for ch in line.chars() {
+        if ch.is_ascii_digit() {
+            if !prev_digit {
+                out.push('#');
+            }
+            prev_digit = true;
+        } else {
+            prev_digit = false;
+            out.push(ch);
+        }
+    }
+    out
+}
+
+fn canonicalize_prefix(line: &str, max_tokens: usize) -> String {
+    let tokens: Vec<&str> = line.split_whitespace().take(max_tokens).collect();
+    let joined = tokens.join(" ");
+    canonicalize_line(&joined)
+}
+
+/// Detect lines sharing a structural template (common canonical prefix).
+/// Groups consecutive lines where the first `prefix_len` canonical tokens match.
+fn detect_structural_templates(lines: &[&str], prefix_len: usize) -> Vec<MatchChunk> {
+    if lines.len() < 3 {
+        return Vec::new();
+    }
+    let canonical: Vec<String> = lines
+        .iter()
+        .map(|l| canonicalize_prefix(l, prefix_len))
+        .collect();
+    let mut out = Vec::new();
+    let mut idx = 0;
+    while idx < lines.len() {
+        let ref_canon = &canonical[idx];
+        if ref_canon.is_empty() {
+            idx += 1;
+            continue;
+        }
+        let mut end = idx + 1;
+        while end < lines.len() && canonical[end] == *ref_canon {
+            end += 1;
+        }
+        let count = end - idx;
+        if count >= 3 {
+            let sample = crate::log_profile::truncate_for_sample(lines[idx]);
+            out.push(MatchChunk {
+                k: "fold".to_owned(),
+                r: [idx, end],
+                l: vec![format!("rep:{} c:{} s:{}", count, count, sample)],
+            });
+        }
+        idx = end;
+    }
+    out
 }
 
 pub(crate) fn collect_term_chunks(
@@ -1163,8 +1237,8 @@ pub(crate) fn profile_limits(profile: TrimProfile, config: &Config) -> ProfileLi
         TrimProfile::Search => ProfileLimits {
             head_lines: usize::min(config.head_lines, 6),
             tail_lines: usize::min(config.tail_lines, 6),
-            match_context: 0,
-            max_matches: usize::max(config.max_matches, 12),
+            match_context: 1,
+            max_matches: usize::max(config.max_matches, 16),
         },
         TrimProfile::PathList => ProfileLimits {
             head_lines: 0,
@@ -1234,8 +1308,8 @@ pub(crate) fn should_force_trim(
         }
         TrimProfile::Generic => {
             total_lines >= 3
-                && (total_bytes >= usize::min(config.min_trim_bytes, 1024)
-                    || total_lines >= usize::min(config.max_body_lines, 24))
+                && (total_bytes >= usize::min(config.min_trim_bytes, 512)
+                    || total_lines >= usize::min(config.max_body_lines, 16))
         }
         _ => total_bytes >= config.min_trim_bytes || total_lines > config.max_body_lines,
     }
