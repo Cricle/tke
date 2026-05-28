@@ -29,13 +29,38 @@ pub(crate) fn collect_profile_chunks(
         TrimProfile::Table => Vec::new(),
         TrimProfile::Stacktrace => collect_stacktrace_chunks(lines, limits),
         TrimProfile::File => crate::file_profile::collect_file_chunks(lines, terms, limits),
-        TrimProfile::Generic => collect_term_chunks(
-            lines,
-            terms,
-            "hit",
-            limits.match_context,
-            limits.max_matches,
-        ),
+        TrimProfile::Generic => {
+            let mut chunks = collect_term_chunks(
+                lines,
+                terms,
+                "hit",
+                limits.match_context,
+                limits.max_matches,
+            );
+            let folds = crate::log_profile::detect_repeated_runs(lines);
+            let mut used: Vec<(usize, usize)> = chunks.iter().map(|c| (c.r[0], c.r[1])).collect();
+            for fold in folds {
+                let [start, end] = fold.range;
+                if start >= end || used.iter().any(|(s, e)| start < *e && end > *s) {
+                    continue;
+                }
+                used.push((start, end));
+                chunks.push(MatchChunk {
+                    k: "fold".to_owned(),
+                    r: fold.range,
+                    l: vec![format!(
+                        "rep:{} c:{} s:{}",
+                        end.saturating_sub(start),
+                        fold.count,
+                        fold.sample
+                    )],
+                });
+                if chunks.len() >= limits.max_matches {
+                    break;
+                }
+            }
+            chunks
+        }
     }
 }
 
@@ -1104,7 +1129,9 @@ pub(crate) fn select_profile(
         CommandKind::Log => TrimProfile::Log,
         CommandKind::File => TrimProfile::File,
         CommandKind::Generic => {
-            if lines.iter().any(|line| is_log_signal(line, &[])) {
+            if lines.iter().any(|line| is_log_signal(line, &[]))
+                || lines.iter().any(|line| has_log_progress(line))
+            {
                 TrimProfile::Log
             } else {
                 TrimProfile::Generic
@@ -1201,9 +1228,14 @@ pub(crate) fn should_force_trim(
             total_bytes >= usize::min(config.min_trim_bytes, 160)
                 || total_lines >= usize::min(config.max_body_lines, 4)
         }
+        TrimProfile::Log => {
+            total_bytes >= usize::min(config.min_trim_bytes, 512)
+                || total_lines >= usize::min(config.max_body_lines, 16)
+        }
         TrimProfile::Generic => {
             total_lines >= 3
-                && (total_bytes >= config.min_trim_bytes || total_lines > config.max_body_lines)
+                && (total_bytes >= usize::min(config.min_trim_bytes, 1024)
+                    || total_lines >= usize::min(config.max_body_lines, 24))
         }
         _ => total_bytes >= config.min_trim_bytes || total_lines > config.max_body_lines,
     }
@@ -1377,6 +1409,7 @@ struct LogLineClass {
     warning: bool,
     failure: bool,
     stack_summary: bool,
+    progress: bool,
 }
 
 fn classify_log_line(line: &str) -> LogLineClass {
@@ -1394,11 +1427,27 @@ fn classify_log_line(line: &str) -> LogLineClass {
             || has_ascii_token(&tokens, "fail")
             || has_ascii_token(&tokens, "failed")
             || has_token_sequence(&tokens, &["not", "ok"]));
+    let progress = has_ascii_token(&tokens, "compiling")
+        || has_ascii_token(&tokens, "downloading")
+        || has_ascii_token(&tokens, "fetching")
+        || has_ascii_token(&tokens, "installing")
+        || has_ascii_token(&tokens, "building")
+        || has_ascii_token(&tokens, "testing")
+        || has_ascii_token(&tokens, "generated")
+        || has_ascii_token(&tokens, "created")
+        || has_ascii_token(&tokens, "updated")
+        || has_ascii_token(&tokens, "removed")
+        || has_ascii_token(&tokens, "added");
     LogLineClass {
         warning,
         failure,
         stack_summary,
+        progress,
     }
+}
+
+pub(crate) fn has_log_progress(line: &str) -> bool {
+    classify_log_line(line).progress
 }
 
 fn has_source_location(line: &str) -> bool {

@@ -23,13 +23,13 @@ use crate::shim::{maybe_normalize_text, normalize_text, normalize_text_with_stag
 use crate::stats::{
     UsageStatsFilter, UsageStatsGroupBy, UsageStatsSortBy, build_usage_stats_report,
 };
+use crate::table_profile::looks_like_table;
 use crate::trim::{
     CommandKind, ShellKind, candidate_command_names, canonical_command_name, classify_command,
-    create_windows_exe_shim, is_failure_signal_line, is_log_signal, is_warning_signal,
-    looks_like_path_list, match_terms, now_millis, read_stream_payload, render_activate_script,
-    render_deactivate_script, shim_command_path,
+    create_windows_exe_shim, has_log_progress, is_failure_signal_line, is_log_signal,
+    is_warning_signal, looks_like_path_list, match_terms, now_millis, read_stream_payload,
+    render_activate_script, render_deactivate_script, shim_command_path,
 };
-use crate::table_profile::looks_like_table;
 use std::fs;
 use std::io::{self, Cursor, Read};
 use std::path::{Path, PathBuf};
@@ -1768,7 +1768,14 @@ fn classify_new_agent_commands_as_log() {
         CommandKind::Log
     ));
     assert!(matches!(
-        classify_command("wget", &["-O".to_owned(), "-".to_owned(), "http://example.com".to_owned()]),
+        classify_command(
+            "wget",
+            &[
+                "-O".to_owned(),
+                "-".to_owned(),
+                "http://example.com".to_owned()
+            ]
+        ),
         CommandKind::Log
     ));
     assert!(matches!(
@@ -1823,16 +1830,8 @@ fn short_generic_output_never_compressed() {
 #[test]
 fn empty_output_produces_passthrough() {
     let cfg = Config::default();
-    let result = maybe_normalize_text(
-        "cat",
-        &[],
-        "stdout",
-        CommandKind::File,
-        "",
-        &cfg,
-        None,
-    )
-    .expect("no error");
+    let result = maybe_normalize_text("cat", &[], "stdout", CommandKind::File, "", &cfg, None)
+        .expect("no error");
     assert!(result.is_none(), "empty output should return None");
 }
 
@@ -1840,7 +1839,10 @@ fn empty_output_produces_passthrough() {
 fn envelope_fc_field_contains_full_command() {
     let mut cfg = Config::default();
     cfg.min_trim_bytes = 1;
-    let output = (0..20).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+    let output = (0..20)
+        .map(|i| format!("line {i}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     let normalized = normalize_text(
         "cargo",
         &["test".to_owned(), "--lib".to_owned()],
@@ -8046,4 +8048,110 @@ fn claude_encode_project_path_handles_windows_paths() {
         crate::rollout_io::claude_encode_project_path("D:\\dev\\tke"),
         "D--dev-tke"
     );
+}
+
+#[test]
+fn log_lower_threshold_compresses_small_output() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 2048;
+    cfg.max_body_lines = 100;
+    // 25 lines of build-like output, ~650 bytes — below default 2048 but above new 512 threshold
+    let lines: Vec<String> = (0..25)
+        .map(|i| format!("Compiling crate-{i} v0.1.0"))
+        .collect();
+    let text = lines.join("\n");
+    assert!(text.len() < 2048);
+    assert!(text.len() >= 512);
+    let result = maybe_normalize_text(
+        "cargo",
+        &["test".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &cfg,
+        None,
+    )
+    .expect("no error");
+    assert!(result.is_some(), "Log output >=512 bytes should compress");
+}
+
+#[test]
+fn log_progress_lines_count_as_signals() {
+    assert!(has_log_progress("Compiling foo v0.1.0"));
+    assert!(has_log_progress("Downloading serde v1.0.0"));
+    assert!(has_log_progress("Fetching crates.io index"));
+    assert!(has_log_progress("Installing package foo"));
+    assert!(has_log_progress("Building wheel for foo"));
+    assert!(has_log_progress("Testing test_foo ... ok"));
+    assert!(has_log_progress("Generated docs/html/index.html"));
+    assert!(!has_log_progress("some random output line"));
+}
+
+#[test]
+fn table_three_rows_detected() {
+    let table = "NAME  STATUS  AGE\nfoo   Running 1d\nbar   Running 2d\nbaz   Failed  3d";
+    let lines: Vec<&str> = table.lines().collect();
+    assert!(
+        looks_like_table(&lines),
+        "3 headers + 3 rows should be detected as table"
+    );
+}
+
+#[test]
+fn table_common_headers_recognized() {
+    let table = "Name   Tag    Repository\nlatest v1.0   myrepo\nstable v2.0   myrepo\n dev   v3.0   myrepo";
+    let lines: Vec<&str> = table.lines().collect();
+    assert!(
+        looks_like_table(&lines),
+        "Name/Tag/Repository should be recognized as table headers"
+    );
+}
+
+#[test]
+fn generic_lower_threshold_compresses() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 2048;
+    cfg.max_body_lines = 100;
+    // 50 lines of generic output, ~2500 bytes — above new 1024 threshold and large enough for token savings
+    let lines: Vec<String> = (0..50)
+        .map(|i| format!("processing item {i} with some extra padding bytes for size"))
+        .collect();
+    let text = lines.join("\n");
+    assert!(text.len() >= 1024);
+    let result = maybe_normalize_text(
+        "somecmd",
+        &[],
+        "stdout",
+        CommandKind::Generic,
+        &text,
+        &cfg,
+        None,
+    )
+    .expect("no error");
+    assert!(
+        result.is_some(),
+        "Generic output >=1024 bytes and >=24 lines should compress"
+    );
+}
+
+#[test]
+fn generic_repeated_lines_folded() {
+    // Use a large enough text so that should_force_trim triggers
+    let plain = "same line output here for fold detection test\n";
+    let repeated = plain.repeat(25);
+    let text = format!("{repeated}different line\n{repeated}end");
+    let result = normalize_text(
+        "somecmd",
+        &[],
+        "stdout",
+        CommandKind::Generic,
+        &text,
+        &Config::default(),
+    )
+    .expect("no error");
+    assert!(
+        result.contains("fold"),
+        "Generic profile should fold repeated lines"
+    );
+    assert!(result.contains("c:25"), "fold should report count of 25");
 }

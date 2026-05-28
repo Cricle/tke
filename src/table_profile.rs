@@ -126,7 +126,13 @@ pub(crate) fn detect_table_layout(lines: &[&str]) -> Option<TableLayout> {
             });
         }
 
-        if rows.len() >= 4 {
+        if rows.len() >= 3 {
+            // Reject if all data rows are identical (repeated output, not a real table)
+            let first_row = &rows[0].fields;
+            let all_identical = rows[1..].iter().all(|r| r.fields == *first_row);
+            if all_identical {
+                continue;
+            }
             return Some(TableLayout {
                 headers,
                 rows,
@@ -420,7 +426,7 @@ fn looks_like_table_header(headers: &[String]) -> bool {
             score += 1;
         }
     }
-    known >= 1 || score >= usize::max(4, headers.len().saturating_sub(1))
+    known >= 1 || score >= usize::max(4, headers.len())
 }
 
 fn looks_like_codeish_table_cell(cell: &str) -> bool {
@@ -501,6 +507,24 @@ fn is_known_table_header(header: &str) -> bool {
             | "schema"
             | "table"
             | "rows"
+            | "name"
+            | "tag"
+            | "repository"
+            | "version"
+            | "id"
+            | "port"
+            | "host"
+            | "address"
+            | "path"
+            | "file"
+            | "profile"
+            | "mode"
+            | "age"
+            | "ip"
+            | "node"
+            | "namespace"
+            | "ready"
+            | "restarts"
     )
 }
 

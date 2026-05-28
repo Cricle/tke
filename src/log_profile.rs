@@ -92,7 +92,7 @@ fn push_fold_chunk(
     true
 }
 
-fn detect_repeated_runs(lines: &[&str]) -> Vec<RepeatedRun> {
+pub(crate) fn detect_repeated_runs(lines: &[&str]) -> Vec<RepeatedRun> {
     let mut out = Vec::new();
     let mut idx = 0;
     while idx < lines.len() {
