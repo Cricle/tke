@@ -763,8 +763,6 @@ fn parse_shim_exec(args: Vec<String>) -> Result<Dispatch, AppError> {
     })
 }
 
-
-
 fn parse_stats(args: Vec<String>) -> Result<Dispatch, AppError> {
     let mut sources = Vec::new();
     let mut limit = None;
