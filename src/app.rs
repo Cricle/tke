@@ -429,14 +429,14 @@ pub fn parse_dispatch(argv0: &str, args: Vec<String>) -> Result<Dispatch, AppErr
     }
     match sub {
         None | Some("-h") | Some("--help") | Some("help") => Ok(Dispatch::Help),
-        Some("activate") | Some("env") => parse_activate(args),
+        Some("activate") => parse_activate(args),
         Some("run") => parse_run(args),
         Some("tty") => parse_tty(args),
         Some("deactivate") => Ok(Dispatch::Deactivate),
         Some("capture-interactive") => parse_capture_interactive(args),
         Some("compare-rollout") => parse_compare_rollout(args),
         Some("stats") => parse_stats(args),
-        Some("usage") => parse_usage_alias(args),
+
         Some("compare-e2e") => parse_compare_e2e(args),
         Some("benchmark-commands") => parse_benchmark_commands(args),
         Some("shim") => parse_shim_exec(args),
@@ -454,14 +454,14 @@ pub fn usage() -> String {
         "Usage:",
         "  tke <agent> [args ...]",
         "  tke activate [--shim-dir PATH] [--shell SHELL] [agent ...]",
-        "  tke env [--shim-dir PATH] [--shell SHELL] [agent ...]",
+
         "  tke run [--shim-dir PATH] <agent> [args ...]",
         "  tke tty [--shim-dir PATH] <command> [args ...]",
         "  tke deactivate",
         "  tke capture-interactive [--source PATH] [--output PATH]",
         "  tke compare-rollout [--source PATH]",
         "  tke stats [--source PATH]... [--limit N] [--profile NAME] [--command NAME] [--agent codex|claude] [--by day|profile|command|agent] [--changed-only] [--refresh] [--top N] [--sort saved|ratio|low-ratio|samples] [--json]",
-        "  tke usage stats [--source PATH]... [--limit N] [--profile NAME] [--command NAME] [--agent codex|claude] [--by day|profile|command|agent] [--changed-only] [--refresh] [--top N] [--sort saved|ratio|low-ratio|samples] [--json]",
+
         "  tke compare-e2e [--source DIR]... [--agent codex|claude]",
         "  tke benchmark-commands [--check]",
         "",
@@ -477,7 +477,7 @@ pub fn usage() -> String {
         "  tke capture-interactive",
         "  tke compare-rollout",
         "  tke stats",
-        "  tke usage stats",
+
         "  tke stats --json --limit 10",
         "  tke stats --profile pathlist --by command",
         "  tke stats --changed-only --top 8 --sort ratio",
@@ -807,23 +807,7 @@ fn parse_shim_exec(args: Vec<String>) -> Result<Dispatch, AppError> {
     })
 }
 
-fn parse_usage_alias(args: Vec<String>) -> Result<Dispatch, AppError> {
-    match args.get(2).map(String::as_str) {
-        Some("stats") => {
-            let mut translated = vec!["tke".to_owned(), "stats".to_owned()];
-            translated.extend(args.into_iter().skip(3));
-            parse_stats(translated)
-        }
-        Some(other) => Err(AppError::Usage(format!(
-            "unknown usage subcommand `{other}`\n\n{}",
-            usage()
-        ))),
-        None => Err(AppError::Usage(format!(
-            "missing usage subcommand\n\n{}",
-            usage()
-        ))),
-    }
-}
+
 
 fn parse_stats(args: Vec<String>) -> Result<Dispatch, AppError> {
     let mut sources = Vec::new();

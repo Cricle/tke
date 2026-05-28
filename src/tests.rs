@@ -3239,36 +3239,6 @@ fn parse_stats_dispatch() {
 }
 
 #[test]
-fn parse_usage_stats_dispatch_alias() {
-    let dispatch = parse_dispatch(
-        "tke",
-        vec![
-            "tke".to_owned(),
-            "usage".to_owned(),
-            "stats".to_owned(),
-            "--source".to_owned(),
-            "/tmp/rollouts".to_owned(),
-            "--top".to_owned(),
-            "5".to_owned(),
-        ],
-    )
-    .expect("dispatch");
-    match dispatch {
-        Dispatch::Stats {
-            sources,
-            top,
-            refresh,
-            ..
-        } => {
-            assert_eq!(sources, vec![PathBuf::from("/tmp/rollouts")]);
-            assert_eq!(top, 5);
-            assert!(!refresh);
-        }
-        other => panic!("unexpected dispatch: {other:?}"),
-    }
-}
-
-#[test]
 fn parse_stats_dispatch_with_profile_and_group() {
     let dispatch = parse_dispatch(
         "tke",
