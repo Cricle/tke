@@ -171,7 +171,9 @@ fn summarize_entry(entry: &PathEntry, shared_parent: Option<&str>) -> String {
     {
         // Keep relative path from shared parent so the model can reconstruct full paths
         if let Some(suffix) = entry.value.strip_prefix(parent)
-            && let Some(relative) = suffix.strip_prefix('/').or_else(|| suffix.strip_prefix('\\'))
+            && let Some(relative) = suffix
+                .strip_prefix('/')
+                .or_else(|| suffix.strip_prefix('\\'))
             && !relative.is_empty()
         {
             return relative.to_owned();
