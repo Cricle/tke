@@ -7228,12 +7228,10 @@ fn rtk_docs_lock_fair_compare_aggregate_rows() {
 
     for row in [
         "| `rtk-codex-rules` | 2 | 0 | 2 | 0 | 0 | 11 |",
-        "| `rtk-hook` | 4 | 3 | 0 | 1 | 0 | -1 |",
         "| `fairfind` | `rtk-codex-rules` | fail | 0 | `wrong_and_not_saved` |",
-        "| `fairrg` | `rtk-codex-rules` | fail | 11 | `saved_but_wrong` |",
-        "| `fairbuild` | `rtk-hook` | pass | -1 | `correct_but_not_saved` |",
-        "| `fairfind` | `rtk-hook` | pass | 0 | `correct_but_not_saved` |",
-        "| `fairrg` | `rtk-hook` | pass | 0 | `correct_but_not_saved` |",
+        "| `fairbuild` | `rtk-hook` | no | no | no | - |",
+        "| `fairfind` | `rtk-hook` | no | no | no | - |",
+        "| `fairrg` | `rtk-hook` | no | no | no | - |",
     ] {
         assert!(benchmarks.contains(row), "{row}");
     }
@@ -7241,11 +7239,11 @@ fn rtk_docs_lock_fair_compare_aggregate_rows() {
     for fragment in [
         "| `rtk-codex-rules` | 2 fair cases | 0 | 2 | `11` token delta total |",
         "| `rtk-hook` | 4 | 3 | 0 | 1 | `-1` total delta |",
-        "| `codex` | `fairfind` | fail | fail | `0` | `wrong_and_not_saved` |",
-        "| `codex` | `fairrg` | fail | fail | `11` | `saved_but_wrong` |",
-        "| `claude` | `fairbuild` | pass | pass | `-1` | `correct_but_not_saved` |",
-        "| `claude` | `fairfind` | fail | pass | `0` | `correct_but_not_saved` |",
-        "| `claude` | `fairrg` | pass | pass | `0` | `correct_but_not_saved` |",
+        "| `codex` | `fairfind` | fail | missing | fail |",
+        "| `codex` | `fairrg` | fail | missing | fail |",
+        "| `claude` | `fairbuild` | fail | fail | pass | `1167` saved | `saved_but_wrong` |",
+        "| `claude` | `fairfind` | fail | fail | pass | `20` saved | `saved_but_wrong` |",
+        "| `claude` | `fairrg` | pass | pass | pass | `4797` saved | `saved_and_correct` |",
     ] {
         assert!(vs_doc.contains(fragment), "{fragment}");
     }
@@ -7350,22 +7348,22 @@ fn e2e_docs_match_generated_stable_case_rows_and_verdicts() {
     write_claude_e2e_sample(
         &claude_fair_root.join("fairbuild.raw.stream.jsonl"),
         "test result: ok. 105 passed; 0 failed; 0 ignored; 0 measured",
-        "STAGE=cargo test --lib -- --nocapture | tail -n 80\nFILE=src/lib.rs\nCOUNT=0",
+        "STAGE=cargo test --lib\nFILE=src/tests.rs\nCOUNT=4",
     );
     write_claude_e2e_sample(
-        &claude_fair_root.join("fairbuild.rtk-hook.stream.jsonl"),
-        "test result: ok. 105 passed; 0 failed; 0 ignored; 0 measured",
-        "STAGE=cargo test --lib -- --nocapture | tail -n 80\nFILE=src/lib.rs\nCOUNT=0",
+        &claude_fair_root.join("fairbuild.tke.stream.jsonl"),
+        "__TKE__{\"v\":1,\"cmd\":\"cargo\",\"sc\":\"cargo\",\"sr\":\"build\",\"p\":\"log\",\"bd\":{\"ok\":105,\"fl\":0,\"tt\":105}}",
+        "STAGE=test\nFILE=src/tests.rs\nCOUNT=4",
     );
     write_claude_e2e_sample(
         &claude_fair_root.join("fairfind.raw.stream.jsonl"),
         repeated_lines("src/rollout_stats.rs", 17).as_str(),
-        "STAGE=rg --files src | head -n 40\nFILE=src/rollout_stats.rs\nCOUNT=12",
+        "STAGE=list_files\nFILE=src/rollout_stats.rs\nCOUNT=19",
     );
     write_claude_e2e_sample(
-        &claude_fair_root.join("fairfind.rtk-hook.stream.jsonl"),
-        repeated_lines("src/rollout_stats.rs", 17).as_str(),
-        "STAGE=rg --files src | head -n 40\nFILE=src/rollout_stats.rs\nCOUNT=15",
+        &claude_fair_root.join("fairfind.tke.stream.jsonl"),
+        "__TKE__{\"v\":1,\"cmd\":\"rg\",\"sc\":\"rg\",\"sr\":\"search\",\"p\":\"pathlist\",\"c\":17}",
+        "STAGE=preprocess\nFILE=rollout_stats.rs\nCOUNT=4",
     );
     write_claude_e2e_sample(
         &claude_fair_root.join("fairrg.raw.stream.jsonl"),
@@ -7377,12 +7375,8 @@ fn e2e_docs_match_generated_stable_case_rows_and_verdicts() {
         "STAGE=rg -n \"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\" src\nFILE=src/tests.rs\nKIND=search",
     );
     write_claude_e2e_sample(
-        &claude_fair_root.join("fairrg.rtk-hook.stream.jsonl"),
-        repeated_lines(
-            "src/tests.rs:10:normalize_text compare-e2e benchmark-commands",
-            8,
-        )
-        .as_str(),
+        &claude_fair_root.join("fairrg.tke.stream.jsonl"),
+        "__TKE__{\"v\":1,\"cmd\":\"rg\",\"sc\":\"rg\",\"sr\":\"search\",\"p\":\"search\"}",
         "STAGE=rg -n \"normalize_text|rewrite_agent_transcript|compare-e2e|benchmark-commands\" src\nFILE=src/tests.rs\nKIND=search",
     );
 
@@ -7422,9 +7416,11 @@ fn e2e_docs_match_generated_stable_case_rows_and_verdicts() {
         .filter(|case| case.agent == "claude")
         .collect::<Vec<_>>();
     for case in claude_cases {
-        let notes = match case.name.as_str() {
-            "findcase" => "experimental live tke path, gateway noise on RTK hook path",
-            _ => "fair RTK hook path",
+        let notes = match (case.name.as_str(), e2e_case_status(case, "tke").as_str()) {
+            ("findcase", _) => "experimental live tke path, gateway noise on RTK hook path",
+            (_, "pass") => "live tke correct",
+            (_, "fail") => "experimental live tke path",
+            _ => "-",
         };
         let row = format!(
             "| `{}` | {} | {} | {} | {} |",

@@ -912,10 +912,41 @@ pub(crate) fn read_stdin_if_piped() -> Result<Option<Vec<u8>>, AppError> {
     read_stream_payload(&mut stdin)
 }
 
+/// Non-blocking stdin read for tool shims. Uses poll() to check if data is
+/// available before reading, so tool shims don't block when the parent process
+/// (e.g. Claude) hasn't closed its stdin pipe yet.
+#[cfg(unix)]
+pub(crate) fn read_stdin_if_piped_non_blocking() -> Result<Option<Vec<u8>>, AppError> {
+    use std::os::fd::AsRawFd;
+    if io::stdin().is_terminal() {
+        return Ok(None);
+    }
+    let fd = io::stdin().as_raw_fd();
+    let pfd = nix::poll::PollFd::new(
+        unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) },
+        nix::poll::PollFlags::POLLIN,
+    );
+    match nix::poll::poll(&mut [pfd], 100_u16) {
+        Ok(0) => Ok(None),
+        Ok(_) => {
+            let mut stdin = io::stdin();
+            read_stream_payload(&mut stdin)
+        }
+        Err(nix::errno::Errno::EINTR) => Ok(None),
+        Err(err) => Err(err.into()),
+    }
+}
+
+#[cfg(not(unix))]
+pub(crate) fn read_stdin_if_piped_non_blocking() -> Result<Option<Vec<u8>>, AppError> {
+    read_stdin_if_piped()
+}
+
 pub(crate) fn resolve_real_command(name: &str) -> Result<PathBuf, AppError> {
     let shim_dir = env::var("TKE_SHIM_DIR").unwrap_or_default();
     let real_path = real_path_string();
     let shim_dir = PathBuf::from(shim_dir);
+    let self_exe = env::current_exe().ok();
 
     for dir in env::split_paths(&real_path) {
         if !shim_dir.as_os_str().is_empty() && dir == shim_dir {
@@ -923,12 +954,26 @@ pub(crate) fn resolve_real_command(name: &str) -> Result<PathBuf, AppError> {
         }
         for candidate_name in candidate_command_names(name) {
             let candidate = dir.join(candidate_name);
-            if candidate.is_file() {
-                return Ok(candidate);
+            if !candidate.is_file() {
+                continue;
             }
+            if is_self_shim(&candidate, self_exe.as_deref()) {
+                continue;
+            }
+            return Ok(candidate);
         }
     }
     Err(AppError::MissingRealCommand(name.to_owned()))
+}
+
+fn is_self_shim(candidate: &Path, self_exe: Option<&Path>) -> bool {
+    let Some(self_exe) = self_exe else {
+        return false;
+    };
+    match (fs::canonicalize(candidate), fs::canonicalize(self_exe)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => false,
+    }
 }
 
 pub(crate) fn real_path_string() -> String {

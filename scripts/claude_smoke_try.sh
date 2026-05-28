@@ -50,7 +50,7 @@ rm -f \
   "$FAILED_SESSION_OUT"
 
 set +e
-timeout 240s "$ROOT/scripts/claude_e2e_compare.sh" "$ROOT" "$MODE" "$NAME" "$PROMPT_FILE"
+timeout 600s "$ROOT/scripts/claude_e2e_compare.sh" "$ROOT" "$MODE" "$NAME" "$PROMPT_FILE"
 RC=$?
 set -e
 

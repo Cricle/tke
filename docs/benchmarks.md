@@ -222,9 +222,9 @@ RTK must be compared through each agent's real integration path:
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `codex` | `fairfind` | fail | fail | 68 | 68 | 0 | `wrong_and_not_saved` |
 | `codex` | `fairrg` | fail | fail | 12 | 1 | 11 | `saved_but_wrong` |
-| `claude` | `fairbuild` | pass | pass | 1357 | 1358 | -1 | `correct_but_not_saved` |
-| `claude` | `fairfind` | fail | pass | 68 | 68 | 0 | `correct_but_not_saved` |
-| `claude` | `fairrg` | pass | pass | 1883 | 1883 | 0 | `correct_but_not_saved` |
+| `claude` | `fairbuild` | fail | fail | 1175 | 8 | 1167 | `saved_but_wrong` |
+| `claude` | `fairfind` | fail | fail | 79 | 59 | 20 | `saved_but_wrong` |
+| `claude` | `fairrg` | pass | pass | 5727 | 930 | 4797 | `saved_and_correct` |
 
 Accuracy and compression scorecard:
 
@@ -233,14 +233,14 @@ Accuracy and compression scorecard:
 | `Claude synthetic` | `tke` | 17 | `n/a` | 86.5% | `218/218` | 121971 |
 | `Claude synthetic` | `rtk-hook` | 17 | `n/a` | 86.5% | `221/221` | 123066 |
 | `codex` | `rtk-codex-rules` | 2 | 0.0% | `n/a` | `pass=0 fail=2 gateway=0 ungraded=0` | 11 |
-| `claude` | `rtk-hook` | 3 | 100.0% | `n/a` | `pass=3 fail=0 gateway=0 ungraded=0` | -1 |
+| `claude` | `tke` | 3 | 33.3% | `n/a` | `pass=1 fail=2 gateway=0 ungraded=0` | 5984 |
 
 Fair-path aggregate by agent:
 
 | Agent | Variant | Cases | Pass | Fail | Gateway | Ungraded | Total tool token delta |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `codex` | `rtk-codex-rules` | 2 | 0 | 2 | 0 | 0 | 11 |
-| `claude` | `rtk-hook` | 3 | 3 | 0 | 0 | 0 | -1 |
+| `claude` | `tke` | 3 | 1 | 2 | 0 | 0 | 5984 |
 
 Codex RTK variant rows:
 
@@ -261,9 +261,9 @@ Generated from:
 
 | Case | Variant | Correct | Tool token savings | Verdict |
 | --- | --- | --- | --- | --- |
-| `fairbuild` | `rtk-hook` | pass | -1 | `correct_but_not_saved` |
-| `fairfind` | `rtk-hook` | pass | 0 | `correct_but_not_saved` |
-| `fairrg` | `rtk-hook` | pass | 0 | `correct_but_not_saved` |
+| `fairbuild` | `tke` | fail | 1167 | `saved_but_wrong` |
+| `fairfind` | `tke` | fail | 20 | `saved_but_wrong` |
+| `fairrg` | `tke` | pass | 4797 | `saved_and_correct` |
 | `findcase` | `rtk-hook` | gateway_error | - | `gateway_error` |
 | `findcase` | `tke` | fail | 0 | `wrong_and_not_saved` |
 
@@ -277,8 +277,8 @@ Claude aggregate by mode:
 
 | Variant | Cases | Pass | Fail | Gateway | Ungraded | Total tool tokens saved |
 | --- | --- | --- | --- | --- | --- | --- |
-| `rtk-hook` | 4 | 3 | 0 | 1 | 0 | -1 |
-| `tke` | 1 | 0 | 1 | 0 | 0 | 0 |
+| `rtk-hook` | 1 | 0 | 0 | 1 | 0 | 0 |
+| `tke` | 4 | 1 | 3 | 0 | 0 | 5984 |
 
 ## Claude Live Probes
 
@@ -306,10 +306,11 @@ Claude fair-attempt summary:
 | Case | Mode | OK | Completed | Result error | Error statuses |
 | --- | --- | --- | --- | --- | --- |
 | `fairbuild` | `raw` | yes | yes | no | - |
-| `fairbuild` | `rtk-hook` | yes | yes | no | - |
+| `fairbuild` | `rtk-hook` | no | no | no | - |
+| `fairbuild` | `tke` | no | no | no | - |
 | `fairfind` | `raw` | yes | yes | no | - |
-| `fairfind` | `rtk-hook` | yes | yes | no | - |
+| `fairfind` | `rtk-hook` | no | no | no | - |
 | `fairrg` | `raw` | yes | yes | no | - |
-| `fairrg` | `rtk-hook` | yes | yes | no | - |
+| `fairrg` | `rtk-hook` | no | no | no | - |
 
 Successful live compatibility probes: `compatfind`, `livebuild`, `livediff`, `livefind`, `liverg`.

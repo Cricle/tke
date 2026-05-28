@@ -9,8 +9,8 @@ use crate::trim::{
     collect_path_list_kept_ranges, collect_path_list_summary, collect_profile_chunks,
     collect_table_kept_ranges, collect_table_summary, compact_args, compact_json_body_for_command,
     compute_omitted_ranges, create_single_shim, exit_code, match_terms, merge_ranges,
-    profile_limits, read_stdin_if_piped, real_path_string, select_profile, should_force_trim,
-    take_head, take_tail,
+    profile_limits, read_stdin_if_piped, read_stdin_if_piped_non_blocking, real_path_string,
+    select_profile, should_force_trim, take_head, take_tail,
 };
 #[cfg(unix)]
 use nix::pty::{ForkptyResult, Winsize, forkpty};
@@ -182,7 +182,7 @@ pub(crate) fn run_tool_command(
     }
     let fallback_kind = classify_command(name, args);
     let normalize_view = live_pipeline_stage.normalization_view(name, args, fallback_kind);
-    let stdin_payload = read_stdin_if_piped()?;
+    let stdin_payload = read_stdin_if_piped_non_blocking()?;
     let mut envs = vec![
         ("PATH".to_owned(), Some(OsString::from(real_path_string()))),
         ("TKE_TOOL_SOURCE".to_owned(), Some(OsString::from(name))),
