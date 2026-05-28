@@ -30,4 +30,4 @@ jobs:
         run: bash scripts/verify_claude_harness.sh
 
       - name: Benchmark check
-        run: ./target/release/tke benchmark-commands --check
+        run: ./target/release/tke-bench benchmark-commands --check
