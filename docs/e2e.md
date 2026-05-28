@@ -10,7 +10,7 @@ This file is generated from the current local E2E artifacts.
 | --- | --- | --- | --- | --- |
 | `buildcase` | pass | pass | missing | stable tke case |
 | `fairbuild` | pass | missing | missing | - |
-| `fairfind` | fail | missing | fail | - |
+| `fairfind` | pass | missing | pass | - |
 | `fairrg` | fail | missing | fail | - |
 | `findcase` | pass | pass | missing | stable tke case |
 | `realtask` | pass | pass | missing | stable tke case |
@@ -21,7 +21,7 @@ This file is generated from the current local E2E artifacts.
 | Case | Raw | TKE | RTK Hook | Notes |
 | --- | --- | --- | --- | --- |
 | `fairbuild` | fail | fail | missing | experimental live tke path |
-| `fairfind` | fail | fail | missing | experimental live tke path |
+| `fairfind` | pass | fail | missing | experimental live tke path |
 | `fairrg` | pass | pass | missing | live tke correct |
 | `findcase` | gateway_error | fail | gateway_error | experimental live tke path, gateway noise on RTK hook path |
 

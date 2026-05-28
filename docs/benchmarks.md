@@ -12,84 +12,84 @@ Generated from:
 
 | Command case | Profile | Raw tokens | Rewritten tokens | Tokens saved | Savings |
 | --- | --- | --- | --- | --- | --- |
-| `cat_code` | file | 743 | 161 | 582 | 78.3% |
-| `sed_code` | file | 743 | 164 | 579 | 77.9% |
-| `bat_code` | file | 743 | 165 | 578 | 77.8% |
-| `nl_code` | file | 1058 | 34 | 1024 | 96.8% |
-| `rg_code` | search | 2257 | 226 | 2031 | 90.0% |
-| `grep_code` | search | 2257 | 228 | 2029 | 89.9% |
+| `cat_code` | file | 743 | 166 | 577 | 77.7% |
+| `sed_code` | file | 743 | 171 | 572 | 77.0% |
+| `bat_code` | file | 743 | 173 | 570 | 76.7% |
+| `nl_code` | file | 1058 | 40 | 1018 | 96.2% |
+| `rg_code` | search | 2257 | 235 | 2022 | 89.6% |
+| `grep_code` | search | 2257 | 239 | 2018 | 89.4% |
 | `find_paths` | pathlist | 8151 | 93 | 8058 | 98.9% |
 | `fd_paths` | pathlist | 8151 | 93 | 8058 | 98.9% |
 | `tree_paths` | pathlist | 3926 | 93 | 3833 | 97.6% |
-| `git_diff` | diff | 3691 | 616 | 3075 | 83.3% |
-| `cargo_build` | log | 884 | 195 | 689 | 77.9% |
-| `pytest_run` | log | 453 | 185 | 268 | 59.2% |
-| `npm_test` | log | 863 | 179 | 684 | 79.3% |
-| `dotnet_test` | log | 800 | 148 | 652 | 81.5% |
-| `go_test` | log | 1215 | 122 | 1093 | 90.0% |
-| `ninja_build` | log | 1248 | 135 | 1113 | 89.2% |
-| `python_json` | json | 6730 | 77 | 6653 | 98.9% |
+| `git_diff` | diff | 3691 | 623 | 3068 | 83.1% |
+| `cargo_build` | log | 884 | 199 | 685 | 77.5% |
+| `pytest_run` | log | 453 | 189 | 264 | 58.3% |
+| `npm_test` | log | 863 | 182 | 681 | 78.9% |
+| `dotnet_test` | log | 800 | 152 | 648 | 81.0% |
+| `go_test` | log | 1215 | 127 | 1088 | 89.5% |
+| `ninja_build` | log | 1248 | 141 | 1107 | 88.7% |
+| `python_json` | json | 6730 | 82 | 6648 | 98.8% |
 | `python_paths` | pathlist | 1976 | 94 | 1882 | 95.2% |
-| `python_table` | table | 159 | 73 | 86 | 54.1% |
-| `ps_table` | table | 655 | 146 | 509 | 77.7% |
-| `systemctl_table` | table | 682 | 111 | 571 | 83.7% |
+| `python_table` | table | 159 | 78 | 81 | 50.9% |
+| `ps_table` | table | 655 | 152 | 503 | 76.8% |
+| `systemctl_table` | table | 682 | 125 | 557 | 81.7% |
 
 Profile averages:
 
 | Profile | Cases | Average token savings |
 | --- | --- | --- |
-| diff | 1 | 83.3% |
-| file | 12 | 79.7% |
+| diff | 1 | 83.1% |
+| file | 12 | 78.9% |
 | generic | 1 | 0.0% |
-| json | 4 | 98.8% |
-| log | 27 | 83.2% |
+| json | 4 | 98.7% |
+| log | 27 | 82.6% |
 | pathlist | 8 | 96.7% |
-| search | 3 | 89.9% |
-| table | 10 | 69.9% |
+| search | 3 | 89.5% |
+| table | 10 | 68.0% |
 
 Built-in rollout/task benchmarks:
 
 | Task | Mode | Raw tokens | Rewritten tokens | Tokens saved | Savings |
 | --- | --- | --- | --- | --- | --- |
-| `codex_api_trace_rollout_savings` | api | 5389 | 505 | 4884 | 90.6% |
-| `codex_api_trace_default_tool_coverage` | api | 4695 | 799 | 3896 | 83.0% |
-| `codex_interactive_trace_selected_search_stage` | interactive | 2913 | 570 | 2343 | 80.4% |
+| `codex_api_trace_rollout_savings` | api | 5389 | 532 | 4857 | 90.1% |
+| `codex_api_trace_default_tool_coverage` | api | 4695 | 829 | 3866 | 82.3% |
+| `codex_interactive_trace_selected_search_stage` | interactive | 2913 | 584 | 2329 | 80.0% |
 | `codex_interactive_trace_selected_find_stage` | interactive | 8125 | 93 | 8032 | 98.9% |
-| `codex_interactive_trace_selected_build_stage` | interactive | 1102 | 185 | 917 | 83.2% |
-| `claude_bash_trace_selected_search_stage` | api | 2380 | 475 | 1905 | 80.0% |
+| `codex_interactive_trace_selected_build_stage` | interactive | 1102 | 193 | 909 | 82.5% |
+| `claude_bash_trace_selected_search_stage` | api | 2380 | 489 | 1891 | 79.5% |
 | `claude_bash_trace_selected_find_stage` | api | 8125 | 93 | 8032 | 98.9% |
-| `claude_bash_trace_selected_diff_stage` | api | 3665 | 616 | 3049 | 83.2% |
-| `claude_bash_trace_selected_build_stage` | api | 1102 | 185 | 917 | 83.2% |
-| `claude_bash_trace_complex_triage_task` | api | 14938 | 1270 | 13668 | 91.5% |
-| `claude_bash_trace_complex_code_trace_task` | api | 7647 | 1353 | 6294 | 82.3% |
-| `claude_bash_trace_complex_stacktrace_task` | api | 2732 | 732 | 2000 | 73.2% |
-| `claude_bash_trace_complex_stacktrace_diff_task` | api | 6505 | 1364 | 5141 | 79.0% |
-| `claude_bash_trace_complex_root_cause_task` | api | 10897 | 1447 | 9450 | 86.7% |
-| `claude_bash_trace_answer_consistency_task` | api | 10414 | 1306 | 9108 | 87.5% |
-| `claude_bash_trace_candidate_root_cause_task` | api | 11248 | 1597 | 9651 | 85.8% |
-| `claude_bash_trace_misleading_signal_task` | api | 10463 | 1588 | 8875 | 84.8% |
-| `claude_bash_trace_cross_file_causality_task` | api | 14605 | 1644 | 12961 | 88.7% |
-| `claude_bash_trace_negative_evidence_task` | api | 6834 | 1254 | 5580 | 81.7% |
-| `claude_bash_trace_temporal_causality_task` | api | 13830 | 1650 | 12180 | 88.1% |
-| `claude_bash_trace_symbol_collision_task` | api | 5515 | 878 | 4637 | 84.1% |
-| `claude_bash_trace_reversal_task` | api | 10174 | 1651 | 8523 | 83.8% |
+| `claude_bash_trace_selected_diff_stage` | api | 3665 | 623 | 3042 | 83.0% |
+| `claude_bash_trace_selected_build_stage` | api | 1102 | 193 | 909 | 82.5% |
+| `claude_bash_trace_complex_triage_task` | api | 14938 | 1306 | 13632 | 91.3% |
+| `claude_bash_trace_complex_code_trace_task` | api | 7647 | 1396 | 6251 | 81.7% |
+| `claude_bash_trace_complex_stacktrace_task` | api | 2732 | 752 | 1980 | 72.5% |
+| `claude_bash_trace_complex_stacktrace_diff_task` | api | 6505 | 1391 | 5114 | 78.6% |
+| `claude_bash_trace_complex_root_cause_task` | api | 10897 | 1491 | 9406 | 86.3% |
+| `claude_bash_trace_answer_consistency_task` | api | 10414 | 1342 | 9072 | 87.1% |
+| `claude_bash_trace_candidate_root_cause_task` | api | 11248 | 1644 | 9604 | 85.4% |
+| `claude_bash_trace_misleading_signal_task` | api | 10463 | 1636 | 8827 | 84.4% |
+| `claude_bash_trace_cross_file_causality_task` | api | 14605 | 1699 | 12906 | 88.4% |
+| `claude_bash_trace_negative_evidence_task` | api | 6834 | 1307 | 5527 | 80.9% |
+| `claude_bash_trace_temporal_causality_task` | api | 13830 | 1705 | 12125 | 87.7% |
+| `claude_bash_trace_symbol_collision_task` | api | 5515 | 914 | 4601 | 83.4% |
+| `claude_bash_trace_reversal_task` | api | 10174 | 1702 | 8472 | 83.3% |
 | `claude_rtk_hook_trace_selected_find_stage` | api | 8125 | 93 | 8032 | 98.9% |
-| `claude_rtk_hook_trace_selected_search_stage` | api | 2104 | 383 | 1721 | 81.8% |
-| `claude_rtk_hook_trace_selected_diff_stage` | api | 3665 | 616 | 3049 | 83.2% |
-| `claude_rtk_hook_trace_selected_build_stage` | api | 1102 | 185 | 917 | 83.2% |
-| `claude_rtk_hook_trace_complex_triage_task` | api | 14938 | 1270 | 13668 | 91.5% |
-| `claude_rtk_hook_trace_complex_code_trace_task` | api | 7647 | 1353 | 6294 | 82.3% |
-| `claude_rtk_hook_trace_complex_stacktrace_task` | api | 2819 | 748 | 2071 | 73.5% |
-| `claude_rtk_hook_trace_complex_stacktrace_diff_task` | api | 6592 | 1380 | 5212 | 79.1% |
-| `claude_rtk_hook_trace_complex_root_cause_task` | api | 11014 | 1459 | 9555 | 86.8% |
-| `claude_rtk_hook_trace_answer_consistency_task` | api | 10531 | 1318 | 9213 | 87.5% |
-| `claude_rtk_hook_trace_candidate_root_cause_task` | api | 11382 | 1604 | 9778 | 85.9% |
-| `claude_rtk_hook_trace_misleading_signal_task` | api | 10598 | 1597 | 9001 | 84.9% |
-| `claude_rtk_hook_trace_cross_file_causality_task` | api | 14741 | 1654 | 13087 | 88.8% |
-| `claude_rtk_hook_trace_negative_evidence_task` | api | 6951 | 1266 | 5685 | 81.8% |
-| `claude_rtk_hook_trace_temporal_causality_task` | api | 13947 | 1662 | 12285 | 88.1% |
-| `claude_rtk_hook_trace_symbol_collision_task` | api | 5631 | 888 | 4743 | 84.2% |
-| `claude_rtk_hook_trace_reversal_task` | api | 10430 | 1675 | 8755 | 83.9% |
+| `claude_rtk_hook_trace_selected_search_stage` | api | 2104 | 404 | 1700 | 80.8% |
+| `claude_rtk_hook_trace_selected_diff_stage` | api | 3665 | 623 | 3042 | 83.0% |
+| `claude_rtk_hook_trace_selected_build_stage` | api | 1102 | 193 | 909 | 82.5% |
+| `claude_rtk_hook_trace_complex_triage_task` | api | 14938 | 1306 | 13632 | 91.3% |
+| `claude_rtk_hook_trace_complex_code_trace_task` | api | 7647 | 1396 | 6251 | 81.7% |
+| `claude_rtk_hook_trace_complex_stacktrace_task` | api | 2819 | 768 | 2051 | 72.8% |
+| `claude_rtk_hook_trace_complex_stacktrace_diff_task` | api | 6592 | 1407 | 5185 | 78.7% |
+| `claude_rtk_hook_trace_complex_root_cause_task` | api | 11014 | 1503 | 9511 | 86.4% |
+| `claude_rtk_hook_trace_answer_consistency_task` | api | 10531 | 1354 | 9177 | 87.1% |
+| `claude_rtk_hook_trace_candidate_root_cause_task` | api | 11382 | 1651 | 9731 | 85.5% |
+| `claude_rtk_hook_trace_misleading_signal_task` | api | 10598 | 1645 | 8953 | 84.5% |
+| `claude_rtk_hook_trace_cross_file_causality_task` | api | 14741 | 1709 | 13032 | 88.4% |
+| `claude_rtk_hook_trace_negative_evidence_task` | api | 6951 | 1319 | 5632 | 81.0% |
+| `claude_rtk_hook_trace_temporal_causality_task` | api | 13947 | 1717 | 12230 | 87.7% |
+| `claude_rtk_hook_trace_symbol_collision_task` | api | 5631 | 924 | 4707 | 83.6% |
+| `claude_rtk_hook_trace_reversal_task` | api | 10430 | 1726 | 8704 | 83.5% |
 
 ## Why TKE Is Better Today
 
@@ -97,59 +97,59 @@ This section is generated from the current benchmark and E2E artifacts. The clai
 
 | Evidence area | `tke` result | `rtk` result in this repo | Why this matters |
 | --- | --- | --- | --- |
-| Built-in local compression benchmarks | `65/34` cases, `110406` tokens saved, `92.2%` | No equivalent repo-local tool-output benchmark runner in this repo | `tke` can be measured locally and repeatedly without depending on agent compliance |
-| Built-in rollout/task traces | `39` traces, `265109` tokens saved, `86.8%` | RTK participates only through the fairness/synthetic harness subset wired here | `tke` has broader measured coverage inside the repo |
-| Codex real E2E | `4/4` pass, `6257` tool tokens saved | `0/2` pass, `11` token delta | Current real Codex evidence favors `tke` clearly |
+| Built-in local compression benchmarks | `65/34` cases, `110049` tokens saved, `91.9%` | No equivalent repo-local tool-output benchmark runner in this repo | `tke` can be measured locally and repeatedly without depending on agent compliance |
+| Built-in rollout/task traces | `39` traces, `263863` tokens saved, `86.4%` | RTK participates only through the fairness/synthetic harness subset wired here | `tke` has broader measured coverage inside the repo |
+| Codex real E2E | `4/4` pass, `6257` tool tokens saved | `1/2` pass, `11` token delta | Current real Codex evidence favors `tke` clearly |
 | Structured output surface | `pathlist`, `search`, `diff`, `log`, `table`, and `file` profiles emit inspectable `__TKE__{...}` summaries | No equivalent repo-local structured envelope | `tke` gives a concrete artifact that tooling can compare and audit |
-| Claude stable synthetic traces | `121971` tokens saved at `86.5%` | `123066` tokens saved at `86.5%` | `rtk-hook` currently leads on both absolute token savings and ratio in the stable synthetic Claude traces, while `tke` remains competitive on fragment retention |
+| Claude stable synthetic traces | `121391` tokens saved at `86.0%` | `122479` tokens saved at `86.1%` | `rtk-hook` currently leads on both absolute token savings and ratio in the stable synthetic Claude traces, while `tke` remains competitive on fragment retention |
 
 Current built-in totals:
 
 | Scope | Cases | Tokens saved | Savings ratio |
 | --- | --- | --- | --- |
-| Default compress benchmarks | 65 | 110406 | 92.2% |
-| Built-in rollout/task traces | 39 | 265109 | 86.8% |
+| Default compress benchmarks | 65 | 110049 | 91.9% |
+| Built-in rollout/task traces | 39 | 263863 | 86.4% |
 
 Per-profile compression totals:
 
 | Profile | Cases | Tokens saved | Savings ratio |
 | --- | --- | --- | --- |
-| `diff` | 1 | 3075 | 83.3% |
-| `file` | 12 | 7409 | 80.3% |
-| `json` | 4 | 26628 | 98.8% |
-| `log` | 27 | 21836 | 84.5% |
+| `diff` | 1 | 3068 | 83.1% |
+| `file` | 12 | 7336 | 79.5% |
+| `json` | 4 | 26595 | 98.7% |
+| `log` | 27 | 21692 | 84.0% |
 | `pathlist` | 8 | 42154 | 98.4% |
-| `search` | 3 | 6089 | 89.9% |
-| `table` | 10 | 3215 | 73.1% |
+| `search` | 3 | 6058 | 89.5% |
+| `table` | 10 | 3146 | 71.6% |
 
 Claude-oriented stable synthetic summary:
 
 | Path | Raw tokens | Rewritten tokens | Tokens saved | Savings | Fragments kept |
 | --- | --- | --- | --- | --- | --- |
-| `tke` | 141074 | 19103 | 121971 | 86.5% | `218/218` |
-| `rtk-hook` | 142217 | 19151 | 123066 | 86.5% | `221/221` |
+| `tke` | 141074 | 19683 | 121391 | 86.0% | `218/218` |
+| `rtk-hook` | 142217 | 19738 | 122479 | 86.1% | `221/221` |
 
 Task-mode comparison for Claude-oriented stable synthetic traces:
 
 | Scenario | TKE task savings | RTK hook task savings | TKE fragments kept | RTK hook fragments kept |
 | --- | --- | --- | --- | --- |
 | find/pathlist | `8032` (98.9%) | `8032` (98.9%) | `4/4` | `6/6` |
-| search | `1905` (80.0%) | `1721` (81.8%) | `3/3` | `4/4` |
-| diff | `3049` (83.2%) | `3049` (83.2%) | `6/6` | `6/6` |
-| build/log | `917` (83.2%) | `917` (83.2%) | `5/5` | `5/5` |
-| complex/triage | `13668` (91.5%) | `13668` (91.5%) | `11/11` | `11/11` |
-| complex/code-trace | `6294` (82.3%) | `6294` (82.3%) | `11/11` | `11/11` |
-| complex/stacktrace | `2000` (73.2%) | `2071` (73.5%) | `9/9` | `9/9` |
-| complex/stacktrace-diff | `5141` (79.0%) | `5212` (79.1%) | `12/12` | `12/12` |
-| complex/root-cause | `9450` (86.7%) | `9555` (86.8%) | `13/13` | `13/13` |
-| answer-consistency | `9108` (87.5%) | `9213` (87.5%) | `15/15` | `15/15` |
-| candidate-root-cause | `9651` (85.8%) | `9778` (85.9%) | `20/20` | `20/20` |
-| misleading-signal | `8875` (84.8%) | `9001` (84.9%) | `20/20` | `20/20` |
-| cross-file-causality | `12961` (88.7%) | `13087` (88.8%) | `19/19` | `19/19` |
-| negative-evidence | `5580` (81.7%) | `5685` (81.8%) | `17/17` | `17/17` |
-| temporal-causality | `12180` (88.1%) | `12285` (88.1%) | `19/19` | `19/19` |
-| symbol-collision | `4637` (84.1%) | `4743` (84.2%) | `15/15` | `15/15` |
-| reversal | `8523` (83.8%) | `8755` (83.9%) | `19/19` | `19/19` |
+| search | `1891` (79.5%) | `1700` (80.8%) | `3/3` | `4/4` |
+| diff | `3042` (83.0%) | `3042` (83.0%) | `6/6` | `6/6` |
+| build/log | `909` (82.5%) | `909` (82.5%) | `5/5` | `5/5` |
+| complex/triage | `13632` (91.3%) | `13632` (91.3%) | `11/11` | `11/11` |
+| complex/code-trace | `6251` (81.7%) | `6251` (81.7%) | `11/11` | `11/11` |
+| complex/stacktrace | `1980` (72.5%) | `2051` (72.8%) | `9/9` | `9/9` |
+| complex/stacktrace-diff | `5114` (78.6%) | `5185` (78.7%) | `12/12` | `12/12` |
+| complex/root-cause | `9406` (86.3%) | `9511` (86.4%) | `13/13` | `13/13` |
+| answer-consistency | `9072` (87.1%) | `9177` (87.1%) | `15/15` | `15/15` |
+| candidate-root-cause | `9604` (85.4%) | `9731` (85.5%) | `20/20` | `20/20` |
+| misleading-signal | `8827` (84.4%) | `8953` (84.5%) | `20/20` | `20/20` |
+| cross-file-causality | `12906` (88.4%) | `13032` (88.4%) | `19/19` | `19/19` |
+| negative-evidence | `5527` (80.9%) | `5632` (81.0%) | `17/17` | `17/17` |
+| temporal-causality | `12125` (87.7%) | `12230` (87.7%) | `19/19` | `19/19` |
+| symbol-collision | `4601` (83.4%) | `4707` (83.6%) | `15/15` | `15/15` |
+| reversal | `8472` (83.3%) | `8704` (83.5%) | `19/19` | `19/19` |
 
 Scenario deltas and practical verdicts:
 
@@ -158,7 +158,7 @@ Positive deltas mean `rtk-hook` saved more than `tke`. `near-tie` means both pat
 | Scenario | Token delta (RTK-TKE) | Ratio delta (RTK-TKE) | Fragment status | Practical verdict |
 | --- | --- | --- | --- | --- |
 | find/pathlist | `+0` | `+0.0 pp` | `both full` | `near-tie` |
-| search | `-184` | `+1.8 pp` | `both full` | `mixed` |
+| search | `-191` | `+1.3 pp` | `both full` | `mixed` |
 | diff | `+0` | `+0.0 pp` | `both full` | `near-tie` |
 | build/log | `+0` | `+0.0 pp` | `both full` | `near-tie` |
 | complex/triage | `+0` | `+0.0 pp` | `both full` | `near-tie` |
@@ -208,7 +208,7 @@ Codex aggregate by mode:
 
 | Variant | Cases | Pass | Fail | Gateway | Ungraded | Total tool tokens saved |
 | --- | --- | --- | --- | --- | --- | --- |
-| `rtk-codex-rules` | 2 | 0 | 2 | 0 | 0 | 11 |
+| `rtk-codex-rules` | 2 | 1 | 1 | 0 | 0 | 11 |
 | `tke` | 4 | 4 | 0 | 0 | 0 | 6257 |
 
 ## RTK Fair Comparison
@@ -220,33 +220,33 @@ RTK must be compared through each agent's real integration path:
 
 | Agent | Case | Raw | RTK path | Raw tool tokens | RTK tool tokens | Tool token delta | Verdict |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `codex` | `fairfind` | fail | fail | 68 | 68 | 0 | `wrong_and_not_saved` |
+| `codex` | `fairfind` | pass | pass | 68 | 68 | 0 | `correct_but_not_saved` |
 | `codex` | `fairrg` | fail | fail | 12 | 1 | 11 | `saved_but_wrong` |
 | `claude` | `fairbuild` | fail | fail | 1175 | 8 | 1167 | `saved_but_wrong` |
-| `claude` | `fairfind` | fail | fail | 79 | 59 | 20 | `saved_but_wrong` |
+| `claude` | `fairfind` | pass | fail | 79 | 59 | 20 | `saved_but_wrong` |
 | `claude` | `fairrg` | pass | pass | 5727 | 930 | 4797 | `saved_and_correct` |
 
 Accuracy and compression scorecard:
 
 | Scope | Path | Cases | Accuracy | Compression rate | Semantic retention | Token outcome |
 | --- | --- | --- | --- | --- | --- | --- |
-| `Claude synthetic` | `tke` | 17 | `n/a` | 86.5% | `218/218` | 121971 |
-| `Claude synthetic` | `rtk-hook` | 17 | `n/a` | 86.5% | `221/221` | 123066 |
-| `codex` | `rtk-codex-rules` | 2 | 0.0% | `n/a` | `pass=0 fail=2 gateway=0 ungraded=0` | 11 |
+| `Claude synthetic` | `tke` | 17 | `n/a` | 86.0% | `218/218` | 121391 |
+| `Claude synthetic` | `rtk-hook` | 17 | `n/a` | 86.1% | `221/221` | 122479 |
+| `codex` | `rtk-codex-rules` | 2 | 50.0% | `n/a` | `pass=1 fail=1 gateway=0 ungraded=0` | 11 |
 | `claude` | `tke` | 3 | 33.3% | `n/a` | `pass=1 fail=2 gateway=0 ungraded=0` | 5984 |
 
 Fair-path aggregate by agent:
 
 | Agent | Variant | Cases | Pass | Fail | Gateway | Ungraded | Total tool token delta |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `codex` | `rtk-codex-rules` | 2 | 0 | 2 | 0 | 0 | 11 |
+| `codex` | `rtk-codex-rules` | 2 | 1 | 1 | 0 | 0 | 11 |
 | `claude` | `tke` | 3 | 1 | 2 | 0 | 0 | 5984 |
 
 Codex RTK variant rows:
 
 | Case | Variant | Correct | Tool token savings | Verdict |
 | --- | --- | --- | --- | --- |
-| `fairfind` | `rtk-codex-rules` | fail | 0 | `wrong_and_not_saved` |
+| `fairfind` | `rtk-codex-rules` | pass | 0 | `correct_but_not_saved` |
 | `fairrg` | `rtk-codex-rules` | fail | 11 | `saved_but_wrong` |
 
 ## Claude Real E2E

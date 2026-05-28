@@ -135,7 +135,7 @@ Source: [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:1) and [docs/e2
 | Path | Cases | Pass | Fail | Tool token outcome |
 | --- | --- | --- | --- | --- |
 | `tke` | 4 | 4 | 0 | `6257` saved total |
-| `rtk-codex-rules` | 2 fair cases | 0 | 2 | `11` token delta total |
+| `rtk-codex-rules` | 2 fair cases | 1 | 1 | `11` token delta total |
 
 Interpretation:
 
@@ -186,7 +186,7 @@ Interpretation:
 - `tke` on Claude now achieves **33.4% savings** on live sessions, up from 6.8% after fixing malformed JSON handling in the transcript rewriter.
 - `tke` is now included in the same fair comparison framework as `rtk-hook`, ensuring equal test coverage.
 - The live `tke` Claude path now delivers meaningful compression: `file` at 74.3%, `table` at 78.5%, `pathlist` at 55.1%.
-- In the current seventeen-scenario stable synthetic Claude-oriented traces, `tke` saves `121971` tokens total at `86.5%`, while `rtk-hook` saves `123066` at `86.5%`; both preserve all required semantic fragments in those controlled cases, and the complex scenario deltas are listed directly in [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:151).
+- In the current seventeen-scenario stable synthetic Claude-oriented traces, `tke` saves `121391` tokens total at `86.0%`, while `rtk-hook` saves `122479` at `86.1%`; both preserve all required semantic fragments in those controlled cases, and the complex scenario deltas are listed directly in [docs/benchmarks.md](/root/github/tke/docs/benchmarks.md:151).
 
 ## Important Fairness Cases
 
@@ -194,7 +194,7 @@ From the current fair comparison table in [docs/benchmarks.md](/root/github/tke/
 
 | Agent | Case | Raw | TKE | RTK path | Tool token delta (TKE) | Verdict (TKE) |
 | --- | --- | --- | --- | --- | --- | --- |
-| `codex` | `fairfind` | fail | missing | fail | - | - |
+| `codex` | `fairfind` | pass | missing | pass | - | `correct_but_not_saved` |
 | `codex` | `fairrg` | fail | missing | fail | - | - |
 | `claude` | `fairbuild` | fail | fail | pass | `1167` saved | `saved_but_wrong` |
 | `claude` | `fairfind` | fail | fail | pass | `20` saved | `saved_but_wrong` |

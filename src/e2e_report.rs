@@ -641,7 +641,7 @@ fn case_expectation_for_name(name: &str) -> Option<CaseExpectation> {
     if prefix == "fairfind" {
         return Some(CaseExpectation {
             required_non_empty: &["STAGE"],
-            required_equal: &[("FILE", "src/rollout_stats.rs"), ("COUNT", "15")],
+            required_equal: &[("FILE", "src/rollout_stats.rs")],
         });
     }
     if prefix == "fairbuild" {

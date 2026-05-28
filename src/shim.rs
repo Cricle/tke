@@ -692,6 +692,13 @@ pub(crate) fn normalize_text_with_stage(
         } else {
             compact_args(args)
         },
+        fc: if profile == TrimProfile::PathList {
+            String::new()
+        } else {
+            let mut parts = vec![name.to_owned()];
+            parts.extend(args.iter().map(|a| a.to_owned()));
+            parts.join(" ")
+        },
         k: if profile == TrimProfile::PathList {
             String::new()
         } else {
