@@ -104,7 +104,7 @@ fn canonicalize_prefix(line: &str, max_tokens: usize) -> String {
 
 /// Detect lines sharing a structural template (common canonical prefix).
 /// Groups consecutive lines where the first `prefix_len` canonical tokens match.
-fn detect_structural_templates(lines: &[&str], prefix_len: usize) -> Vec<MatchChunk> {
+pub(crate) fn detect_structural_templates(lines: &[&str], prefix_len: usize) -> Vec<MatchChunk> {
     if lines.len() < 3 {
         return Vec::new();
     }
@@ -1787,6 +1787,8 @@ pub(crate) struct LogSummary {
     pub(crate) ff: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) fw: Option<String>,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub(crate) progress: usize,
 }
 
 #[derive(Serialize)]

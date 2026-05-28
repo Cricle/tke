@@ -8230,3 +8230,40 @@ fn search_profile_includes_context() {
         "Search profile with match_context=1 should include context around matches"
     );
 }
+
+#[test]
+fn log_structural_template_folds_build_output() {
+    // Build-like output with interleaved progress lines should fold via structural templates
+    let lines: Vec<String> = (0..20)
+        .map(|i| format!("Compiling crate-{i} v0.1.0"))
+        .collect();
+    let text = lines.join("\n");
+    let result = normalize_text(
+        "cargo",
+        &["build".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &text,
+        &Config::default(),
+    )
+    .expect("no error");
+    assert!(
+        result.contains("fold"),
+        "Log profile should fold build output via structural templates"
+    );
+}
+
+#[test]
+fn log_summary_includes_progress_count() {
+    let lines = vec![
+        "Compiling serde v1.0.0",
+        "Compiling tokio v1.0.0",
+        "Downloading regex v1.0.0",
+        "warning: unused variable `x`",
+        "error: build failed",
+    ];
+    let summary = crate::log_profile::collect_log_summary(&lines);
+    assert_eq!(summary.progress, 3, "should count 3 progress lines");
+    assert_eq!(summary.warn, 1, "should count 1 warning");
+    assert_eq!(summary.fail, 1, "should count 1 failure");
+}

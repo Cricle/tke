@@ -1,6 +1,7 @@
 use crate::trim::{
-    LogSummary, MatchChunk, ProfileLimits, RepeatedRun, is_failure_signal_line, is_log_signal,
-    is_warning_signal, push_chunk, truncate_ellipsized,
+    LogSummary, MatchChunk, ProfileLimits, RepeatedRun, detect_structural_templates,
+    has_log_progress, is_failure_signal_line, is_log_signal, is_warning_signal, push_chunk,
+    truncate_ellipsized,
 };
 
 pub(crate) fn collect_log_chunks(
@@ -29,6 +30,22 @@ pub(crate) fn collect_log_chunks(
         }
     }
 
+    // Structural template detection: group lines sharing a canonical prefix
+    if out.len() < limits.max_matches {
+        let templates = detect_structural_templates(lines, 3);
+        for tmpl in templates {
+            let [start, end] = tmpl.r;
+            if start >= end || used.iter().any(|(s, e)| start < *e && end > *s) {
+                continue;
+            }
+            used.push((start, end));
+            out.push(tmpl);
+            if out.len() >= limits.max_matches {
+                break;
+            }
+        }
+    }
+
     if out.is_empty() {
         let start = lines.len().saturating_sub(limits.tail_lines);
         for idx in start..lines.len() {
@@ -45,6 +62,7 @@ pub(crate) fn collect_log_chunks(
 pub(crate) fn collect_log_summary(lines: &[&str]) -> LogSummary {
     let mut fail = 0usize;
     let mut warn = 0usize;
+    let mut prog = 0usize;
     let mut first_fail = None;
     let mut first_warn = None;
     for line in lines {
@@ -60,12 +78,16 @@ pub(crate) fn collect_log_summary(lines: &[&str]) -> LogSummary {
                 first_fail = Some(truncate_for_sample(line));
             }
         }
+        if has_log_progress(line) {
+            prog += 1;
+        }
     }
     LogSummary {
         fail,
         warn,
         ff: first_fail,
         fw: first_warn,
+        progress: prog,
     }
 }
 

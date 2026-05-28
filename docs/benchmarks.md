@@ -22,12 +22,12 @@ Generated from:
 | `fd_paths` | pathlist | 8151 | 93 | 8058 | 98.9% |
 | `tree_paths` | pathlist | 3926 | 93 | 3833 | 97.6% |
 | `git_diff` | diff | 3691 | 623 | 3068 | 83.1% |
-| `cargo_build` | log | 884 | 199 | 685 | 77.5% |
+| `cargo_build` | log | 884 | 202 | 682 | 77.1% |
 | `pytest_run` | log | 453 | 189 | 264 | 58.3% |
 | `npm_test` | log | 863 | 182 | 681 | 78.9% |
 | `dotnet_test` | log | 800 | 152 | 648 | 81.0% |
 | `go_test` | log | 1215 | 127 | 1088 | 89.5% |
-| `ninja_build` | log | 1248 | 141 | 1107 | 88.7% |
+| `ninja_build` | log | 1248 | 144 | 1104 | 88.5% |
 | `python_json` | json | 6730 | 82 | 6648 | 98.8% |
 | `python_paths` | pathlist | 1976 | 94 | 1882 | 95.2% |
 | `python_table` | table | 159 | 78 | 81 | 50.9% |
@@ -97,7 +97,7 @@ This section is generated from the current benchmark and E2E artifacts. The clai
 
 | Evidence area | `tke` result | `rtk` result in this repo | Why this matters |
 | --- | --- | --- | --- |
-| Built-in local compression benchmarks | `65/34` cases, `110051` tokens saved, `91.9%` | No equivalent repo-local tool-output benchmark runner in this repo | `tke` can be measured locally and repeatedly without depending on agent compliance |
+| Built-in local compression benchmarks | `65/34` cases, `110033` tokens saved, `91.9%` | No equivalent repo-local tool-output benchmark runner in this repo | `tke` can be measured locally and repeatedly without depending on agent compliance |
 | Built-in rollout/task traces | `39` traces, `263751` tokens saved, `86.3%` | RTK participates only through the fairness/synthetic harness subset wired here | `tke` has broader measured coverage inside the repo |
 | Codex real E2E | `4/4` pass, `6257` tool tokens saved | `1/2` pass, `11` token delta | Current real Codex evidence favors `tke` clearly |
 | Structured output surface | `pathlist`, `search`, `diff`, `log`, `table`, and `file` profiles emit inspectable `__TKE__{...}` summaries | No equivalent repo-local structured envelope | `tke` gives a concrete artifact that tooling can compare and audit |
@@ -107,7 +107,7 @@ Current built-in totals:
 
 | Scope | Cases | Tokens saved | Savings ratio |
 | --- | --- | --- | --- |
-| Default compress benchmarks | 65 | 110051 | 91.9% |
+| Default compress benchmarks | 65 | 110033 | 91.9% |
 | Built-in rollout/task traces | 39 | 263751 | 86.3% |
 
 Per-profile compression totals:
@@ -117,7 +117,7 @@ Per-profile compression totals:
 | `diff` | 1 | 3068 | 83.1% |
 | `file` | 12 | 7336 | 79.5% |
 | `json` | 4 | 26597 | 98.7% |
-| `log` | 27 | 21692 | 84.0% |
+| `log` | 27 | 21674 | 83.9% |
 | `pathlist` | 8 | 42154 | 98.4% |
 | `search` | 3 | 6058 | 89.5% |
 | `table` | 10 | 3146 | 71.6% |
