@@ -1308,6 +1308,26 @@ fn rewrite_rollout_to_output(
 
 use crate::trim::ratio;
 
+fn format_number(n: usize) -> String {
+    let s = n.to_string();
+    let mut result = String::new();
+    for (i, ch) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            result.push(',');
+        }
+        result.push(ch);
+    }
+    result.chars().rev().collect()
+}
+
+fn format_saved(saved: isize, ratio: f64) -> String {
+    format!(
+        "{} ({:.1}%)",
+        format_number(saved.unsigned_abs()),
+        ratio * 100.0
+    )
+}
+
 fn print_usage_stats_report(report: &UsageStatsReport) -> Result<(), AppError> {
     let mut out = std::io::stdout();
     writeln!(out, "tke usage stats")?;
@@ -1333,61 +1353,84 @@ fn print_usage_stats_report(report: &UsageStatsReport) -> Result<(), AppError> {
     writeln!(
         out,
         "Samples: {} total, {} effective, {} changed, {} skipped",
-        report.samples, report.effective_samples, report.changed_samples, report.skipped_samples
+        format_number(report.samples),
+        format_number(report.effective_samples),
+        format_number(report.changed_samples),
+        format_number(report.skipped_samples)
+    )?;
+    writeln!(out, "Scope: tool-output savings only")?;
+    writeln!(out)?;
+    writeln!(out, "Summary")?;
+    writeln!(
+        out,
+        "  Tokens: {} -> {}  saved {}",
+        format_number(report.raw_tokens),
+        format_number(report.rewritten_tokens),
+        format_saved(report.tokens_saved, report.tokens_saved_ratio)
     )?;
     writeln!(
         out,
-        "Scope: tool-output savings only, not total model/session token usage"
-    )?;
-    writeln!(
-        out,
-        "Tokens: {} -> {}  saved {} ({:.1}%)",
-        report.raw_tokens,
-        report.rewritten_tokens,
-        report.tokens_saved,
-        report.tokens_saved_ratio * 100.0
-    )?;
-    writeln!(
-        out,
-        "Bytes:  {} -> {}  saved {} ({:.1}%)",
-        report.raw_bytes,
-        report.rewritten_bytes,
-        report.bytes_saved,
-        report.bytes_saved_ratio * 100.0
+        "  Bytes:  {} -> {}  saved {}",
+        format_number(report.raw_bytes),
+        format_number(report.rewritten_bytes),
+        format_saved(report.bytes_saved, report.bytes_saved_ratio)
     )?;
 
     if !report.days.is_empty() {
         writeln!(out)?;
-        writeln!(out, "By day:")?;
+        writeln!(
+            out,
+            "By day:\n  {:<12} {:>8} {:>9} {:>8} {:>14} {:>7} {:>14} {:>7}",
+            "Date",
+            "Samples",
+            "Effective",
+            "Changed",
+            "Tokens Saved",
+            "Ratio",
+            "Bytes Saved",
+            "Ratio"
+        )?;
         for row in &report.days {
             writeln!(
                 out,
-                "  {}  samples={} effective={} changed={} tokens_saved={} ({:.1}%) bytes_saved={} ({:.1}%)",
+                "  {:<12} {:>8} {:>9} {:>8} {:>14} {:>6.1}% {:>14} {:>6.1}%",
                 row.day,
                 row.samples,
                 row.effective_samples,
                 row.changed_samples,
-                row.tokens_saved,
+                format_number(row.tokens_saved.unsigned_abs()),
                 row.tokens_saved_ratio * 100.0,
-                row.bytes_saved,
+                format_number(row.bytes_saved.unsigned_abs()),
                 row.bytes_saved_ratio * 100.0
             )?;
         }
     }
     if !report.groups.is_empty() && report.filters.trend != "day" {
         writeln!(out)?;
-        writeln!(out, "By {}:", report.filters.trend)?;
+        writeln!(
+            out,
+            "By {}:\n  {:<20} {:>8} {:>9} {:>8} {:>14} {:>7} {:>14} {:>7}",
+            report.filters.trend,
+            "Key",
+            "Samples",
+            "Effective",
+            "Changed",
+            "Tokens Saved",
+            "Ratio",
+            "Bytes Saved",
+            "Ratio"
+        )?;
         for row in &report.groups {
             writeln!(
                 out,
-                "  {}  samples={} effective={} changed={} tokens_saved={} ({:.1}%) bytes_saved={} ({:.1}%)",
+                "  {:<20} {:>8} {:>9} {:>8} {:>14} {:>6.1}% {:>14} {:>6.1}%",
                 row.key,
                 row.samples,
                 row.effective_samples,
                 row.changed_samples,
-                row.tokens_saved,
+                format_number(row.tokens_saved.unsigned_abs()),
                 row.tokens_saved_ratio * 100.0,
-                row.bytes_saved,
+                format_number(row.bytes_saved.unsigned_abs()),
                 row.bytes_saved_ratio * 100.0
             )?;
         }
@@ -1403,19 +1446,21 @@ fn print_usage_stats_report(report: &UsageStatsReport) -> Result<(), AppError> {
                 continue;
             }
             writeln!(out)?;
-            writeln!(out, "{label}:")?;
+            writeln!(
+                out,
+                "{label}:\n  {:<20} {:>8} {:>9} {:>8} {:>14} {:>7}",
+                "Name", "Samples", "Effective", "Changed", "Tokens Saved", "Ratio"
+            )?;
             for row in groups {
                 writeln!(
                     out,
-                    "  {}  samples={} effective={} changed={} tokens_saved={} ({:.1}%) bytes_saved={} ({:.1}%)",
+                    "  {:<20} {:>8} {:>9} {:>8} {:>14} {:>6.1}%",
                     row.key,
                     row.samples,
                     row.effective_samples,
                     row.changed_samples,
-                    row.tokens_saved,
-                    row.tokens_saved_ratio * 100.0,
-                    row.bytes_saved,
-                    row.bytes_saved_ratio * 100.0
+                    format_number(row.tokens_saved.unsigned_abs()),
+                    row.tokens_saved_ratio * 100.0
                 )?;
             }
         }
