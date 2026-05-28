@@ -14,14 +14,10 @@ pub fn install_self(bin_dir: Option<PathBuf>) -> Result<(), AppError> {
 
     install_short_alias(&dest_dir, &dest)?;
 
-    let report = serde_json::json!({
-        "v": 1,
-        "installed": dest.display().to_string(),
-        "alias": install_alias_path(&dest_dir).display().to_string(),
-        "bin_dir": dest_dir.display().to_string(),
-        "path_hint": path_hint(&dest_dir),
-    });
-    println!("{}", serde_json::to_string(&report)?);
+    let alias = install_alias_path(&dest_dir);
+    println!("Installed: {}", dest.display());
+    println!("Alias:     {}", alias.display());
+    println!("{}", path_hint(&dest_dir));
     Ok(())
 }
 
