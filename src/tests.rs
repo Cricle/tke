@@ -7257,7 +7257,7 @@ fn rtk_docs_lock_fair_compare_aggregate_rows() {
 
     for fragment in [
         "| `rtk-codex-rules` | 2 fair cases | 1 | 1 | `11` token delta total |",
-        "| `rtk-hook` | 4 | 3 | 0 | 1 | `-1` total delta |",
+        "| `rtk-hook` | 1 | 0 | 0 | 1 | `0` (gateway error) |",
         "| `codex` | `fairfind` | pass | missing | pass |",
         "| `codex` | `fairrg` | fail | missing | fail |",
         "| `claude` | `fairbuild` | fail | fail | pass | `1167` saved | `saved_but_wrong` |",

@@ -168,11 +168,16 @@ fn dominant_parent(entries: &[PathEntry]) -> Option<String> {
 fn summarize_entry(entry: &PathEntry, shared_parent: Option<&str>) -> String {
     if let Some(parent) = shared_parent
         && entry.parent == parent
-        && let Some(name) = Path::new(&entry.value)
-            .file_name()
-            .and_then(|name| name.to_str())
     {
-        return name.to_owned();
+        // Keep relative path from shared parent so the model can reconstruct full paths
+        if let Some(suffix) = entry.value.strip_prefix(parent)
+            && let Some(relative) = suffix.strip_prefix('/').or_else(|| suffix.strip_prefix('\\'))
+            && !relative.is_empty()
+        {
+            return relative.to_owned();
+        }
+        // Fallback: use the full value if strip didn't work
+        return entry.value.clone();
     }
     if let Some(name) = Path::new(&entry.value)
         .file_name()
