@@ -1,9 +1,8 @@
 use crate::benchmark::build_benchmark_report;
 use crate::e2e_report::compare_e2e;
-use crate::rollout_io::{
-    InteractiveTracker, UsageStatsFilter, UsageStatsGroupBy, UsageStatsSortBy,
-};
+use crate::rollout_io::InteractiveTracker;
 use crate::shim::{create_shims, passthrough, run_agent_command, run_tool_command};
+use crate::stats::{UsageStatsFilter, UsageStatsGroupBy, UsageStatsSortBy};
 use crate::trim::{
     ShellKind, base_name, candidate_config_path, csv_list, default_head_lines, default_json_prefix,
     default_match_context, default_max_body_lines, default_max_matches, default_min_trim_bytes,

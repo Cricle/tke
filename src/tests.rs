@@ -14,15 +14,15 @@ use crate::rewrite::{
     live_pipeline_should_passthrough, looks_like_stderr_only_exec_output, parse_command_execution,
     parse_live_shell_pipeline, rewrite_command_item_fields,
 };
-use crate::rollout_io::{
-    InteractiveTracker, UsageStatsFilter, UsageStatsGroupBy, UsageStatsSortBy,
-    build_usage_stats_report, capture_interactive,
-};
+use crate::rollout_io::{InteractiveTracker, capture_interactive};
 use crate::rollout_stats::{
     collect_rollout_output_stats, collect_rollout_output_stats_detailed,
     rollout_has_relevant_tool_output, rollout_string_haystack,
 };
 use crate::shim::{maybe_normalize_text, normalize_text, normalize_text_with_stage};
+use crate::stats::{
+    UsageStatsFilter, UsageStatsGroupBy, UsageStatsSortBy, build_usage_stats_report,
+};
 use crate::trim::{
     CommandKind, ShellKind, candidate_command_names, canonical_command_name, classify_command,
     create_windows_exe_shim, is_failure_signal_line, is_log_signal, is_warning_signal, match_terms,
@@ -3207,18 +3207,12 @@ fn parse_stats_dispatch() {
         } => {
             assert_eq!(sources, vec![PathBuf::from("/tmp/rollouts")]);
             assert_eq!(limit, Some(12));
-            assert!(matches!(filter, crate::rollout_io::UsageStatsFilter::None));
-            assert!(matches!(
-                group_by,
-                crate::rollout_io::UsageStatsGroupBy::Day
-            ));
+            assert!(matches!(filter, crate::stats::UsageStatsFilter::None));
+            assert!(matches!(group_by, crate::stats::UsageStatsGroupBy::Day));
             assert!(!changed_only);
             assert!(!refresh);
             assert_eq!(top, 10);
-            assert!(matches!(
-                sort_by,
-                crate::rollout_io::UsageStatsSortBy::Saved
-            ));
+            assert!(matches!(sort_by, crate::stats::UsageStatsSortBy::Saved));
             assert!(json);
         }
         other => panic!("unexpected dispatch: {other:?}"),
@@ -3250,22 +3244,16 @@ fn parse_stats_dispatch_with_profile_and_group() {
             ..
         } => {
             match filter {
-                crate::rollout_io::UsageStatsFilter::Profile(value) => {
+                crate::stats::UsageStatsFilter::Profile(value) => {
                     assert_eq!(value, "pathlist");
                 }
                 other => panic!("unexpected filter: {other:?}"),
             }
-            assert!(matches!(
-                group_by,
-                crate::rollout_io::UsageStatsGroupBy::Command
-            ));
+            assert!(matches!(group_by, crate::stats::UsageStatsGroupBy::Command));
             assert!(!changed_only);
             assert!(!refresh);
             assert_eq!(top, 10);
-            assert!(matches!(
-                sort_by,
-                crate::rollout_io::UsageStatsSortBy::Saved
-            ));
+            assert!(matches!(sort_by, crate::stats::UsageStatsSortBy::Saved));
         }
         other => panic!("unexpected dispatch: {other:?}"),
     }
@@ -3298,7 +3286,7 @@ fn parse_stats_dispatch_with_changed_only_top_and_sort() {
             ..
         } => {
             match filter {
-                crate::rollout_io::UsageStatsFilter::Command(value) => {
+                crate::stats::UsageStatsFilter::Command(value) => {
                     assert_eq!(value, "cargo");
                 }
                 other => panic!("unexpected filter: {other:?}"),
@@ -3306,10 +3294,7 @@ fn parse_stats_dispatch_with_changed_only_top_and_sort() {
             assert!(changed_only);
             assert!(!refresh);
             assert_eq!(top, 7);
-            assert!(matches!(
-                sort_by,
-                crate::rollout_io::UsageStatsSortBy::Ratio
-            ));
+            assert!(matches!(sort_by, crate::stats::UsageStatsSortBy::Ratio));
         }
         other => panic!("unexpected dispatch: {other:?}"),
     }
@@ -3336,15 +3321,9 @@ fn parse_stats_dispatch_with_low_ratio_sort() {
             sort_by,
             ..
         } => {
-            assert!(matches!(
-                group_by,
-                crate::rollout_io::UsageStatsGroupBy::Command
-            ));
+            assert!(matches!(group_by, crate::stats::UsageStatsGroupBy::Command));
             assert!(!refresh);
-            assert!(matches!(
-                sort_by,
-                crate::rollout_io::UsageStatsSortBy::LowRatio
-            ));
+            assert!(matches!(sort_by, crate::stats::UsageStatsSortBy::LowRatio));
         }
         other => panic!("unexpected dispatch: {other:?}"),
     }
@@ -7882,7 +7861,7 @@ fn find_latest_claude_rollout_after_resolves_session_json_to_jsonl() {
     fs::write(&jsonl, "{\"type\":\"message\"}\n").expect("write jsonl");
 
     let result =
-        crate::rollout_io::test_find_latest_claude_rollout_after(&sessions_dir, 0).expect("find");
+        crate::rollout_io::find_latest_claude_rollout_after(&sessions_dir, 0).expect("find");
     assert!(result.is_some());
     assert_eq!(result.unwrap(), jsonl);
 }
@@ -7912,8 +7891,8 @@ fn find_latest_claude_rollout_after_filters_by_started_at() {
     let jsonl = projects_dir.join("old-uuid-xxxx.jsonl");
     fs::write(&jsonl, "{\"type\":\"message\"}\n").expect("write jsonl");
 
-    let result = crate::rollout_io::test_find_latest_claude_rollout_after(&sessions_dir, 20000)
-        .expect("find");
+    let result =
+        crate::rollout_io::find_latest_claude_rollout_after(&sessions_dir, 20000).expect("find");
     assert!(
         result.is_none(),
         "should filter out sessions before started_at"
@@ -7923,11 +7902,11 @@ fn find_latest_claude_rollout_after_filters_by_started_at() {
 #[test]
 fn claude_encode_project_path_handles_unix_paths() {
     assert_eq!(
-        crate::rollout_io::test_claude_encode_project_path("/root/github/tke"),
+        crate::rollout_io::claude_encode_project_path("/root/github/tke"),
         "-root-github-tke"
     );
     assert_eq!(
-        crate::rollout_io::test_claude_encode_project_path("/tmp/test"),
+        crate::rollout_io::claude_encode_project_path("/tmp/test"),
         "-tmp-test"
     );
 }
@@ -7936,11 +7915,11 @@ fn claude_encode_project_path_handles_unix_paths() {
 fn claude_encode_project_path_handles_windows_paths() {
     // C:\Users\user\project → C:-Users-user-project → C--Users-user-project
     assert_eq!(
-        crate::rollout_io::test_claude_encode_project_path("C:\\Users\\user\\project"),
+        crate::rollout_io::claude_encode_project_path("C:\\Users\\user\\project"),
         "C--Users-user-project"
     );
     assert_eq!(
-        crate::rollout_io::test_claude_encode_project_path("D:\\dev\\tke"),
+        crate::rollout_io::claude_encode_project_path("D:\\dev\\tke"),
         "D--dev-tke"
     );
 }
