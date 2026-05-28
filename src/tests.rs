@@ -25,10 +25,11 @@ use crate::stats::{
 };
 use crate::trim::{
     CommandKind, ShellKind, candidate_command_names, canonical_command_name, classify_command,
-    create_windows_exe_shim, is_failure_signal_line, is_log_signal, is_warning_signal, match_terms,
-    now_millis, read_stream_payload, render_activate_script, render_deactivate_script,
-    shim_command_path,
+    create_windows_exe_shim, is_failure_signal_line, is_log_signal, is_warning_signal,
+    looks_like_path_list, match_terms, now_millis, read_stream_payload, render_activate_script,
+    render_deactivate_script, shim_command_path,
 };
+use crate::table_profile::looks_like_table;
 use std::fs;
 use std::io::{self, Cursor, Read};
 use std::path::{Path, PathBuf};
@@ -1701,7 +1702,7 @@ fn classify_common_code_reading_commands() {
             "curl",
             &["-s".to_owned(), "http://127.0.0.1/demo".to_owned()]
         ),
-        CommandKind::Generic
+        CommandKind::Log
     ));
     assert!(matches!(
         classify_command("jq", &[".".to_owned(), "/tmp/demo.json".to_owned()]),
@@ -1758,6 +1759,126 @@ fn classify_common_code_reading_commands() {
         classify_command("redis-cli", &["info".to_owned()]),
         CommandKind::Log
     ));
+}
+
+#[test]
+fn classify_new_agent_commands_as_log() {
+    assert!(matches!(
+        classify_command("curl", &["-s".to_owned(), "http://example.com".to_owned()]),
+        CommandKind::Log
+    ));
+    assert!(matches!(
+        classify_command("wget", &["-O".to_owned(), "-".to_owned(), "http://example.com".to_owned()]),
+        CommandKind::Log
+    ));
+    assert!(matches!(
+        classify_command("gh", &["pr".to_owned(), "list".to_owned()]),
+        CommandKind::Log
+    ));
+    assert!(matches!(
+        classify_command("glab", &["mr".to_owned(), "list".to_owned()]),
+        CommandKind::Log
+    ));
+    assert!(matches!(
+        classify_command("docker-compose", &["up".to_owned()]),
+        CommandKind::Log
+    ));
+    assert!(matches!(
+        classify_command("pip3", &["install".to_owned(), "requests".to_owned()]),
+        CommandKind::Log
+    ));
+}
+
+#[test]
+fn short_generic_output_never_compressed() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let single_line = "hello world";
+    let result = maybe_normalize_text(
+        "sort",
+        &[],
+        "stdout",
+        CommandKind::Generic,
+        single_line,
+        &cfg,
+        None,
+    )
+    .expect("no error");
+    assert!(result.is_none(), "single-line Generic should passthrough");
+
+    let two_lines = "line one\nline two";
+    let result = maybe_normalize_text(
+        "sort",
+        &[],
+        "stdout",
+        CommandKind::Generic,
+        two_lines,
+        &cfg,
+        None,
+    )
+    .expect("no error");
+    assert!(result.is_none(), "two-line Generic should passthrough");
+}
+
+#[test]
+fn empty_output_produces_passthrough() {
+    let cfg = Config::default();
+    let result = maybe_normalize_text(
+        "cat",
+        &[],
+        "stdout",
+        CommandKind::File,
+        "",
+        &cfg,
+        None,
+    )
+    .expect("no error");
+    assert!(result.is_none(), "empty output should return None");
+}
+
+#[test]
+fn envelope_fc_field_contains_full_command() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let output = (0..20).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+    let normalized = normalize_text(
+        "cargo",
+        &["test".to_owned(), "--lib".to_owned()],
+        "stdout",
+        CommandKind::Log,
+        &output,
+        &cfg,
+    )
+    .expect("normalize");
+    let value = value_from_json(&normalized);
+    let fc = value["fc"].as_str().expect("fc field");
+    assert_eq!(fc, "cargo test --lib", "fc should be full command");
+}
+
+#[test]
+fn pipeline_normalizes_xargs_payload_command() {
+    // xargs wc -l → wc is the real command, should be normalized not passed through
+    let parsed = parse_command_execution("find . -name '*.rs' | xargs wc -l");
+    assert!(!live_pipeline_should_passthrough(&parsed, "wc"));
+    let decision = live_pipeline_decision(&parsed, "wc");
+    assert!(matches!(decision, LivePipelineDecision::Normalize(_)));
+}
+
+#[test]
+fn pathlist_rejects_error_messages() {
+    let lines = vec![
+        "error[E0308]: src/main.rs:42:10",
+        "error[E0432]: src/lib.rs:15:5",
+        "error[E0277]: src/trim.rs:100:20",
+        "error[E0308]: src/app.rs:55:8",
+    ];
+    assert!(!looks_like_path_list(&lines));
+}
+
+#[test]
+fn table_rejects_two_column_text() {
+    let lines = vec!["name  value", "foo   123"];
+    assert!(!looks_like_table(&lines));
 }
 
 #[test]
@@ -5315,8 +5436,11 @@ fn default_tool_commands_have_expected_command_kinds() {
             | "docker" | "ps" | "ss" | "netstat" | "systemctl" | "psql" | "du" | "df" => {
                 assert!(matches!(kind, CommandKind::Log), "{tool}");
             }
-            "sort" | "uniq" | "wc" | "xargs" | "jq" | "curl" => {
+            "sort" | "uniq" | "wc" | "xargs" | "jq" => {
                 assert!(matches!(kind, CommandKind::Generic), "{tool}");
+            }
+            "curl" | "wget" | "gh" | "glab" | "docker-compose" | "pip3" => {
+                assert!(matches!(kind, CommandKind::Log), "{tool}");
             }
             other => panic!("unexpected default tool command {tool} -> {other}"),
         }

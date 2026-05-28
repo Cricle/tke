@@ -685,9 +685,8 @@ pub(crate) fn classify_command(name: &str, args: &[String]) -> CommandKind {
         {
             CommandKind::File
         }
-        "sort" | "uniq" | "wc" | "xargs" | "jq" | "curl" | "readlink" | "stat" => {
-            CommandKind::Generic
-        }
+        "sort" | "uniq" | "wc" | "xargs" | "jq" | "readlink" | "stat" => CommandKind::Generic,
+        "curl" | "wget" | "gh" | "glab" | "docker-compose" | "pip3" => CommandKind::Log,
         "git" if first_non_flag_arg(args) == Some("diff") => CommandKind::Diff,
         "git" if matches!(first_non_flag_arg(args), Some("show" | "blame")) => CommandKind::File,
         "git" if first_non_flag_arg(args) == Some("status") => CommandKind::Log,
@@ -1202,6 +1201,10 @@ pub(crate) fn should_force_trim(
             total_bytes >= usize::min(config.min_trim_bytes, 160)
                 || total_lines >= usize::min(config.max_body_lines, 4)
         }
+        TrimProfile::Generic => {
+            total_lines >= 3
+                && (total_bytes >= config.min_trim_bytes || total_lines > config.max_body_lines)
+        }
         _ => total_bytes >= config.min_trim_bytes || total_lines > config.max_body_lines,
     }
 }
@@ -1226,7 +1229,7 @@ fn looks_like_stacktrace(lines: &[&str]) -> bool {
     summary && frames >= 2
 }
 
-fn looks_like_path_list(lines: &[&str]) -> bool {
+pub(crate) fn looks_like_path_list(lines: &[&str]) -> bool {
     crate::path_profile::looks_like_path_list(lines)
 }
 
