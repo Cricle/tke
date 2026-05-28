@@ -8683,3 +8683,120 @@ fn real_world_cargo_test_output_compresses() {
     );
     assert_eq!(value["t"], true, "cargo test output should be forced");
 }
+
+#[test]
+fn file_profile_multi_file_separator_detection() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    cfg.max_body_lines = 1;
+    let text = [
+        "===== /etc/profile =====",
+        "# /etc/profile: system-wide .profile file",
+        "if [ \"`id -u`\" -eq 0 ]; then",
+        "  PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin",
+        "fi",
+        "===== /etc/bash.bashrc =====",
+        "# System-wide .bashrc file for interactive bash(1) shells.",
+        "if [ -z \"$PS1\" ]; then",
+        "  return",
+        "fi",
+        "===== /root/.bashrc =====",
+        "# ~/.bashrc: executed by bash(1) for non-login shells.",
+        "export PS1='\\u@\\h:\\w\\$ '",
+        "alias ll='ls -alF'",
+    ]
+    .join("\n");
+    let json = normalize_text(
+        "sed",
+        &[
+            "-n".to_owned(),
+            "1,200p".to_owned(),
+            "/etc/profile".to_owned(),
+        ],
+        "stdout",
+        CommandKind::File,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("json");
+    assert_eq!(value["p"], "file", "should detect as file profile");
+    let matches = value["m"].as_array().expect("matches");
+    let has_file = matches.iter().any(|c| c["k"] == "file");
+    assert!(has_file, "should detect multi-file separator chunks");
+}
+
+#[test]
+fn file_profile_multi_file_with_arrow_separators() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    cfg.max_body_lines = 1;
+    let text = [
+        "==> /etc/passwd <==",
+        "root:x:0:0:root:/root:/bin/bash",
+        "daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin",
+        "==> /etc/hosts <==",
+        "127.0.0.1\tlocalhost",
+        "::1\tlocalhost ip6-localhost ip6-loopback",
+    ]
+    .join("\n");
+    let json = normalize_text(
+        "cat",
+        &["/etc/passwd".to_owned(), "/etc/hosts".to_owned()],
+        "stdout",
+        CommandKind::File,
+        &text,
+        &cfg,
+    )
+    .expect("normalize");
+    let value: serde_json::Value = serde_json::from_str(&json).expect("json");
+    assert_eq!(value["p"], "file", "should detect as file profile");
+    let matches = value["m"].as_array().expect("matches");
+    let has_file = matches.iter().any(|c| c["k"] == "file");
+    assert!(has_file, "should detect arrow-style multi-file separators");
+}
+
+#[test]
+fn search_profile_lower_threshold_triggers_on_moderate_output() {
+    // Search output with 20 match lines (~1.5K bytes) should trigger with lower threshold
+    let lines: Vec<String> = (0..20)
+        .map(|i| format!("src/lib.rs:{i}:fn function_{i}() {{"))
+        .collect();
+    let text = lines.join("\n");
+    let result = normalize_text(
+        "rg",
+        &["fn".to_owned(), "src/".to_owned()],
+        "stdout",
+        CommandKind::Search,
+        &text,
+        &Config::default(),
+    )
+    .expect("no error");
+    let value: serde_json::Value = serde_json::from_str(&result).expect("json");
+    assert_eq!(value["p"], "search", "should select search profile");
+    assert_eq!(
+        value["t"], true,
+        "should be forced trim with lower threshold"
+    );
+}
+
+#[test]
+fn search_profile_small_output_below_threshold() {
+    // Search output with only 3 lines (~100 bytes) should NOT trigger
+    let text = "src/lib.rs:1:fn alpha()\nsrc/lib.rs:5:fn beta()\nsrc/lib.rs:10:fn gamma()";
+    let result = normalize_text(
+        "rg",
+        &["fn".to_owned(), "src/".to_owned()],
+        "stdout",
+        CommandKind::Search,
+        text,
+        &Config::default(),
+    )
+    .expect("no error");
+    let value: serde_json::Value = serde_json::from_str(&result).expect("json");
+    // Should not be forced since output is very small
+    assert!(
+        value["t"].is_null() || value["t"] == false,
+        "small search output should not be forced"
+    );
+}

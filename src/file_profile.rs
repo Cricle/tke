@@ -2,6 +2,7 @@ use crate::trim::{
     MatchChunk, ProfileLimits, ascii_word_tokens, collect_term_chunks, has_token_prefix,
     push_chunk, push_existing_chunk,
 };
+use std::collections::HashMap;
 
 const MAX_DECL_CHUNKS: usize = 6;
 const MAX_BLOCK_CHUNKS: usize = 2;
@@ -11,6 +12,12 @@ pub(crate) fn collect_file_chunks(
     terms: &[String],
     limits: ProfileLimits,
 ) -> Vec<MatchChunk> {
+    // Multi-file output detection (e.g., find | xargs sed producing "===== file =====" sections)
+    let multi = collect_multi_file_chunks(lines, limits.max_matches);
+    if !multi.is_empty() {
+        return multi;
+    }
+
     let mut out = Vec::new();
     let mut used = Vec::<(usize, usize)>::new();
 
@@ -182,4 +189,99 @@ fn find_block_end(lines: &[&str], start: usize) -> usize {
         end += 1;
     }
     end
+}
+
+/// Detect multi-file output patterns like:
+///   ===== /path/to/file =====
+///   ==> /path/to/file <==
+///   --- /path/to/file ---
+///   ### /path/to/file ###
+fn is_multi_file_separator(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.len() < 5 {
+        return false;
+    }
+    // Pattern: "==> path <=="
+    if trimmed.starts_with("==> ") && trimmed.contains(" <==") {
+        return true;
+    }
+    // Pattern: repeated chars + path + repeated chars
+    // e.g., "===== /etc/profile =====" or "--- /etc/profile ---"
+    let starts_special = trimmed.starts_with('=')
+        || trimmed.starts_with('-')
+        || trimmed.starts_with('#')
+        || trimmed.starts_with('*');
+    if !starts_special {
+        return false;
+    }
+    // Must contain a path-like segment (has / or \)
+    let has_path = trimmed.contains('/') || trimmed.contains('\\');
+    if !has_path {
+        return false;
+    }
+    // Must have matching closing markers (>= 3 chars)
+    let first_char = trimmed.chars().next().unwrap();
+    let trailing: String = trimmed
+        .chars()
+        .rev()
+        .take_while(|&c| c == first_char)
+        .collect();
+    trailing.len() >= 3
+}
+
+fn collect_multi_file_chunks(lines: &[&str], max_matches: usize) -> Vec<MatchChunk> {
+    // Find separator lines
+    let separators: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| is_multi_file_separator(line))
+        .map(|(idx, _)| idx)
+        .collect();
+
+    if separators.len() < 2 {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    let mut used = Vec::<(usize, usize)>::new();
+    let mut file_groups = HashMap::<String, Vec<usize>>::new();
+    let mut order = Vec::<String>::new();
+
+    for window in separators.windows(2) {
+        let sep_idx = window[0];
+        let path = lines[sep_idx].trim().to_owned();
+        if !file_groups.contains_key(&path) {
+            order.push(path.clone());
+        }
+        file_groups.entry(path).or_default().push(sep_idx);
+    }
+
+    // Sort by number of occurrences (most frequent first)
+    order.sort_by(|a, b| {
+        let ca = file_groups.get(a).map(|v| v.len()).unwrap_or(0);
+        let cb = file_groups.get(b).map(|v| v.len()).unwrap_or(0);
+        cb.cmp(&ca).then_with(|| a.cmp(b))
+    });
+
+    for path in order.iter().take(max_matches) {
+        let Some(indices) = file_groups.get(path) else {
+            continue;
+        };
+        // Take first occurrence as representative
+        let &sep_idx = indices.first().unwrap();
+        let next_sep = separators
+            .iter()
+            .find(|&&i| i > sep_idx)
+            .copied()
+            .unwrap_or(lines.len());
+        // Keep separator + first few content lines
+        let content_end = usize::min(next_sep, sep_idx + 4);
+        if push_chunk(&mut out, &mut used, lines, sep_idx, content_end, "file")
+            && out.len() >= max_matches
+        {
+            break;
+        }
+    }
+
+    out
 }

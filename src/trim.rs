@@ -1311,6 +1311,14 @@ pub(crate) fn should_force_trim(
             total_bytes >= usize::min(config.min_trim_bytes, 256)
                 || total_lines >= usize::min(config.max_body_lines, 8)
         }
+        TrimProfile::Search => {
+            total_bytes >= usize::min(config.min_trim_bytes, 512)
+                || total_lines >= usize::min(config.max_body_lines, 16)
+        }
+        TrimProfile::File => {
+            total_bytes >= usize::min(config.min_trim_bytes, 1024)
+                || total_lines >= usize::min(config.max_body_lines, 24)
+        }
         TrimProfile::Generic => {
             total_lines >= 3
                 && (total_bytes >= usize::min(config.min_trim_bytes, 512)
