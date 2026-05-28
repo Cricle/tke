@@ -84,7 +84,7 @@ fn detect_code_blocks(lines: &[&str]) -> Vec<(usize, usize)> {
     out
 }
 
-fn normalized_code_line<'a>(line: &'a str) -> &'a str {
+fn normalized_code_line(line: &str) -> &str {
     let trimmed = line.trim_start();
     let digit_prefix = trimmed
         .chars()
@@ -100,7 +100,7 @@ fn normalized_code_line<'a>(line: &'a str) -> &'a str {
 
 fn is_outline_line(line: &str) -> bool {
     let tokens = ascii_word_tokens(line);
-    line.chars().next() == Some('#')
+    line.starts_with('#')
         || has_token_prefix(&tokens, &["use"])
         || has_token_prefix(&tokens, &["mod"])
         || has_token_prefix(&tokens, &["pub", "mod"])

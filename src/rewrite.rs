@@ -61,13 +61,13 @@ fn parse_exec_command_envelope(raw: &str) -> Option<ExecCommandEnvelope<'_>> {
         offset += chunk.len();
     }
 
-    if let Some(line) = raw[offset..].strip_suffix('\n') {
-        if line == "Output:" {
-            return saw_header.then_some(ExecCommandEnvelope {
-                exit_code,
-                output: "",
-            });
-        }
+    if let Some(line) = raw[offset..].strip_suffix('\n')
+        && line == "Output:"
+    {
+        return saw_header.then_some(ExecCommandEnvelope {
+            exit_code,
+            output: "",
+        });
     }
 
     None
@@ -407,7 +407,7 @@ fn shell_like_split(input: &str) -> Vec<String> {
     out
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub(crate) struct ParsedCommand {
     stages: Vec<ParsedStage>,
     #[allow(dead_code)]
@@ -445,15 +445,6 @@ impl ParsedCommand {
             .filter(|stage| stage_name_matches_current_command(&stage.name, current_name))
             .count()
             == 1
-    }
-}
-
-impl Default for ParsedCommand {
-    fn default() -> Self {
-        Self {
-            stages: Vec::new(),
-            shell: None,
-        }
     }
 }
 
@@ -578,7 +569,7 @@ impl ParsedStage {
         let arg_weight = self
             .args
             .iter()
-            .filter(|arg| arg.chars().next() == Some('/') || arg.chars().any(|ch| ch == '.'))
+            .filter(|arg| arg.starts_with('/') || arg.chars().any(|ch| ch == '.'))
             .count() as i32;
         let position_weight = -(self.index as i32);
         (role_weight, arg_weight, position_weight)
@@ -738,7 +729,7 @@ fn current_linux_ppid() -> Option<u32> {
 }
 
 fn token_starts_with_char(raw: &str, ch: char) -> bool {
-    raw.chars().next() == Some(ch)
+    raw.starts_with(ch)
 }
 
 fn find_shell_keyword_boundary(text: &str, keyword: &str) -> Option<usize> {

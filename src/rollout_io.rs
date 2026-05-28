@@ -169,7 +169,7 @@ struct UsageStatsAggregateCounter {
     rewritten_bytes: usize,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 struct UsageStatsDayCacheEntry {
     path: String,
@@ -181,22 +181,6 @@ struct UsageStatsDayCacheEntry {
     summary: UsageStatsAggregateCounter,
     profiles: BTreeMap<String, UsageStatsAggregateCounter>,
     commands: BTreeMap<String, UsageStatsAggregateCounter>,
-}
-
-impl Default for UsageStatsDayCacheEntry {
-    fn default() -> Self {
-        Self {
-            path: String::new(),
-            day: String::new(),
-            modified_ms: 0,
-            file_count: 0,
-            total_size: 0,
-            max_file_modified_ms: 0,
-            summary: UsageStatsAggregateCounter::default(),
-            profiles: BTreeMap::new(),
-            commands: BTreeMap::new(),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Default)]
@@ -251,6 +235,7 @@ impl UsageStatsFilter {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn usage_stats(
     sources: Vec<PathBuf>,
     limit: Option<usize>,
@@ -282,6 +267,7 @@ pub fn usage_stats(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_usage_stats_report(
     sources: Vec<PathBuf>,
     limit: Option<usize>,
@@ -310,13 +296,12 @@ pub fn build_usage_stats_report(
     } else {
         UsageStatsCache::default()
     };
-    if use_fast_day_cache {
-        if let Some(report) =
+    if use_fast_day_cache
+        && let Some(report) =
             build_usage_stats_report_from_day_cache(&roots, top, sort_by, &mut cache, config)?
-        {
-            save_usage_stats_cache(&cache);
-            return Ok(report);
-        }
+    {
+        save_usage_stats_cache(&cache);
+        return Ok(report);
     }
     let mut rollouts = discover_rollout_paths(
         &roots,
@@ -326,7 +311,7 @@ pub fn build_usage_stats_report(
             None
         },
     )?;
-    rollouts.sort_by(|a, b| rollout_modified_ms(b).cmp(&rollout_modified_ms(a)));
+    rollouts.sort_by_key(|b| std::cmp::Reverse(rollout_modified_ms(b)));
     if let Some(limit) = limit {
         rollouts.truncate(limit);
     }
@@ -1080,23 +1065,23 @@ fn default_stats_roots() -> Vec<PathBuf> {
 fn find_latest_any_rollout() -> Result<Option<PathBuf>, AppError> {
     let mut best: Option<(u128, PathBuf)> = None;
 
-    if let Some(sessions_dir) = codex_sessions_dir() {
-        if let Some(path) = find_latest_rollout_after(&sessions_dir, 0)? {
-            let ms = rollout_modified_ms(&path);
-            match &best {
-                Some((best_ms, _)) if ms <= *best_ms => {}
-                _ => best = Some((ms, path)),
-            }
+    if let Some(sessions_dir) = codex_sessions_dir()
+        && let Some(path) = find_latest_rollout_after(&sessions_dir, 0)?
+    {
+        let ms = rollout_modified_ms(&path);
+        match &best {
+            Some((best_ms, _)) if ms <= *best_ms => {}
+            _ => best = Some((ms, path)),
         }
     }
 
-    if let Some(sessions_dir) = claude_sessions_dir() {
-        if let Some(path) = find_latest_claude_rollout_after(&sessions_dir, 0)? {
-            let ms = rollout_modified_ms(&path);
-            match &best {
-                Some((best_ms, _)) if ms <= *best_ms => {}
-                _ => best = Some((ms, path)),
-            }
+    if let Some(sessions_dir) = claude_sessions_dir()
+        && let Some(path) = find_latest_claude_rollout_after(&sessions_dir, 0)?
+    {
+        let ms = rollout_modified_ms(&path);
+        match &best {
+            Some((best_ms, _)) if ms <= *best_ms => {}
+            _ => best = Some((ms, path)),
         }
     }
 
@@ -1298,7 +1283,7 @@ fn find_latest_claude_rollout_after(
 }
 
 fn claude_encode_project_path(cwd: &str) -> String {
-    cwd.replace('/', "-").replace('\\', "-").replace(':', "-")
+    cwd.replace(['/', '\\', ':'], "-")
 }
 
 fn rewrite_rollout_to_output(
@@ -1548,7 +1533,7 @@ fn select_breakdown_pair(
 fn detect_agent_from_path(source: &str) -> &'static str {
     let normalized = source.replace('\\', "/");
     let components: Vec<&str> = normalized.split('/').collect();
-    let has_component = |name: &str| components.iter().any(|c| *c == name);
+    let has_component = |name: &str| components.contains(&name);
     if has_component(".codex") || has_component("codex") || normalized.contains("codex-") {
         "codex"
     } else if has_component(".claude") || has_component("claude") || normalized.contains("claude-")

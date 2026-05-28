@@ -252,12 +252,11 @@ fn has_relevant_tool_output_value(
     codex_commands: &HashMap<String, ()>,
     claude_commands: &HashMap<String, ()>,
 ) -> bool {
-    if let Some(item) = value.get("item").and_then(Value::as_object) {
-        if item.get("type").and_then(Value::as_str) == Some("command_execution")
-            && has_nonempty_output_field(item, &["aggregated_output", "stdout", "stderr", "output"])
-        {
-            return true;
-        }
+    if let Some(item) = value.get("item").and_then(Value::as_object)
+        && item.get("type").and_then(Value::as_str) == Some("command_execution")
+        && has_nonempty_output_field(item, &["aggregated_output", "stdout", "stderr", "output"])
+    {
+        return true;
     }
 
     if let Some(payload) = value.get("payload").and_then(Value::as_object) {

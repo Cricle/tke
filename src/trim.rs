@@ -99,13 +99,13 @@ fn collect_diff_chunks(lines: &[&str], terms: &[String], limits: ProfileLimits) 
     // Keep file headers (diff --git, index, ---, +++)
     for (idx, line) in lines.iter().enumerate() {
         let trimmed = line.trim_start();
-        if is_diff_file_header(trimmed)
+        if (is_diff_file_header(trimmed)
             || is_diff_path_marker(trimmed)
-            || is_diff_index_marker(trimmed)
+            || is_diff_index_marker(trimmed))
+            && push_chunk(&mut out, &mut used, lines, idx, idx + 1, "file")
+            && out.len() >= 4
         {
-            if push_chunk(&mut out, &mut used, lines, idx, idx + 1, "file") && out.len() >= 4 {
-                break;
-            }
+            break;
         }
     }
 
@@ -116,8 +116,8 @@ fn collect_diff_chunks(lines: &[&str], terms: &[String], limits: ProfileLimits) 
             // Find the end of this hunk (next hunk header or end of file)
             let start = idx;
             let mut end = idx + 1;
-            for j in (idx + 1)..lines.len() {
-                let next_trimmed = lines[j].trim_start();
+            for (j, next_line) in lines.iter().enumerate().skip(idx + 1) {
+                let next_trimmed = next_line.trim_start();
                 if is_diff_hunk_header(next_trimmed) || is_diff_file_header(next_trimmed) {
                     break;
                 }
@@ -157,10 +157,10 @@ fn collect_stacktrace_chunks(lines: &[&str], limits: ProfileLimits) -> Vec<Match
     let mut used = Vec::<(usize, usize)>::new();
 
     for (idx, line) in lines.iter().enumerate() {
-        if is_stack_summary(line) {
-            if push_chunk(&mut out, &mut used, lines, idx, idx + 1, "summary") {
-                break;
-            }
+        if is_stack_summary(line)
+            && push_chunk(&mut out, &mut used, lines, idx, idx + 1, "summary")
+        {
+            break;
         }
     }
 
@@ -238,11 +238,11 @@ pub(crate) fn merge_ranges(mut ranges: Vec<(usize, usize)>) -> Vec<(usize, usize
     ranges.sort_unstable();
     let mut merged = Vec::<(usize, usize)>::new();
     for (start, end) in ranges {
-        if let Some(last) = merged.last_mut() {
-            if start <= last.1 {
-                last.1 = last.1.max(end);
-                continue;
-            }
+        if let Some(last) = merged.last_mut()
+            && start <= last.1
+        {
+            last.1 = last.1.max(end);
+            continue;
         }
         merged.push((start, end));
     }
@@ -305,9 +305,9 @@ pub(crate) fn collect_diff_summary(lines: &[&str]) -> Option<DiffSummary> {
         if is_diff_path_marker(line) || is_diff_hunk_header(line) {
             continue;
         }
-        if line.chars().next() == Some('+') {
+        if line.starts_with('+') {
             file.add += 1;
-        } else if line.chars().next() == Some('-') {
+        } else if line.starts_with('-') {
             file.del += 1;
         }
     }
@@ -746,8 +746,8 @@ fn count_after_sequence(tokens: &[String], sequence: &[&str]) -> Option<usize> {
         })
 }
 
-fn parse_numeric_token(token: &String) -> Option<usize> {
-    token.chars().all(|ch| ch.is_ascii_digit()).then(|| ())?;
+fn parse_numeric_token(token: &str) -> Option<usize> {
+    token.chars().all(|ch| ch.is_ascii_digit()).then_some(())?;
     token.parse().ok()
 }
 
@@ -1669,9 +1669,7 @@ fn extract_http_json_body(text: &str) -> Option<&str> {
         if line.is_empty() {
             continue;
         }
-        let Some((name, value)) = line.split_once(':') else {
-            return None;
-        };
+        let (name, value) = line.split_once(':')?;
         if name.eq_ignore_ascii_case("content-type")
             && has_ascii_token(&ascii_word_tokens(value), "json")
         {
@@ -1721,7 +1719,7 @@ fn compact_json_scalar(value: &serde_json::Value) -> String {
 fn is_stack_frame(line: &str) -> bool {
     let trimmed = line.trim_start();
     has_token_prefix(&ascii_word_tokens(trimmed), &["at"])
-        || trimmed.chars().next() == Some('#')
+        || trimmed.starts_with('#')
         || has_source_location(trimmed)
 }
 
@@ -1856,7 +1854,7 @@ pub(crate) fn is_log_signal(line: &str, terms: &[String]) -> bool {
 }
 
 fn has_leading_char(raw: &str, ch: char) -> bool {
-    raw.chars().next() == Some(ch)
+    raw.starts_with(ch)
 }
 
 fn has_json_delimiters(raw: &str) -> bool {

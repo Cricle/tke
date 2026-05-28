@@ -317,10 +317,10 @@ pub(crate) fn passthrough(
     }
 
     let mut child = cmd.spawn()?;
-    if let Some(payload) = stdin_payload {
-        if let Some(mut stdin) = child.stdin.take() {
-            write_all_resilient(&mut stdin, &payload)?;
-        }
+    if let Some(payload) = stdin_payload
+        && let Some(mut stdin) = child.stdin.take()
+    {
+        write_all_resilient(&mut stdin, &payload)?;
     }
     let status = child.wait()?;
     Ok(exit_code(status))
@@ -445,17 +445,16 @@ impl ParentTerminal {
             TerminalInput::Stdin => capture_standard_terminal(),
         };
 
-        if control_fd.is_none() {
-            if let Some((fd, termios, winsize)) =
+        if control_fd.is_none()
+            && let Some((fd, termios, winsize)) =
                 capture_terminal_from_fd(1).or_else(|| capture_terminal_from_fd(2))
-            {
-                return Self {
-                    control_fd: Some(fd),
-                    termios,
-                    winsize: winsize.or_else(env_winsize),
-                    input,
-                };
-            }
+        {
+            return Self {
+                control_fd: Some(fd),
+                termios,
+                winsize: winsize.or_else(env_winsize),
+                input,
+            };
         }
 
         Self {
@@ -562,18 +561,17 @@ fn relay_native_pty(
     let resize_shutdown = Arc::clone(&shutdown);
 
     let resize_thread = terminal.control_fd.map(|control_fd| {
-        let child = child;
         thread::spawn(move || -> Result<(), AppError> {
             let mut last = read_winsize(control_fd);
             while !resize_shutdown.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(100));
                 let current = read_winsize(control_fd);
-                if current.is_some() && current != last {
-                    if let Some(winsize) = current {
-                        apply_winsize(resize_master.as_raw_fd(), &winsize)?;
-                        let _ = kill(child, Signal::SIGWINCH);
-                        last = Some(winsize);
-                    }
+                if current.is_some() && current != last
+                    && let Some(winsize) = current
+                {
+                    apply_winsize(resize_master.as_raw_fd(), &winsize)?;
+                    let _ = kill(child, Signal::SIGWINCH);
+                    last = Some(winsize);
                 }
             }
             Ok(())
@@ -782,10 +780,10 @@ pub(crate) fn capture_process(
     }
 
     let mut child = cmd.spawn()?;
-    if let Some(payload) = stdin_payload {
-        if let Some(mut stdin) = child.stdin.take() {
-            write_all_resilient(&mut stdin, &payload)?;
-        }
+    if let Some(payload) = stdin_payload
+        && let Some(mut stdin) = child.stdin.take()
+    {
+        write_all_resilient(&mut stdin, &payload)?;
     }
     Ok(child.wait_with_output()?)
 }
@@ -818,6 +816,7 @@ fn should_spawn_via_cmd(real_cmd: &Path) -> bool {
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn emit_stream<W: Write>(
     mut writer: W,
     bytes: &[u8],
@@ -846,11 +845,11 @@ pub(crate) fn emit_stream<W: Write>(
         return Ok(());
     }
 
-    if config.is_agent_command(name) && stream == "stdout" {
-        if let Some(rewritten) = rewrite_agent_transcript(text, config)? {
-            write_all_resilient(&mut writer, rewritten.as_bytes())?;
-            return Ok(());
-        }
+    if config.is_agent_command(name) && stream == "stdout"
+        && let Some(rewritten) = rewrite_agent_transcript(text, config)?
+    {
+        write_all_resilient(&mut writer, rewritten.as_bytes())?;
+        return Ok(());
     }
 
     let normalize_view = normalize_view.unwrap_or(NormalizeView {
@@ -992,16 +991,12 @@ pub(crate) fn normalize_text_with_stage(
     } else {
         let matches = collect_profile_chunks(&lines, &terms, profile, limits);
         let use_log_chunks_only = forced && profile == TrimProfile::Log;
-        let head = if use_log_chunks_only {
-            Vec::new()
-        } else if total_lines == 0 {
+        let head = if use_log_chunks_only || total_lines == 0 {
             Vec::new()
         } else {
             take_head(&lines, limits.head_lines)
         };
-        let tail = if use_log_chunks_only {
-            Vec::new()
-        } else if total_lines == 0 {
+        let tail = if use_log_chunks_only || total_lines == 0 {
             Vec::new()
         } else {
             take_tail(&lines, limits.tail_lines)
