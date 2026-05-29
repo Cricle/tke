@@ -23,17 +23,20 @@ fi
 chmod +x "$TKE_BIN_REAL" 2>/dev/null || :
 
 rm -rf "$RUN_ROOT"
-mkdir -p "$RUN_ROOT/repo" "$RUN_ROOT/home/.claude" "$RUN_ROOT/bin" "$RUN_ROOT/shims"
+mkdir -p "$RUN_ROOT/repo" "$RUN_ROOT/repo/docs" "$RUN_ROOT/home/.claude" "$RUN_ROOT/bin" "$RUN_ROOT/shims"
 
 cp "$TKE_BIN_REAL" "$RUN_ROOT/bin/tke"
 chmod +x "$RUN_ROOT/bin/tke"
 cp -a "$ROOT/src/." "$RUN_ROOT/repo/src/"
+cp -a "$ROOT/docs/." "$RUN_ROOT/repo/docs/"
 for f in Cargo.toml Cargo.lock README.md .gitignore; do
   cp "$ROOT/$f" "$RUN_ROOT/repo/$f"
 done
 
 ACTIVATE_SCRIPT="$(
-  PATH="$RUN_ROOT/bin:$HOST_TOOL_PATH" "$RUN_ROOT/bin/tke" activate --shim-dir "$RUN_ROOT/shims" claude
+  env -u TKE_BIN -u TKE_SHIM_DIR -u TKE_REAL_PATH -u TKE_AGENT_CMDS -u TKE_TOOL_CMDS \
+    PATH="$RUN_ROOT/bin:$HOST_TOOL_PATH" \
+    "$RUN_ROOT/bin/tke" activate --shim-dir "$RUN_ROOT/shims" claude
 )"
 
 cat >"$RUN_ROOT/home/.bashrc" <<EOF
