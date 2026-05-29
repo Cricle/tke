@@ -2794,13 +2794,16 @@ fn rollout_stats_ignore_non_tool_conversation_text() {
     ]
     .join("\n");
     let stats = collect_rollout_output_stats_detailed(&jsonl, &cfg);
-    let record_totals = stats.records.iter().fold((0usize, 0usize, 0usize), |acc, record| {
-        (
-            acc.0 + record.stats.fields,
-            acc.1 + record.stats.bytes,
-            acc.2 + record.stats.approx_tokens,
-        )
-    });
+    let record_totals = stats
+        .records
+        .iter()
+        .fold((0usize, 0usize, 0usize), |acc, record| {
+            (
+                acc.0 + record.stats.fields,
+                acc.1 + record.stats.bytes,
+                acc.2 + record.stats.approx_tokens,
+            )
+        });
     assert_eq!(stats.total.fields, record_totals.0);
     assert_eq!(stats.total.bytes, record_totals.1);
     assert_eq!(stats.total.approx_tokens, record_totals.2);
