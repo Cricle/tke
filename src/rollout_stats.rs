@@ -179,11 +179,12 @@ fn collect_text_output_stats(
     if text.is_empty() {
         return;
     }
-    let token_count = approx_token_count(text, config);
-    stats.total.fields += 1;
-    stats.total.bytes += text.len();
-    stats.total.approx_tokens += token_count;
     if let Some(record) = infer_output_record(text, command, config) {
+        add_stat_row(
+            &mut stats.total,
+            record.stats.bytes,
+            record.stats.approx_tokens,
+        );
         add_breakdown_stats(&mut stats.breakdown, &record);
         stats.records.push(record);
     }
@@ -523,15 +524,6 @@ fn infer_output_record(text: &str, command: Option<&str>, config: &Config) -> Op
             approx_tokens: crate::benchmark_data::estimate_text_tokens(text),
         },
     })
-}
-
-fn approx_token_count(text: &str, config: &Config) -> usize {
-    if let Some(raw) = text.strip_prefix(&config.json_prefix)
-        && let Ok(value) = serde_json::from_str::<Value>(raw)
-    {
-        return count_json_tokens(&value);
-    }
-    crate::benchmark_data::estimate_text_tokens(text)
 }
 
 fn count_json_tokens(value: &Value) -> usize {

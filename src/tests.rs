@@ -2753,6 +2753,61 @@ fn rollout_stats_track_shell_command_function_call_output() {
 }
 
 #[test]
+fn rollout_stats_ignore_non_tool_conversation_text() {
+    let mut cfg = Config::default();
+    cfg.min_trim_bytes = 1;
+    let jsonl = [
+        serde_json::json!({
+            "type": "assistant",
+            "message": {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": repeated_lines("This is assistant prose, not tool output.", 80)
+                    }
+                ]
+            }
+        })
+        .to_string(),
+        serde_json::json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call",
+                "name": "exec_command",
+                "arguments": "{\"cmd\":\"find src -name '*.rs' | head -n 20\",\"yield_time_ms\":1000}",
+                "call_id": "call_shell_stats_2"
+            }
+        })
+        .to_string(),
+        serde_json::json!({
+            "type": "response_item",
+            "payload": {
+                "type": "function_call_output",
+                "call_id": "call_shell_stats_2",
+                "output": format!(
+                    "Exit code: 0\nWall time: 0.7 seconds\nOutput:\n{}\n",
+                    repeated_lines("/tmp/project/src/lib.rs", 120)
+                )
+            }
+        })
+        .to_string(),
+    ]
+    .join("\n");
+    let stats = collect_rollout_output_stats_detailed(&jsonl, &cfg);
+    let record_totals = stats.records.iter().fold((0usize, 0usize, 0usize), |acc, record| {
+        (
+            acc.0 + record.stats.fields,
+            acc.1 + record.stats.bytes,
+            acc.2 + record.stats.approx_tokens,
+        )
+    });
+    assert_eq!(stats.total.fields, record_totals.0);
+    assert_eq!(stats.total.bytes, record_totals.1);
+    assert_eq!(stats.total.approx_tokens, record_totals.2);
+    assert_eq!(stats.records.len(), 1);
+}
+
+#[test]
 fn parses_exec_command_envelope_output() {
     let raw = "Chunk ID: 13b6ef\nWall time: 0.0000 seconds\nProcess exited with code 0\nOriginal token count: 500\nOutput:\nhello\nworld\n";
     assert_eq!(extract_exec_command_output(raw), Some("hello\nworld\n"));

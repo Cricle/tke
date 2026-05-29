@@ -76,6 +76,7 @@ fn usage_stats_cache_path() -> Option<PathBuf> {
 }
 
 pub(crate) fn load_usage_stats_cache() -> UsageStatsCache {
+    const CURRENT_USAGE_STATS_CACHE_VERSION: u8 = 3;
     let Some(path) = usage_stats_cache_path() else {
         return UsageStatsCache::default();
     };
@@ -83,11 +84,14 @@ pub(crate) fn load_usage_stats_cache() -> UsageStatsCache {
         return UsageStatsCache::default();
     };
     if let Ok(cache) = serde_json::from_str::<UsageStatsCache>(&raw) {
-        return cache;
+        if cache.v == CURRENT_USAGE_STATS_CACHE_VERSION {
+            return cache;
+        }
+        return UsageStatsCache::default();
     }
     if let Ok(files) = serde_json::from_str::<Vec<UsageStatsCacheEntry>>(&raw) {
         return UsageStatsCache {
-            v: 2,
+            v: CURRENT_USAGE_STATS_CACHE_VERSION,
             files,
             dirs: Vec::new(),
             days: Vec::new(),
@@ -97,6 +101,7 @@ pub(crate) fn load_usage_stats_cache() -> UsageStatsCache {
 }
 
 pub(crate) fn save_usage_stats_cache(cache: &UsageStatsCache) {
+    const CURRENT_USAGE_STATS_CACHE_VERSION: u8 = 3;
     let Some(path) = usage_stats_cache_path() else {
         return;
     };
@@ -106,7 +111,9 @@ pub(crate) fn save_usage_stats_cache(cache: &UsageStatsCache) {
     if fs::create_dir_all(parent).is_err() {
         return;
     }
-    let Ok(raw) = serde_json::to_string(cache) else {
+    let mut cache = cache.clone();
+    cache.v = CURRENT_USAGE_STATS_CACHE_VERSION;
+    let Ok(raw) = serde_json::to_string(&cache) else {
         return;
     };
     let _ = fs::write(path, raw);
